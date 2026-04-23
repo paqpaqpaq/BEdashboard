@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Balansenergie All-in Toggle",
+  "version": "2.16.3",
+  "description": "Voegt een all-in toggle toe aan het Balansenergie dashboard (incl. EB, opslag en BTW)",
+  "permissions": ["activeTab", "scripting"],
+  "content_scripts": [
+    {
+      "matches": ["*://dashboard.balansenergie.nl/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
+}
