@@ -32,8 +32,8 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.1**
+**4.5.2**
 
-- De All-in-toggle verschijnt nu ook wanneer Actueel rechtstreeks wordt geopend.
-- Op smartphones in portrait overlappen het dagresultaat en de toggle niet meer.
-- De desktopindeling blijft ongewijzigd.
+- De All-in-toggle verschijnt direct wanneer Actueel via `/customer/` wordt geopend.
+- Bestaande Import-, Export- en ISP-prijslabels reageren weer op het aan- en uitzetten van All-in.
+- Safari kan de actuele grafiek opnieuw opbouwen zonder dat oude prijslabels hun togglewerking verliezen.

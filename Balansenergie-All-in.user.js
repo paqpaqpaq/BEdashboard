@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in
+// @name         Balansenergie All-in v4.5.2
 // @namespace    paq.balansenergie
-// @version      4.5.1
+// @version      4.5.2
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.1'
+    '4.5.2'
   );
 
   var EB_BASIS = 0.09161;
@@ -1168,7 +1168,10 @@
   
   function isActueelPagina() {
     return (
-      /^\/customer\/[^/]+\/?$/.test(
+      /^\/customer\/?$/.test(
+        location.pathname
+      ) ||
+      /^\/customer\/(?!account(?:\/|$)|results(?:\/|$))[^/]+\/?$/.test(
         location.pathname
       )
     );
@@ -1213,34 +1216,41 @@
     " window.__beActueelAllinBridge=true;\n" +
     " var CANVAS='battery-chart';\n" +
     " var st={rijen:[],aan:true,eb:0.11085,btw:1.21,opslag:0.02,saldeert:true};\n" +
-    " var gewikkeld=false,origFill=null,ctxRef=null;\n" +
+    " var ctxRef=null;\n" +
     " function chart(){return (typeof Chart!=='undefined'&&Chart.getChart)?Chart.getChart(CANVAS):null;}\n" +
     " function euro(v){return '\\u20ac '+v.toFixed(3).replace('.',',');}\n" +
     " function allin(kaal,isExport){return isExport?kaal*st.btw-st.opslag+(st.saldeert?st.eb:0):kaal*st.btw+st.opslag+st.eb;}\n" +
     " function wikkel(){\n" +
     "  var c=chart(); if(!c||!c.ctx)return;\n" +
-    "  if(gewikkeld&&ctxRef===c.ctx)return;\n" +
-    "  ctxRef=c.ctx; origFill=c.ctx.fillText.bind(c.ctx);\n" +
+    "  if(ctxRef===c.ctx&&c.ctx.__beAllinFillText)return;\n" +
+    "  ctxRef=c.ctx;\n" +
+    "  var basisFill=(c.ctx.__beAllinOrigFill||c.ctx.fillText).bind(c.ctx);\n" +
+    "  c.ctx.__beAllinOrigFill=basisFill;\n" +
     "  c.ctx.fillText=function(tekst,x,y,mw){\n" +
     "   try{\n" +
-    "    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\\u2248')!==-1&&tekst.indexOf('\\u20ac')!==-1){\n" +
-    "     var isExport=/(?:Export|Teruglever|Injectie)/i.test(tekst);\n" +
+    "    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\\u20ac')!==-1&&/(?:\\u2248|Import|Inkoop|Afname|Export|Teruglever|Injectie|ISP|Nu)/i.test(tekst)){\n" +
+    "     var explicietExport=/(?:Export|Teruglever|Injectie)/i.test(tekst);\n" +
+    "     var explicietImport=/(?:Import|Inkoop|Afname)/i.test(tekst);\n" +
+    "     var isExport=explicietExport;\n" +
     "     var t=c.scales.x?c.scales.x.getValueForPixel(x):null;\n" +
     "     var m=tekst.match(/\\u20ac\\s*([+\\-\\u2212]?\\s*\\d+(?:[.,]\\d+)?)/);\n" +
     "     var kaal=m?parseFloat(m[1].replace(/\\s/g,'').replace('\\u2212','-').replace(',','.')):null;\n" +
-    "     if((kaal==null||!isFinite(kaal))&&t!=null){\n" +
+    "     var rr=null;\n" +
+    "     if(t!=null){\n" +
     "      for(var i=0;i<st.rijen.length;i++){\n" +
-    "       if(st.rijen[i].start<=t&&st.rijen[i].end>t){kaal=isExport?st.rijen[i].ke:st.rijen[i].ki;break;}\n" +
+    "       if(st.rijen[i].start<=t&&st.rijen[i].end>t){rr=st.rijen[i];break;}\n" +
     "      }\n" +
     "     }\n" +
+    "     if(rr&&!explicietExport&&!explicietImport&&kaal!=null&&isFinite(kaal))isExport=Math.abs(kaal-rr.ke)<Math.abs(kaal-rr.ki);\n" +
+    "     if((kaal==null||!isFinite(kaal))&&rr)kaal=isExport?rr.ke:rr.ki;\n" +
     "     if(kaal!=null&&isFinite(kaal))tekst=tekst.replace(/\\u20ac\\s*[+\\-\\u2212]?\\s*\\d+(?:[.,]\\d+)?/,euro(allin(kaal,isExport)));\n" +
     "    }\n" +
     "   }catch(e){}\n" +
-    "   return origFill(tekst,x,y,mw);\n" +
+    "   return basisFill(tekst,x,y,mw);\n" +
     "  };\n" +
-    "  gewikkeld=true;\n" +
+    "  c.ctx.__beAllinFillText=true;\n" +
     " }\n" +
-    " function verver(){var c=chart();if(c)c.update('none');}\n" +
+    " function verver(){var c=chart();if(!c)return;if(typeof c.update==='function')c.update('none');if(typeof c.draw==='function')c.draw();}\n" +
     " document.addEventListener('be-actueel-allin-update',function(){\n" +
     "  var n=document.getElementById('be-actueel-allin-data');if(!n)return;\n" +
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
@@ -10219,7 +10229,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.1' +
+        'Instellingen v4.5.2' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10678,7 +10688,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.1'
+    '4.5.2'
   );
 
   var TAG =
