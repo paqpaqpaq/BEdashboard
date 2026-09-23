@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.2
+// @name         Balansenergie All-in v4.5.3
 // @namespace    paq.balansenergie
-// @version      4.5.2
+// @version      4.5.3
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.2'
+    '4.5.3'
   );
 
   var EB_BASIS = 0.09161;
@@ -55,7 +55,8 @@
     balansBlok:      'be_cfg_balansblok',
     allin:           'be_cfg_allin_aan',
     actueelAllin:    'be_cfg_actueel_allin',
-    voorlopigeDagen: 'be_provisional_days_v43'
+    voorlopigeDagen: 'be_provisional_days_v43',
+    voorlopigeAudit: 'be_provisional_audit_v1'
   };
 
   var MND_KORT = [
@@ -346,6 +347,43 @@
     } catch (e) {}
   }
 
+  /*
+   * Bewaar de laatste voorlopige berekening wanneer Balans dezelfde dag
+   * definitief publiceert. Zo blijft een verschil achteraf controleerbaar;
+   * de actieve voorlopige cache zelf kan daarna gewoon worden opgeruimd.
+   */
+  function bewaarVoorlopigeAudit(dagKey, voorlopig, definitief) {
+    if (!voorlopig || !/^\d{4}-\d{2}-\d{2}$/.test(String(dagKey || ''))) {
+      return;
+    }
+
+    try {
+      var sleutel =
+        LS.voorlopigeAudit + ':' + KLANT;
+
+      var audit = JSON.parse(
+        localStorage.getItem(sleutel) || '{}'
+      );
+
+      if (!audit || typeof audit !== 'object' || Array.isArray(audit)) {
+        audit = {};
+      }
+
+      audit[dagKey] = {
+        klant: KLANT,
+        key: dagKey,
+        voorlopig: voorlopig,
+        definitief: definitief || null,
+        vervangenOp: Date.now()
+      };
+
+      localStorage.setItem(
+        sleutel,
+        JSON.stringify(audit)
+      );
+    } catch (e) {}
+  }
+
   function bewaarVoorlopigeDag(
     dagKey,
     res,
@@ -464,7 +502,7 @@
               String(r.key || '')
             )
           ) {
-            echt[r.key] = true;
+            echt[r.key] = r;
 
           }
         }
@@ -478,6 +516,12 @@
       .forEach(
         function (k) {
           if (echt[k]) {
+            bewaarVoorlopigeAudit(
+              k,
+              opslag[k],
+              echt[k]
+            );
+
             delete opslag[k];
             gewijzigd = true;
           }
@@ -1121,7 +1165,76 @@
   var KLANT =
     klantMatch
       ? klantMatch[1]
-      : null;
+      : localStorage.getItem(
+          'be_laatste_installatie'
+        );
+
+  function geldigeKlant(id) {
+    return (
+      !!id &&
+      !/^(?:account|results|current-history|current-prices|undefined|null)$/i.test(
+        id
+      )
+    );
+  }
+
+  function onthoudKlant(id) {
+    if (!geldigeKlant(id)) {
+      return false;
+    }
+
+    var gewijzigd =
+      KLANT !== id;
+
+    KLANT = id;
+
+    try {
+      localStorage.setItem(
+        'be_laatste_installatie',
+        id
+      );
+    } catch (e) {}
+
+    return gewijzigd;
+  }
+
+  function klantUitUrl(waarde) {
+    try {
+      var u =
+        new URL(
+          waarde,
+          location.origin
+        );
+
+      var installatie =
+        u.searchParams.get(
+          'installation'
+        );
+
+      if (
+        geldigeKlant(
+          installatie
+        )
+      ) {
+        return installatie;
+      }
+
+      var m =
+        u.pathname.match(
+          /^\/customer\/([^/]+)\/(?:results|account)(?:\/|$)/
+        );
+
+      return (
+        m &&
+        geldigeKlant(m[1])
+      )
+        ? m[1]
+        : null;
+
+    } catch (e) {
+      return null;
+    }
+  }
 
   function verversKlantUitPad() {
     var m = location.pathname.match(
@@ -1130,10 +1243,79 @@
 
     if (
       m &&
-      m[1] &&
-      m[1] !== 'account'
+      geldigeKlant(m[1])
     ) {
-      KLANT = m[1];
+      onthoudKlant(m[1]);
+
+      return KLANT;
+    }
+
+    /*
+     * Op de nieuwe Actueel-route staat het installatie-id niet meer in
+     * location.pathname. De eigen history-aanvraag van het dashboard bevat
+     * het id nog wel. Resource Timing werkt ook in Safari voor deze
+     * same-origin-aanvraag en verandert niets aan de netwerklaag van Balans.
+     */
+    try {
+      var bronnen =
+        performance.getEntriesByType(
+          'resource'
+        );
+
+      for (
+        var i = bronnen.length - 1;
+        i >= 0;
+        i--
+      ) {
+        if (
+          String(bronnen[i].name).indexOf(
+            '/customer/current-history/api/'
+          ) === -1
+        ) {
+          continue;
+        }
+
+        var uitBron =
+          klantUitUrl(
+            bronnen[i].name
+          );
+
+        if (uitBron) {
+          onthoudKlant(
+            uitBron
+          );
+
+          return KLANT;
+        }
+      }
+    } catch (e) {}
+
+    /*
+     * Vang ook de situatie af waarin Safari Resource Timing opschoont:
+     * de navigatielinks naar Resultaten/Account dragen hetzelfde id.
+     */
+    var links =
+      document.querySelectorAll(
+        'a[href*="/customer/"]'
+      );
+
+    for (
+      var j = 0;
+      j < links.length;
+      j++
+    ) {
+      var uitLink =
+        klantUitUrl(
+          links[j].href
+        );
+
+      if (uitLink) {
+        onthoudKlant(
+          uitLink
+        );
+
+        break;
+      }
     }
 
     return KLANT;
@@ -1162,6 +1344,7 @@
   var actueelLaatstGeschreven = null;
   var actueelGestart = false;
   var actueelWasPagina = false;
+  var actueelLaatsteKlant = null;
   var actueelHaalTimer = null;
   var actueelOnderhoudTimer = null;
   var actueelVoetnootTimer = null;
@@ -2592,6 +2775,11 @@
   function actueelOnderhoud() {
     verversKlantUitPad();
 
+    var nieuweKlant =
+      !!KLANT &&
+      KLANT !==
+        actueelLaatsteKlant;
+
     var nuActueel =
       isActueelPagina();
 
@@ -2625,13 +2813,22 @@
 
     actueelWerkSchemaBij();
 
-    if (!actueelWasPagina) {
+    if (
+      !actueelWasPagina ||
+      nieuweKlant
+    ) {
       actueelWasPagina =
         true;
 
+      actueelLaatsteKlant =
+        KLANT;
+
       actueelStuur();
 
-      actueelHaal();
+      if (!actueelRijen.length) {
+        actueelHaal();
+      }
+
       actueelHaalDagPunten();
     }
   }
@@ -2930,7 +3127,7 @@
                     ) {
                       echt[
                         String(k)
-                      ] = true;
+                      ] = r;
                     }
                   }
                 );
@@ -2945,6 +3142,12 @@
             .forEach(
               function (k) {
                 if (echt[k]) {
+                  bewaarVoorlopigeAudit(
+                    k,
+                    opslag[k],
+                    echt[k]
+                  );
+
                   delete opslag[k];
                   gewijzigd = true;
                 }
@@ -10229,7 +10432,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.2' +
+        'Instellingen v4.5.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10688,7 +10891,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.2'
+    '4.5.3'
   );
 
   var TAG =

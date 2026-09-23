@@ -32,8 +32,9 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.2**
+**4.5.3**
 
-- De All-in-toggle verschijnt direct wanneer Actueel via `/customer/` wordt geopend.
-- Bestaande Import-, Export- en ISP-prijslabels reageren weer op het aan- en uitzetten van All-in.
-- Safari kan de actuele grafiek opnieuw opbouwen zonder dat oude prijslabels hun togglewerking verliezen.
+- Actueel vindt de installatie nu zelfstandig wanneer het dashboard op `/customer/` opent; het dagresultaat werkt daardoor zonder eerst Resultaten te bezoeken.
+- Een later beschikbaar installatie-id start de actuele dagberekening direct opnieuw.
+- De laatste voorlopige dagberekening blijft als controlesnapshot bewaard zodra Balans de definitieve dag publiceert.
+- Bestaande Import-, Export- en ISP-prijslabels blijven reageren op de All-in-toggle.
