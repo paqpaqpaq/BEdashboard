@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.4
+// @name         Balansenergie All-in v4.5.4.1
 // @namespace    paq.balansenergie
-// @version      4.5.4
+// @version      4.5.4.1
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues

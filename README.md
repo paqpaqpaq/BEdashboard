@@ -32,9 +32,10 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.4**
+**4.5.4.1**
 
 - **Rustâââgh** staat op Actueel standaard aan en kan rechts in de kopbalk van Live Status worden uitgeschakeld.
+- De herkenning van Live Status gebruikt de inhoud van het dashboard in plaats van vaste pixelhoogtes, zodat Rustâââgh ook met Firefox-lettermetingen en zoom werkt.
 - Live vermogenswaarden gebruiken tabulaire cijfers en een vaste breedte, terwijl de bestaande flipanimatie behouden blijft.
 - Waarden rond het schema blijven gecentreerd; de waarden onder Laatste meting blijven rechts uitgelijnd.
 - De tijdregel en het SOC-bolletje in de batterijtekening blijven onaangeroerd, zodat tekst en pictogram niet vervormen.

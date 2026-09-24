@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.4
+// @name         Balansenergie All-in v4.5.4.1
 // @namespace    paq.balansenergie
-// @version      4.5.4
+// @version      4.5.4.1
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.4'
+    '4.5.4.1'
   );
 
   var EB_BASIS = 0.09161;
@@ -10432,7 +10432,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.4' +
+        'Instellingen v4.5.4.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10891,7 +10891,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.4'
+    '4.5.4.1'
   );
 
   var TAG =
@@ -13206,8 +13206,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.1') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.1');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
@@ -13292,35 +13292,55 @@
     return null;
   }
 
-  function vindPaneel(titel) {
-    var bestaandeKop = titel === 'Live Status'
-      ? document.querySelector('.be-stabiele-cijfers-kop')
-      : null;
-
-    if (bestaandeKop) {
-      var bestaandPaneel = bestaandeKop;
-      while (bestaandPaneel.parentElement) {
-        bestaandPaneel = bestaandPaneel.parentElement;
-        var bestaandRect = bestaandPaneel.getBoundingClientRect();
-        if (bestaandRect.width > 280 && bestaandRect.height > 220 && bestaandRect.height < 1000) {
-          return bestaandPaneel;
-        }
-      }
-    }
-
+  function vindTitelElement(titel) {
     var alles = document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span');
 
     for (var i = 0; i < alles.length; i++) {
-      if (tekst(alles[i]) !== titel) continue;
+      if (tekst(alles[i]) === titel) return alles[i];
+    }
 
-      var paneel = alles[i];
-      while (paneel.parentElement) {
-        paneel = paneel.parentElement;
-        var r = paneel.getBoundingClientRect();
+    return null;
+  }
 
-        /* Pak de eerste volledige kaart, niet alleen de titelbalk. */
-        if (r.width > 280 && r.height > 220 && r.height < 1000) return paneel;
+  function aantalMeetwaarden(wortel) {
+    if (!wortel) return 0;
+
+    var aantal = 0;
+    var alles = wortel.querySelectorAll('*');
+
+    for (var i = 0; i < alles.length; i++) {
+      var waarde = tekst(alles[i]);
+      if (!eenheidVan(waarde)) continue;
+
+      /* Tel één DOM-laag per getal, ook wanneer React dezelfde tekst nestelt. */
+      var dubbelKind = false;
+      for (var j = 0; j < alles[i].children.length; j++) {
+        if (tekst(alles[i].children[j]) === waarde) {
+          dubbelKind = true;
+          break;
+        }
       }
+      if (!dubbelKind) aantal++;
+    }
+
+    return aantal;
+  }
+
+  function vindPaneel(titel) {
+    var titelElement = vindTitelElement(titel);
+    if (!titelElement) return null;
+
+    var minimaal = titel === 'Laatste meting' ? 4 : 3;
+    var paneel = titelElement;
+
+    while (paneel.parentElement && paneel !== document.body) {
+      paneel = paneel.parentElement;
+
+      /*
+       * Zoek de eerste voorouder die titel én meetwaarden bevat. Dit gebruikt
+       * de DOM-inhoud in plaats van browserafhankelijke pixelafmetingen.
+       */
+      if (aantalMeetwaarden(paneel) >= minimaal) return paneel;
     }
 
     return null;
@@ -13330,22 +13350,18 @@
     var bestaandeKop = document.querySelector('.be-stabiele-cijfers-kop');
     if (bestaandeKop) return bestaandeKop;
 
-    var alles = document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span');
+    var titelElement = vindTitelElement(titel);
+    var paneel = vindPaneel(titel);
+    if (!titelElement || !paneel) return null;
 
-    for (var i = 0; i < alles.length; i++) {
-      if (tekst(alles[i]) !== titel) continue;
+    var kop = titelElement;
 
-      var kop = alles[i];
-      while (kop.parentElement) {
-        kop = kop.parentElement;
-        var r = kop.getBoundingClientRect();
-
-        if (r.width > 280 && r.height >= 40 && r.height <= 140) return kop;
-        if (r.height > 140) break;
-      }
+    while (kop.parentElement && kop.parentElement !== paneel) {
+      if (aantalMeetwaarden(kop.parentElement) > 0) break;
+      kop = kop.parentElement;
     }
 
-    return null;
+    return kop;
   }
 
   function actueelPaneelNummer(el, panelen) {
@@ -13495,4 +13511,3 @@
   window.addEventListener('resize', planScan, { passive: true });
   window.addEventListener('popstate', planScan, { passive: true });
 }());
-
