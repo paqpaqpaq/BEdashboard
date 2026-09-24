@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.3
+// @name         Balansenergie All-in v4.5.4
 // @namespace    paq.balansenergie
-// @version      4.5.3
+// @version      4.5.4
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.3'
+    '4.5.4'
   );
 
   var EB_BASIS = 0.09161;
@@ -10432,7 +10432,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.3' +
+        'Instellingen v4.5.4' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10891,7 +10891,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.3'
+    '4.5.4'
   );
 
   var TAG =
@@ -13197,3 +13197,302 @@
 
   werkBij();
 })();
+
+
+/* Rustâââgh: stabiele live cijfers op Actueel. */
+(function () {
+  'use strict';
+
+  if (window.top !== window.self) return;
+
+  var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4');
+
+  var STYLE_ID = 'be-stabiele-cijfers-stijl';
+  var MARKER = 'be-stabiel-getal';
+  var TOGGLE_ID = 'be-stabiele-cijfers-toggle';
+  var OPSLAG = 'be_stabiele_cijfers_aan_v2';
+  var scanGepland = false;
+  var ingeschakeld = localStorage.getItem(OPSLAG) !== '0';
+
+  function voegStijlToe() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    var stijl = document.createElement('style');
+    stijl.id = STYLE_ID;
+    stijl.textContent =
+      '.' + MARKER + '{' +
+        'display:inline-block!important;' +
+        'box-sizing:content-box!important;' +
+        'max-width:100%!important;' +
+        'white-space:nowrap!important;' +
+        'font-variant-numeric:tabular-nums lining-nums!important;' +
+        'font-feature-settings:"tnum" 1,"lnum" 1!important;' +
+      '}' +
+      '.' + MARKER + ',.' + MARKER + ' *{' +
+        'font-variant-numeric:tabular-nums lining-nums!important;' +
+        'font-feature-settings:"tnum" 1,"lnum" 1!important;' +
+      '}' +
+      '.' + MARKER + '[data-be-eenheid="w"]{width:8ch!important;}' +
+      '.' + MARKER + '[data-be-eenheid="kw"]{width:7ch!important;}' +
+      '.' + MARKER + '[data-be-eenheid="pct"]{width:5ch!important;}' +
+      '.' + MARKER + '[data-be-eenheid="kwh"]{width:9ch!important;}' +
+      '.' + MARKER + '[data-be-eenheid="eur"]{width:9ch!important;}' +
+      '.' + MARKER + '[data-be-uitlijning="midden"]{text-align:center!important;}' +
+      '.' + MARKER + '[data-be-uitlijning="rechts"]{text-align:right!important;}' +
+      '.' + MARKER + '[data-be-uitlijning="links"]{text-align:left!important;}' +
+      '.be-stabiele-cijfers-kop{position:relative!important;}' +
+      '#' + TOGGLE_ID + '{' +
+        'appearance:none;-webkit-appearance:none;' +
+        'display:flex;align-items:center;gap:8px;' +
+        'width:auto;height:auto;cursor:pointer;' +
+        'border:0;background:transparent;' +
+        'position:absolute;right:24px;top:50%;z-index:2;' +
+        'transform:translateY(-50%);' +
+        'padding:3px 2px;flex:0 0 auto;' +
+        'white-space:nowrap;color:#342f3a;' +
+        'font-family:inherit;font-size:12px;font-weight:500;line-height:1.2;' +
+        'box-shadow:none;' +
+      '}' +
+      '#' + TOGGLE_ID + ' [data-be-stabiel-track]{' +
+        'position:relative;display:inline-block;' +
+        'width:34px;height:18px;border-radius:999px;flex-shrink:0;' +
+        'transition:background .18s ease;' +
+      '}' +
+      '#' + TOGGLE_ID + ' [data-be-stabiel-thumb]{' +
+        'position:absolute;left:2px;top:2px;' +
+        'width:14px;height:14px;border-radius:50%;background:#fff;' +
+        'box-shadow:0 1px 3px rgba(0,0,0,.35);' +
+        'transition:transform .18s ease;' +
+      '}' +
+      '#' + TOGGLE_ID + ' [data-be-stabiel-status]{' +
+        'min-width:24px;font-size:10px;font-weight:700;line-height:1;' +
+      '}' +
+      '@media(max-width:700px) and (orientation:portrait){' +
+        '#' + TOGGLE_ID + '{right:12px!important;gap:6px!important;font-size:11px!important;}' +
+      '}';
+
+    (document.head || document.documentElement).appendChild(stijl);
+  }
+
+  function tekst(el) {
+    return String(el && el.textContent || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function eenheidVan(waarde) {
+    if (/^[+\-−]?\s*€\s*\d[\d\s.,]*$/i.test(waarde)) return 'eur';
+    if (/^[+\-−]?\s*\d[\d\s.,]*\s*kWh$/i.test(waarde)) return 'kwh';
+    if (/^[+\-−]?\s*\d[\d\s.,]*\s*kW$/i.test(waarde)) return 'kw';
+    if (/^[+\-−]?\s*\d[\d\s.,]*\s*W$/i.test(waarde)) return 'w';
+    if (/^[+\-−]?\s*\d[\d\s.,]*\s*%$/i.test(waarde)) return 'pct';
+    return null;
+  }
+
+  function vindPaneel(titel) {
+    var bestaandeKop = titel === 'Live Status'
+      ? document.querySelector('.be-stabiele-cijfers-kop')
+      : null;
+
+    if (bestaandeKop) {
+      var bestaandPaneel = bestaandeKop;
+      while (bestaandPaneel.parentElement) {
+        bestaandPaneel = bestaandPaneel.parentElement;
+        var bestaandRect = bestaandPaneel.getBoundingClientRect();
+        if (bestaandRect.width > 280 && bestaandRect.height > 220 && bestaandRect.height < 1000) {
+          return bestaandPaneel;
+        }
+      }
+    }
+
+    var alles = document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span');
+
+    for (var i = 0; i < alles.length; i++) {
+      if (tekst(alles[i]) !== titel) continue;
+
+      var paneel = alles[i];
+      while (paneel.parentElement) {
+        paneel = paneel.parentElement;
+        var r = paneel.getBoundingClientRect();
+
+        /* Pak de eerste volledige kaart, niet alleen de titelbalk. */
+        if (r.width > 280 && r.height > 220 && r.height < 1000) return paneel;
+      }
+    }
+
+    return null;
+  }
+
+  function vindKopbalk(titel) {
+    var bestaandeKop = document.querySelector('.be-stabiele-cijfers-kop');
+    if (bestaandeKop) return bestaandeKop;
+
+    var alles = document.querySelectorAll('h1,h2,h3,h4,h5,h6,div,span');
+
+    for (var i = 0; i < alles.length; i++) {
+      if (tekst(alles[i]) !== titel) continue;
+
+      var kop = alles[i];
+      while (kop.parentElement) {
+        kop = kop.parentElement;
+        var r = kop.getBoundingClientRect();
+
+        if (r.width > 280 && r.height >= 40 && r.height <= 140) return kop;
+        if (r.height > 140) break;
+      }
+    }
+
+    return null;
+  }
+
+  function actueelPaneelNummer(el, panelen) {
+    var rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height || rect.top < 0) return -1;
+
+    for (var i = 0; i < panelen.length; i++) {
+      if (panelen[i] && panelen[i].contains(el)) return i;
+    }
+
+    return -1;
+  }
+
+  function buitensteZelfdeWaarde(el, waarde) {
+    var huidig = el;
+
+    while (huidig.parentElement) {
+      var ouder = huidig.parentElement;
+      var r = ouder.getBoundingClientRect();
+
+      if (tekst(ouder) !== waarde || r.width > 220 || r.height > 90) break;
+      huidig = ouder;
+    }
+
+    return huidig;
+  }
+
+  function verwijderMarkeringen() {
+    var gemarkeerd = document.querySelectorAll('.' + MARKER);
+
+    for (var i = 0; i < gemarkeerd.length; i++) {
+      gemarkeerd[i].classList.remove(MARKER);
+      gemarkeerd[i].removeAttribute('data-be-eenheid');
+      gemarkeerd[i].removeAttribute('data-be-uitlijning');
+    }
+  }
+
+  function tekenSchakelaar(knop) {
+    if (!knop) return;
+
+    var track = knop.querySelector('[data-be-stabiel-track]');
+    var duim = knop.querySelector('[data-be-stabiel-thumb]');
+    var status = knop.querySelector('[data-be-stabiel-status]');
+
+    knop.setAttribute('aria-pressed', ingeschakeld ? 'true' : 'false');
+    knop.title = ingeschakeld
+      ? 'Vaste cijferbreedtes uitschakelen'
+      : 'Vaste cijferbreedtes inschakelen';
+    track.style.background = ingeschakeld ? '#7040a3' : '#aab4c2';
+    duim.style.transform = ingeschakeld ? 'translateX(16px)' : 'translateX(0)';
+    var statusTekst = ingeschakeld ? 'AAN' : 'UIT';
+    if (status.textContent !== statusTekst) status.textContent = statusTekst;
+  }
+
+  function voegSchakelaarToe() {
+    var kop = vindKopbalk('Live Status');
+    if (!kop) return;
+
+    kop.classList.add('be-stabiele-cijfers-kop');
+
+    var knop = document.getElementById(TOGGLE_ID);
+
+    if (!knop) {
+      knop = document.createElement('button');
+      knop.id = TOGGLE_ID;
+      knop.type = 'button';
+      knop.innerHTML =
+        '<span>Rustâââgh</span>' +
+        '<span data-be-stabiel-track>' +
+          '<span data-be-stabiel-thumb></span>' +
+        '</span>' +
+        '<span data-be-stabiel-status></span>';
+
+      knop.addEventListener('click', function () {
+        ingeschakeld = !ingeschakeld;
+        localStorage.setItem(OPSLAG, ingeschakeld ? '1' : '0');
+        tekenSchakelaar(knop);
+
+        if (ingeschakeld) {
+          planScan();
+        } else {
+          verwijderMarkeringen();
+        }
+      });
+    }
+
+    if (knop.parentElement !== kop) {
+      kop.appendChild(knop);
+    }
+
+    tekenSchakelaar(knop);
+  }
+
+  function markeerActueleCijfers() {
+    scanGepland = false;
+    voegStijlToe();
+    voegSchakelaarToe();
+
+    if (!ingeschakeld) {
+      verwijderMarkeringen();
+      return;
+    }
+
+    var elementen = document.body ? document.body.querySelectorAll('*') : [];
+    var panelen = [vindPaneel('Live Status'), vindPaneel('Laatste meting')];
+
+    for (var i = 0; i < elementen.length; i++) {
+      var el = elementen[i];
+      var waarde = tekst(el);
+      var eenheid = eenheidVan(waarde);
+      var paneelNummer = actueelPaneelNummer(el, panelen);
+
+      if (!eenheid || paneelNummer < 0) continue;
+
+      /*
+       * Het SOC-bolletje ligt ín de batterijtekening. Een geforceerde
+       * breedte op dat element vervormt daarom het volledige pictogram.
+       * De losse SOC-regel rechts krijgt wel gewoon een vaste breedte.
+       */
+      if (paneelNummer === 0 && eenheid === 'pct') continue;
+
+      var doel = buitensteZelfdeWaarde(el, waarde);
+      doel.classList.add(MARKER);
+      doel.setAttribute('data-be-eenheid', eenheid);
+      doel.setAttribute(
+        'data-be-uitlijning',
+        paneelNummer === 0 ? 'midden' : 'rechts'
+      );
+    }
+  }
+
+  function planScan() {
+    if (scanGepland) return;
+    scanGepland = true;
+    requestAnimationFrame(markeerActueleCijfers);
+  }
+
+  voegStijlToe();
+  planScan();
+
+  new MutationObserver(planScan).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+
+  window.addEventListener('resize', planScan, { passive: true });
+  window.addEventListener('popstate', planScan, { passive: true });
+}());
+

@@ -32,9 +32,10 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.3**
+**4.5.4**
 
-- Actueel vindt de installatie nu zelfstandig wanneer het dashboard op `/customer/` opent; het dagresultaat werkt daardoor zonder eerst Resultaten te bezoeken.
-- Een later beschikbaar installatie-id start de actuele dagberekening direct opnieuw.
-- De laatste voorlopige dagberekening blijft als controlesnapshot bewaard zodra Balans de definitieve dag publiceert.
-- Bestaande Import-, Export- en ISP-prijslabels blijven reageren op de All-in-toggle.
+- **Rustâââgh** staat op Actueel standaard aan en kan rechts in de kopbalk van Live Status worden uitgeschakeld.
+- Live vermogenswaarden gebruiken tabulaire cijfers en een vaste breedte, terwijl de bestaande flipanimatie behouden blijft.
+- Waarden rond het schema blijven gecentreerd; de waarden onder Laatste meting blijven rechts uitgelijnd.
+- De tijdregel en het SOC-bolletje in de batterijtekening blijven onaangeroerd, zodat tekst en pictogram niet vervormen.
+- Actueel vindt de installatie zelfstandig wanneer het dashboard op `/customer/` opent en bewaart voorlopige dagen voor vergelijking met definitieve resultaten.
