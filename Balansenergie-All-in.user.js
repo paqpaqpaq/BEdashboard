@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.4.2
+// @name         Balansenergie All-in v4.5.4.3
 // @namespace    paq.balansenergie
-// @version      4.5.4.2
+// @version      4.5.4.3
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.4.2'
+    '4.5.4.3'
   );
 
   var EB_BASIS = 0.09161;
@@ -4894,7 +4894,8 @@
 
     var stroomKosten =
       a.allinInk +
-      a.allinVerk;
+      a.allinVerk +
+      (perMaand ? (ctx.voorlopigStroom || 0) : 0);
 
     function rij(
       label,
@@ -5006,6 +5007,16 @@
             3
           ),
           a.allinVerk
+        ) +
+
+        (
+          perMaand && ctx.voorlopigAantal > 0
+            ? rij(
+                'Voorlopige kosten / opbrengsten',
+                ctx.voorlopigAantal + ' dag(en) · nog niet definitief',
+                ctx.voorlopigStroom
+              )
+            : ''
         ) +
 
         (
@@ -9981,6 +9992,16 @@
             ) || 0;
         }
 
+        if (laatste.interval === 'month') {
+          kaartCtx.voorlopigStroom = 0;
+          kaartCtx.voorlopigAantal = voorlopigeRijen.length;
+          voorlopigeRijen.forEach(function (r) {
+            kaartCtx.voorlopigStroom += bereken(
+              r, naSaldering(r.key) ? r.exp : 0, 1
+            ).stroom;
+          });
+        }
+
         var kaartEl =
           bouwHoofdkaart(
             a,
@@ -10618,7 +10639,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.4.2' +
+        'Instellingen v4.5.4.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11077,7 +11098,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.4.2'
+    '4.5.4.3'
   );
 
   var TAG =
@@ -13392,8 +13413,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.2') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.2');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.3') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.3');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

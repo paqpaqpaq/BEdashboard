@@ -32,7 +32,9 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.4.2**
+**4.5.4.3**
+
+- Voorlopige kosten en opbrengsten staan apart in het maandblok en tellen mee in Stroomkosten; definitieve dagen worden niet dubbel geteld.
 
 - De contractbalk toont de echte verstreken kalenderdagen, het kalenderpercentage en de actuele positie binnen de contracttermijn.
 - Het maandoverzicht toont onder **Stroomkosten** uitsluitend afname en teruglevering; netbeheer, voorschotten en de vaste belastingvermindering blijven erbuiten.
