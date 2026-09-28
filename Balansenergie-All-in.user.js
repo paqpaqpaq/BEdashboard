@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.4.1
+// @name         Balansenergie All-in v4.5.4.2
 // @namespace    paq.balansenergie
-// @version      4.5.4.1
+// @version      4.5.4.2
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.4.1'
+    '4.5.4.2'
   );
 
   var EB_BASIS = 0.09161;
@@ -124,6 +124,149 @@
       '-' +
       n2(d.getDate())
     );
+  }
+
+  function datumPlusMaanden(d, aantal) {
+    var jaar =
+      d.getFullYear();
+
+    var maand =
+      d.getMonth() + aantal;
+
+    var laatsteDag =
+      new Date(
+        jaar,
+        maand + 1,
+        0
+      ).getDate();
+
+    return new Date(
+      jaar,
+      maand,
+      Math.min(
+        d.getDate(),
+        laatsteDag
+      )
+    );
+  }
+
+  function datumDagNummer(d) {
+    return Math.floor(
+      Date.UTC(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate()
+      ) /
+      86400000
+    );
+  }
+
+  function contractVoortgang(start, nu) {
+    var begin =
+      new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate()
+      );
+
+    var vandaag =
+      new Date(
+        nu.getFullYear(),
+        nu.getMonth(),
+        nu.getDate()
+      );
+
+    var grens =
+      datumPlusMaanden(
+        begin,
+        12
+      );
+
+    var totaalDagen =
+      datumDagNummer(grens) -
+      datumDagNummer(begin);
+
+    var verstrekenDagen =
+      Math.max(
+        0,
+        Math.min(
+          totaalDagen,
+          datumDagNummer(vandaag) -
+          datumDagNummer(begin)
+        )
+      );
+
+    var maanden =
+      (
+        vandaag.getFullYear() -
+        begin.getFullYear()
+      ) *
+      12 +
+      vandaag.getMonth() -
+      begin.getMonth();
+
+    maanden =
+      Math.max(
+        0,
+        Math.min(
+          12,
+          maanden
+        )
+      );
+
+    var maandAnker =
+      datumPlusMaanden(
+        begin,
+        maanden
+      );
+
+    if (
+      maanden > 0 &&
+      datumDagNummer(maandAnker) >
+        datumDagNummer(vandaag)
+    ) {
+      maanden--;
+      maandAnker =
+        datumPlusMaanden(
+          begin,
+          maanden
+        );
+    }
+
+    var restDagen =
+      vandaag < begin ||
+      vandaag >= grens
+        ? 0
+        : Math.max(
+            0,
+            datumDagNummer(vandaag) -
+            datumDagNummer(maandAnker)
+          );
+
+    var pctExact =
+      totaalDagen > 0
+        ? verstrekenDagen /
+          totaalDagen *
+          100
+        : 0;
+
+    return {
+      grens: grens,
+      totaalDagen: totaalDagen,
+      verstrekenDagen: verstrekenDagen,
+      contractDag:
+        vandaag < begin
+          ? 0
+          : Math.min(
+              totaalDagen,
+              verstrekenDagen + 1
+            ),
+      maanden: maanden,
+      restDagen: restDagen,
+      pctExact: pctExact,
+      gestart: vandaag >= begin,
+      voltooid: vandaag >= grens
+    };
   }
 
   // Alleen in deze pagina opnieuw gevalideerde resultaten mogen worden gebruikt.
@@ -4749,6 +4892,10 @@
       a.dagen > 0 &&
       a.dagen < volDagen;
 
+    var stroomKosten =
+      a.allinInk +
+      a.allinVerk;
+
     function rij(
       label,
       detail,
@@ -4861,38 +5008,21 @@
           a.allinVerk
         ) +
 
-        rij(
-          'Netbeheer',
-          num(
-            a.dagen,
-            0
-          ) +
-          ' dagen',
-          a.vast,
-          {
-            streep: true
-          }
-        ) +
-
         (
           perMaand
-            ? rij(
-                'Voorschot',
-                deelPeriode
-                  ? (
-                      a.dagen +
-                      ' van ' +
-                      volDagen +
-                      ' dagen'
-                    )
-                  : '',
-                a.voorschot,
+            ? ''
+            : rij(
+                'Netbeheer',
+                num(
+                  a.dagen,
+                  0
+                ) +
+                ' dagen',
+                a.vast,
                 {
-                  neutraal:
-                    true
+                  streep: true
                 }
               )
-            : ''
         ) +
 
         (
@@ -4930,7 +5060,7 @@
 
         rij(
           perMaand
-            ? 'Saldo'
+            ? 'Stroomkosten'
             : (
                 contractPeriode
                   ? 'Huidig contractsaldo'
@@ -4938,7 +5068,7 @@
               ),
           '',
           perMaand
-            ? a.saldo
+            ? stroomKosten
             : (
                 contractPeriode
                   ? ctx.contractSaldo
@@ -4954,7 +5084,7 @@
 
     var eindbedrag =
       perMaand
-        ? a.saldo
+        ? stroomKosten
         : (
             contractPeriode
               ? ctx.contractSaldo
@@ -4990,15 +5120,19 @@
           '">' +
 
           (
-            deelPeriode
+            perMaand
               ? (
                   num(
                     a.dagen,
                     0
                   ) +
-                  ' van ' +
-                  volDagen +
-                  ' dagen \u00b7 alles naar rato'
+                  (
+                    deelPeriode
+                      ? ' van ' +
+                        volDagen
+                      : ''
+                  ) +
+                  ' dagen \u00b7 alleen afname en teruglevering'
                 )
               : (
                   (
@@ -5048,8 +5182,9 @@
           ';">' +
 
           (
-            perMaand ||
-            contractPeriode
+            perMaand
+              ? 'stroomkosten'
+              : contractPeriode
               ? (
                   eindbedrag < 0
                     ? 'nog te betalen'
@@ -5086,12 +5221,9 @@
           ' van de ' +
           volDagen +
           ' dagen verwerkt. ' +
-          'Netbeheer en voorschot tellen naar rato mee, ' +
-          'zodat er niet een hele maand voorschot tegenover ' +
-          a.dagen +
-          ' dagen kosten staat. ' +
-          'Het resterende deel van het voorschot is wel betaald ' +
-          'en schuift mee zodra de maand compleet is.'
+          'Dit stroomkostenblok bevat alleen afname en teruglevering. ' +
+          'Netbeheer, voorschotten en de vaste belastingvermindering ' +
+          'zijn hier niet meegerekend.'
         )
       );
     }
@@ -6601,21 +6733,58 @@
       werkelijkTot +
       betaald;
 
-    var pct =
-      Math.round(
-        (
-          maandenBekend /
-          12
-        ) *
-        100
+    var voortgang =
+      contractVoortgang(
+        cfg.start,
+        new Date()
       );
+
+    var pct =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          voortgang.pctExact
+        )
+      );
+
+    var pctTekst =
+      (
+        Math.round(
+          pct * 10
+        ) /
+        10
+      )
+        .toFixed(1)
+        .replace('.', ',');
 
     var eind =
       new Date(
-        cfg.start.getFullYear(),
-        cfg.start.getMonth() + 12,
-        cfg.start.getDate() - 1
+        voortgang.grens.getTime()
       );
+
+    eind.setDate(
+      eind.getDate() - 1
+    );
+
+    var duurTekst =
+      !voortgang.gestart
+        ? 'nog niet gestart'
+        : voortgang.voltooid
+          ? '12 mnd · voltooid'
+          : voortgang.maanden +
+            ' mnd' +
+            (
+              voortgang.restDagen > 0
+                ? ' + ' +
+                  voortgang.restDagen +
+                  (
+                    voortgang.restDagen === 1
+                      ? ' dag'
+                      : ' dgn'
+                  )
+                : ''
+            );
 
     c.appendChild(
       el(
@@ -6692,16 +6861,6 @@
           cfg.start.getFullYear() +
           '</span>' +
 
-          '<span style="' +
-          'color:' +
-          D.paars +
-          ';font-weight:600;' +
-          '">' +
-          '\u25cf nu (' +
-          maandenBekend +
-          ' mnd)' +
-          '</span>' +
-
           '<span>' +
           eind.getDate() +
           ' ' +
@@ -6710,6 +6869,30 @@
           ] +
           ' ' +
           eind.getFullYear() +
+          '</span>' +
+
+        '</div>' +
+
+        '<div style="' +
+        'height:16px;' +
+        'position:relative;' +
+        'font-size:10px;' +
+        'color:' +
+        D.paars +
+        ';font-weight:600;' +
+        '">' +
+
+          '<span style="' +
+          'position:absolute;' +
+          'left:clamp(64px,' +
+          pct +
+          '%,calc(100% - 64px));' +
+          'transform:translateX(-50%);' +
+          'white-space:nowrap;' +
+          '">' +
+          '\u25cf nu (' +
+          duurTekst +
+          ')' +
           '</span>' +
 
         '</div>' +
@@ -6757,9 +6940,12 @@
         D.grijs +
         ';margin-top:4px;' +
         '">' +
-        maandenBekend +
-        ' van 12 maanden \u00b7 ' +
-        pct +
+        'Contractdag ' +
+        voortgang.contractDag +
+        ' van ' +
+        voortgang.totaalDagen +
+        ' \u00b7 ' +
+        pctTekst +
         '% van contractjaar' +
         '</div>'
       )
@@ -10432,7 +10618,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.4.1' +
+        'Instellingen v4.5.4.2' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10891,7 +11077,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.4.1'
+    '4.5.4.2'
   );
 
   var TAG =
@@ -13206,8 +13392,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.1') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.1');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.2') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.2');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

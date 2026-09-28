@@ -32,8 +32,10 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.4.1**
+**4.5.4.2**
 
+- De contractbalk toont de echte verstreken kalenderdagen, het kalenderpercentage en de actuele positie binnen de contracttermijn.
+- Het maandoverzicht toont onder **Stroomkosten** uitsluitend afname en teruglevering; netbeheer, voorschotten en de vaste belastingvermindering blijven erbuiten.
 - **Rustâââgh** staat op Actueel standaard aan en kan rechts in de kopbalk van Live Status worden uitgeschakeld.
 - De herkenning van Live Status gebruikt de inhoud van het dashboard in plaats van vaste pixelhoogtes, zodat Rustâââgh ook met Firefox-lettermetingen en zoom werkt.
 - Live vermogenswaarden gebruiken tabulaire cijfers en een vaste breedte, terwijl de bestaande flipanimatie behouden blijft.
