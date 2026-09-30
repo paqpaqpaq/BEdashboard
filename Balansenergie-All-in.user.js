@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.5.4.3
+// @name         Balansenergie All-in v4.6
 // @namespace    paq.balansenergie
-// @version      4.5.4.3
+// @version      4.6
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,8 +35,139 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.5.4.3'
+    '4.6'
   );
+
+  // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
+  var BE_DARK_KEY = 'be_cfg_darkmode';
+  var beDarkOn = localStorage.getItem(BE_DARK_KEY) === 'aan';
+  var beDarkSheet, beDarkObserver, beDarkTimer, beDarkPending = new Set();
+  var beDarkRules = new Map();
+  function beDarkColor(value, kind) {
+    if (typeof value !== 'string') return value;
+    value=value.trim();
+    if(value==='white')value='rgb(255,255,255)';
+    if(value==='black')value='rgb(0,0,0)';
+    if(/^#[0-9a-f]{3,8}$/i.test(value)){
+      var hex=value.slice(1);if(hex.length===3||hex.length===4)hex=hex.split('').map(function(c){return c+c;}).join('');
+      value='rgba('+[0,2,4].map(function(i){return parseInt(hex.slice(i,i+2),16);}).join(',')+','+(hex.length===8?parseInt(hex.slice(6,8),16)/255:1)+')';
+    }
+    var srgb=value.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/);
+    if(srgb)value='rgba('+[1,2,3].map(function(i){return Math.round(+srgb[i]*255);}).join(',')+','+(srgb[4]||1)+')';
+    var m=value.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/);
+    if(!m)return value;
+    var r=+m[1],g=+m[2],b=+m[3],a=m[4]==null?1:+m[4];
+    if(!a)return value;
+    var hi=Math.max(r,g,b),lo=Math.min(r,g,b),light=(r+g+b)/3;
+    var neutral=hi-lo<48;
+    var out;
+    if(kind==='background') {
+      if(r>b*.85&&b>r*.75&&b>g*1.12&&hi-lo>48)out=[139,115,78];
+      else if(light>180)out=light>245?[55,50,43]:[69,64,54];
+      else if(neutral&&light>95)out=[78,71,60];
+    } else if(kind==='border') {
+      if(light>150)out=[103,94,79];
+    } else {
+      if(neutral)out=light<90?[232,225,213]:light<205?[191,182,165]:null;
+      else if(r>b*.85&&b>r*.75&&b>g*1.12){out=[203,181,143];}
+      else if(g>r*1.15&&g>b*1.05){out=[51,192,113];}
+      else if(r>g*1.4&&r>b*1.2){out=[242,79,91];}
+      else if(light<190) {
+        // Lift existing hue rather than replacing status/series colours.
+        var t=light<80?.55:.40;
+        out=[r,g,b].map(function(v){return Math.round(v+(255-v)*t);});
+      }
+    }
+    return out?'rgba('+out.join(',')+','+a+')':value;
+  }
+  function beDarkRefresh() {
+    if(!beDarkOn||!beDarkSheet)return;
+    var roots=Array.from(beDarkPending);beDarkPending.clear();
+    // Read the site's original colours synchronously; no unthemed frame is painted.
+    beDarkSheet.disabled=true;
+    var updates=[];
+    try {
+      var seen=new Set();
+      roots.forEach(function(root){
+        if(!root.isConnected)return;
+        [root].concat(Array.from(root.querySelectorAll('*'))).forEach(function(e){
+          if(seen.has(e)||/^(SCRIPT|STYLE|LINK|META|NOSCRIPT|CANVAS)$/.test(e.tagName))return;
+          seen.add(e);
+          var c=getComputedStyle(e),rules=[];
+          function add(prop,val,kind){var next=beDarkColor(val,kind);if(next!==val)rules.push(prop+':'+next+'!important');}
+          add('color',c.color,'text');add('background-color',c.backgroundColor,'background');
+          ['Top','Right','Bottom','Left'].forEach(function(side){add('border-'+side.toLowerCase()+'-color',c['border'+side+'Color'],'border');});
+          if(e.namespaceURI==='http://www.w3.org/2000/svg') {add('fill',c.fill,'text');add('stroke',c.stroke,'text');}
+          // Preserve gradients and dotted patterns; change only their colour stops.
+          if(c.backgroundImage&&c.backgroundImage!=='none'){
+            var bg=c.backgroundImage.replace(/(?:rgba?|color)\([^)]*\)|#[0-9a-f]{3,8}\b|\bwhite\b/gi,function(v){return beDarkColor(v,'background');});
+            if(bg!==c.backgroundImage)rules.push('background-image:'+bg+'!important');
+          }
+          if(c.boxShadow&&c.boxShadow!=='none')rules.push('box-shadow:'+c.boxShadow.replace(/rgba?\([^)]*\)/g,'rgba(0,0,0,.18)')+'!important');
+          // Keep toggle thumbs white; track hue and position communicate state.
+          var width=parseFloat(c.width),height=parseFloat(c.height),radius=parseFloat(c.borderRadius);
+          if(c.position==='absolute'&&width<=24&&height<=24&&radius>=6&&e.parentElement){
+            var pc=getComputedStyle(e.parentElement);
+            if(pc.position==='relative'&&parseFloat(pc.width)>=28&&parseFloat(pc.width)<=60&&parseFloat(pc.height)<=32)
+              rules.push('background-color:#eee7da!important','box-shadow:0 1px 3px #0008!important');
+          }
+          if(c.position==='relative'&&width>=28&&width<=60&&height>=16&&height<=32&&radius>=8&&e.firstElementChild){
+            var tc=getComputedStyle(e.firstElementChild);
+            if(tc.position==='absolute'){
+              var child=e.firstElementChild, explicit=e.getAttribute('aria-checked');
+              var targetTransform=child.style.transform, targetLeft=child.style.left;
+              var shift=targetTransform.match(/translateX\(\s*([-\d.]+)/);
+              var on=explicit!==null?explicit==='true':shift?+shift[1]>5:targetLeft?parseFloat(targetLeft)>5:parseFloat(tc.left)>5||(/matrix\(/.test(tc.transform)&&parseFloat(tc.transform.split(',')[4])>5);
+              rules.push('background-color:'+(on?'#9d8764':'#59554e')+'!important','border-color:#b3a58d!important');
+            }
+          }
+          if(parseFloat(c.borderRadius)>=6&&parseFloat(c.borderTopWidth)>0&&width>160&&height>45)
+            rules.push('background-color:#454036!important','background-image:none!important');
+          updates.push([e,rules.join(';'),'']);
+          ['::before','::after'].forEach(function(pseudo){
+            var pc=getComputedStyle(e,pseudo);if(pc.content==='none'||pc.content==='normal')return;
+            var pr=[],pb=beDarkColor(pc.backgroundColor,'background');
+            if(pb!==pc.backgroundColor)pr.push('background-color:'+pb+'!important');
+            var pi=pc.backgroundImage.replace(/(?:rgba?|color)\([^)]*\)|#[0-9a-f]{3,8}\b|\bwhite\b/gi,function(v){return beDarkColor(v,'background');});
+            if(pi!==pc.backgroundImage)pr.push('background-image:'+pi+'!important');
+            updates.push([e,pr.join(';'),pseudo]);
+          });
+        });
+      });
+    } finally {beDarkSheet.disabled=false;}
+    updates.forEach(function(pair){
+      var e=pair[0],rule=pair[1],pseudo=pair[2]||'',attr='data-be-dark-colors'+pseudo.replace('::','-');if(!rule){e.removeAttribute(attr);return;}
+      var id=beDarkRules.get(pseudo+rule);
+      if(!id){id='c'+beDarkRules.size;beDarkRules.set(pseudo+rule,id);beDarkSheet.sheet.insertRule('html[data-be-dark="aan"] ['+attr+'="'+id+'"]'+pseudo+'{'+rule+'}',beDarkSheet.sheet.cssRules.length);}
+      if(e.getAttribute(attr)!==id)e.setAttribute(attr,id);
+    });
+  }
+  function beDarkQueue(root){
+    if(!beDarkOn||!root||root.nodeType!==1||/^(SCRIPT|STYLE)$/.test(root.tagName))return;
+    beDarkPending.add(root);
+    if(!beDarkTimer){beDarkTimer=true;queueMicrotask(function(){beDarkTimer=null;beDarkRefresh();});}
+  }
+  function beDarkApply(on){
+    beDarkOn=!!on;localStorage.setItem(BE_DARK_KEY,on?'aan':'uit');
+    document.documentElement.setAttribute('data-be-dark',on?'aan':'uit');
+    if(on&&document.body){beDarkPending.add(document.body);beDarkRefresh();}
+    document.dispatchEvent(new Event('be-dark-change'));
+  }
+  function beDarkInit(){
+    beDarkSheet=document.createElement('style');beDarkSheet.id='be-dark-style';
+    beDarkSheet.textContent='html[data-be-dark="aan"]{color-scheme:dark;background:#2c2924!important}html[data-be-dark="aan"] body{background-color:#2c2924!important;color:#dddfe3!important}html[data-be-dark="aan"] .summary-compact-metric{background:#454036!important;background-image:none!important;border-color:#675e4f!important}html[data-be-dark="aan"] .summary-compact-label{color:#bfb6a5!important}html[data-be-dark="aan"] body .summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric{background:#454036!important;background-image:none!important;border-color:#675e4f!important;color:#e8e1d5!important}html[data-be-dark="aan"] body .summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric.summary-compact-metric .summary-compact-label{color:#bfb6a5!important}html[data-be-dark="aan"] body :is(nav,.sidebar,.sidenav){background:#211e1a!important}html[data-be-dark="aan"] #be-panelen table tr:nth-child(odd){background:#37332c!important}html[data-be-dark="aan"] #be-panelen table tr:nth-child(even){background:#454035!important}html[data-be-dark="aan"] #be-panelen details{background:#373229!important}html[data-be-dark="aan"] #be-panelen summary{color:#bfb6a5!important}html[data-be-dark="aan"] #be-panelen details>div:first-of-type>div:nth-child(odd){background:#37332c!important}html[data-be-dark="aan"] #be-panelen details>div:first-of-type>div:nth-child(even){background:#454035!important}html[data-be-dark="aan"] body :is(nav,.sidebar,.sidenav) a{color:#e8e1d5!important}html[data-be-dark="aan"] body :is(nav,.sidebar,.sidenav) a:hover{background:#514838!important;color:#f0e8da!important}html[data-be-dark="aan"] body :is(nav,.sidebar,.sidenav) a:is(.active,[aria-current="page"]),html[data-be-dark="aan"] body :is(.nav-link.active,.btn-primary,.btn-check:checked+.btn,[aria-pressed="true"],[aria-selected="true"]){background:#8b734e!important;border-color:#ad946b!important;color:#fff3dd!important}html[data-be-dark="aan"] body :is(.btn-light,.btn-outline-primary){background:#454036!important;border-color:#675e4f!important;color:#e8e1d5!important}';
+    document.documentElement.appendChild(beDarkSheet);
+    beDarkObserver=new MutationObserver(function(records){records.forEach(function(r){
+      if(r.type==='attributes')beDarkQueue(r.target.parentElement||r.target);
+      else r.addedNodes.forEach(beDarkQueue);
+    });});
+    beDarkObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});
+    window.addEventListener('resize',function(){beDarkQueue(document.body);});
+    var bridge=document.createElement('script');bridge.textContent="(function(){\n if(window.__beDarkCanvas)return;window.__beDarkCanvas=true;\nfunction beDarkColor(value, kind) {\n    if (typeof value !== 'string') return value;\n    value=value.trim();\n    if(value==='white')value='rgb(255,255,255)';\n    if(value==='black')value='rgb(0,0,0)';\n    if(/^#[0-9a-f]{3,8}$/i.test(value)){\n      var hex=value.slice(1);if(hex.length===3||hex.length===4)hex=hex.split('').map(function(c){return c+c;}).join('');\n      value='rgba('+[0,2,4].map(function(i){return parseInt(hex.slice(i,i+2),16);}).join(',')+','+(hex.length===8?parseInt(hex.slice(6,8),16)/255:1)+')';\n    }\n    var srgb=value.match(/^color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)(?:\\s*\\/\\s*([\\d.]+))?\\)$/);\n    if(srgb)value='rgba('+[1,2,3].map(function(i){return Math.round(+srgb[i]*255);}).join(',')+','+(srgb[4]||1)+')';\n    var m=value.match(/^rgba?\\(\\s*([\\d.]+)[, ]+([\\d.]+)[, ]+([\\d.]+)(?:\\s*[,/]\\s*([\\d.]+))?\\s*\\)$/);\n    if(!m)return value;\n    var r=+m[1],g=+m[2],b=+m[3],a=m[4]==null?1:+m[4];\n    if(!a)return value;\n    var hi=Math.max(r,g,b),lo=Math.min(r,g,b),light=(r+g+b)/3;\n    var neutral=hi-lo<48;\n    // Data colours retain their identity; theme only neutral chart surfaces.\n    if(hi-lo>=48){\n      var data;\n      if(r>g*1.4&&r>b*1.2)data=g>75&&g>b*1.5?[236,165,36]:[242,79,91];\n      else if(g>r*1.15&&g>b*1.05)data=[51,192,113];\n      else if(b>r*1.15&&g>r*1.1)data=[49,173,222];\n      else if(r>b*.85&&b>r*.75&&b>g*1.12)data=[203,181,143];\n      if(data)return 'rgba('+data.join(',')+','+(kind==='background'?Math.max(a,.72):a)+')';\n    }\n    var out;\n    if(kind==='background') {\n      if(light>180)out=light>245?[55,50,43]:[69,64,54];\n      else if(neutral&&light>95)out=[78,71,60];\n    } else if(kind==='border') {\n      if(light>150)out=[103,94,79];\n    } else {\n      if(neutral)out=light<90?[232,225,213]:light<205?[191,182,165]:null;\n      else if(r>b*.85&&b>r*.75&&b>g*1.12){out=[203,181,143];}\n      else if(g>r*1.15&&g>b*1.05){out=[51,192,113];}\n      else if(r>g*1.4&&r>b*1.2){out=[242,79,91];}\n      else if(light<190) {\n        // Lift existing hue rather than replacing status/series colours.\n        var t=light<80?.55:.40;\n        out=[r,g,b].map(function(v){return Math.round(v+(255-v)*t);});\n      }\n    }\n    return out?'rgba('+out.join(',')+','+a+')':value;\n  }\n function map(v,kind){\n  if(typeof v!=='string')return v;\n  if(/^#[0-9a-f]{6}$/i.test(v))v='rgb('+[1,3,5].map(function(i){return parseInt(v.slice(i,i+2),16);}).join(',')+')';\n  if(/^#[0-9a-f]{3}$/i.test(v))v='rgb('+[1,2,3].map(function(i){return parseInt(v[i]+v[i],16);}).join(',')+')';\n  return beDarkColor(v,kind);\n }\n var p=CanvasRenderingContext2D.prototype;\n ['fill','fillRect','fillText','stroke','strokeRect','strokeText'].forEach(function(name){\n  var original=p[name];if(!original)return;\n  p[name]=function(){\n   if(document.documentElement.getAttribute('data-be-dark')!=='aan')return original.apply(this,arguments);\n   var prop=name.indexOf('stroke')===0?'strokeStyle':'fillStyle',old=this[prop];\n   var kind=name.indexOf('Text')!==-1?'text':name.indexOf('stroke')===0?(this.lineWidth<1.5?'border':'text'):'background';\n   this[prop]=map(old,kind);\n   try{return original.apply(this,arguments);}finally{this[prop]=old;}\n  };\n });\n document.addEventListener('be-dark-change',function(){\n  if(typeof Chart==='undefined'||!Chart.getChart)return;\n  document.querySelectorAll('canvas').forEach(function(cv){var c=Chart.getChart(cv);if(c)c.draw();});\n });\n})();\n";
+    document.documentElement.appendChild(bridge);bridge.remove();
+    beDarkApply(beDarkOn);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',beDarkInit,{once:true});else beDarkInit();
 
   var EB_BASIS = 0.09161;
   var BTW      = 1.21;
@@ -107,7 +238,7 @@
       localStorage.getItem(LS.balansBlok) !== 'uit',
 
     // Resultaten begint bij iedere paginalaad met de originele Balans-data.
-    allin: false
+    allin: localStorage.getItem(LS.allin) === 'aan'
   };
 
   var salderingPrognose = false;
@@ -333,29 +464,67 @@
     });
     return Array.from(map.values()).sort(function (a,b) { return a.t-b.t; });
   }
-  function beVoegPrijzenSamen(oud, nieuw, events) {
+  function beVoegPrijzenSamen(oud, nieuw, events, discovery) {
     var map = new Map((oud || []).map(function (p) { return [p.start, p]; }));
+    var richtingen = {};
+    (discovery || []).forEach(function (d) { richtingen[d.start] = d; });
     (nieuw || []).forEach(function (p) {
       if (!p || !Number.isFinite(p.start) || !Number.isFinite(p.end) || p.end <= p.start) return;
       var vorig = map.get(p.start);
-      if (vorig && vorig.end !== p.end) return;
-      var values = Object.assign({}, vorig ? vorig.values : {});
-      Object.keys(p.values || {}).forEach(function (k) {
-        if (Number.isFinite(p.values[k])) values[k] = p.values[k];
+      // An explicitly final source cannot be downgraded by an older provisional response.
+      if (vorig && vorig.provisional === false && p.provisional === true) return;
+      var oudT = vorig && Date.parse(vorig.updatedAt);
+      var nieuwT = Date.parse(p.updatedAt);
+      if (vorig && vorig.provisional === p.provisional && Number.isFinite(oudT) && Number.isFinite(nieuwT) && nieuwT < oudT) return;
+      var d = richtingen[p.start];
+      var afrr = Array.isArray(events) ? events.indexOf(p.start) !== -1 : !!p.afrr;
+      // Replace this snapshot, including nulls and corrections; do not mix tariff revisions.
+      var snapshot = Object.assign({}, p, {
+        values: Object.assign({}, p.values || {}), afrr: afrr,
+        directions: d && Array.isArray(d.directions) ? d.directions.slice() :
+          (Array.isArray(p.directions) ? p.directions.slice() : null)
       });
-      if (!Object.keys(values).length) return;
-      map.set(p.start, { start:p.start, end:p.end, values:values,
-        afrr: !!(vorig && vorig.afrr) || (events || []).indexOf(p.start) !== -1 });
+      // Keep observations separately from the latest quarter settlement snapshot.
+      var verloop = Array.from(new Map([].concat(vorig && vorig.verloop || [], p.verloop || []).map(function(v){return [v.t,v];})).values()).sort(function(a,b){return a.t-b.t;});
+      var nu = Date.now();
+      if (p.start <= nu && nu < p.end) {
+        var r = actueelPrijsRij(snapshot);
+        if (Number.isFinite(r.ki) && Number.isFinite(r.ke)) {
+          var last = verloop[verloop.length - 1];
+          if (!last || last.ki !== r.ki || last.ke !== r.ke ||
+              last.marktImport !== r.marktImport || last.marktExport !== r.marktExport) {
+            // Observation time: never invent a historical transition from a revised snapshot.
+            verloop.push({ t:nu, ki:r.ki, ke:r.ke,
+              marktImport:r.marktImport, marktExport:r.marktExport });
+          }
+        }
+      }
+      snapshot.verloop = verloop;
+      map.set(p.start, snapshot);
     });
     return Array.from(map.values()).sort(function (a,b) { return a.start-b.start; });
   }
+
+  function actueelPrijsRij(p) {
+    var v = p.values || {}, ds = p.directions;
+    var ai = Array.isArray(ds) ? ds.indexOf('import') !== -1 : !!p.afrr;
+    var ae = Array.isArray(ds) ? ds.indexOf('export') !== -1 : !!p.afrr;
+    return { start:p.start, end:p.end, afrr:ai || ae,
+      marktImport:ai ? 'aFRR' : 'onbalans', marktExport:ae ? 'aFRR' : 'onbalans',
+      ki:v[ai ? 'afrr_import' : 'onbalans_import'],
+      ke:v[ae ? 'afrr_export' : 'onbalans_export'],
+      provisional:p.provisional, fresh:p.fresh, updatedAt:p.updatedAt,
+      carried:!!p.carried, sourceStart:p.sourceStart,
+      verloop:p.verloop || [], values:Object.assign({}, v) };
+  }
+
   async function beVerwerkBron(u, j) {
     var prijs = u.pathname.indexOf('current-prices') !== -1;
     if (prijs) {
       var oud = await beLeesBron('prijzen');
-      var rows = beVoegPrijzenSamen(oud.rows, j && j.prices, j && j.afrrEventIsps);
+      var rows = beVoegPrijzenSamen(oud.rows, j && j.prices, j && j.afrrEventIsps, j && j.afrrDiscovery);
       if (j && Array.isArray(j.prices)) await beSchrijfBron('prijzen', { rows: rows });
-      return { prices: rows, afrrEventIsps: rows.filter(function (p) { return p.afrr; }).map(function (p) { return p.start; }) };
+      return { generatedAt:j && j.generatedAt, prices: rows, afrrEventIsps: rows.filter(function (p) { return p.afrr; }).map(function (p) { return p.start; }) };
     }
     var vanaf = Number(u.searchParams.get('start')), tot = Number(u.searchParams.get('end'));
     if (!Number.isFinite(vanaf) || !Number.isFinite(tot) || tot <= vanaf) throw new Error('Ongeldig archiefbereik');
@@ -405,7 +574,10 @@
   var beArchiefBezig = false;
   var beArchiefImportKlaar = false;
   async function beArchiefOnderhoud() {
-    if (!KLANT || KLANT === 'account' || beArchiefBezig) return;
+    if (!KLANT || KLANT === 'account' || beArchiefBezig || document.hidden) return;
+    var onderhoudKey='be_onderhoud_laatst:'+KLANT;
+    if(Date.now()-Number(sessionStorage.getItem(onderhoudKey)||0)<300000)return;
+    sessionStorage.setItem(onderhoudKey,String(Date.now()));
     beArchiefBezig = true;
     try {
       if (!beArchiefImportKlaar) {
@@ -1464,8 +1636,43 @@
     return KLANT;
   }
 
-  var origFetch =
-    window.fetch.bind(window);
+  var beNativeFetch = window.fetch.bind(window);
+  var beApiPending = new Map(), beApiCache = new Map();
+  function beApiFetch(input, init) {
+    var u=new URL(typeof input==='string'?input:input.url||input.href,location.origin);
+    var method=(init&&init.method)||input.method||'GET';
+    if(method.toUpperCase()!=='GET'||u.origin!==location.origin||!u.pathname.includes('api'))return beNativeFetch(input,init);
+    u.searchParams.sort();var key=u.href;
+    var ttl=u.pathname.includes('current-prices')?15000:u.pathname.includes('current-history')?30000:60000;
+    var now=Date.now(),cached=beApiCache.get(key);
+    var diskKey='be_api_cache:'+key;
+    if(!cached&&u.pathname.includes('results')){
+      try{var saved=JSON.parse(sessionStorage.getItem(diskKey)||'null');
+        if(saved&&now-saved.time<ttl)cached={time:saved.time,response:new Response(saved.body,{status:200,headers:{'Content-Type':'application/json'}})};
+      }catch(e){}
+    }
+    if(cached&&now-cached.time<ttl)return Promise.resolve(cached.response.clone());
+    if(beApiPending.has(key))return beApiPending.get(key).then(function(r){return r.clone();});
+    var until=Number(localStorage.getItem('be_api_retry_until')||0);
+    if(now<until)return Promise.resolve(new Response('',{status:429,headers:{'Retry-After':String(Math.ceil((until-now)/1000))}}));
+    var request=beNativeFetch(input,init).then(function(r){
+      if(r.status===429){
+        var retry=r.headers.get('Retry-After'),seconds=Number(retry);
+        var delay=retry?(Number.isFinite(seconds)?seconds*1000:Date.parse(retry)-Date.now()):60000;
+        if(!Number.isFinite(delay)||delay<1000)delay=60000;
+        localStorage.setItem('be_api_retry_until',String(Date.now()+delay));
+      }
+      if(r.ok&&u.pathname.includes('results'))r.clone().text().then(function(body){
+      if(body.length>300000)return;
+      try{sessionStorage.setItem(diskKey,JSON.stringify({time:Date.now(),body:body}));}catch(e){}
+    }).catch(function(){});
+    if(r.ok){beApiCache.set(key,{time:Date.now(),response:r.clone()});if(beApiCache.size>40)beApiCache.delete(beApiCache.keys().next().value);}
+      return r;
+    }).finally(function(){beApiPending.delete(key);});
+    beApiPending.set(key,request);
+    return request.then(function(r){return r.clone();});
+  }
+  var origFetch = beApiFetch;
 
 
   /*
@@ -1582,6 +1789,139 @@
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
     "  catch(e){console.error('[BE Actueel all-in bridge]',e);}\n" +
     " });\n" +
+    " var TG_KW=900000;\n" +
+    " var TG={rijen:[],aan:false,allin:true};\n" +
+    " function tgBedrag(v){return (v<0?'\\u2212 ':'+ ')+Math.abs(v).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});}\n" +
+    " Chart.register({id:'beTariefBanden',beforeDatasetsDraw:function(c){\n" +
+    "  if(!c.canvas||c.canvas.id!=='be-tarief-chart')return;\n" +
+    "  var x=c.scales.x,a=c.chartArea,t=c.ctx; if(!x||!a)return;\n" +
+    "  t.save(); t.beginPath(); t.rect(a.left,a.top,a.right-a.left,a.bottom-a.top); t.clip();\n" +
+    "  t.fillStyle='#ffffff'; t.fillRect(a.left,a.top,a.right-a.left,a.bottom-a.top);\n" +
+    "  t.textAlign='center';\n" +
+    "  (c.$beKwartieren||[]).forEach(function(q){\n" +
+    "   var p1=Math.max(a.left,x.getPixelForValue(q.start));\n" +
+    "   var p2=Math.min(a.right,x.getPixelForValue(q.end));\n" +
+    "   if(p2<=p1)return;\n" +
+    "   if(Math.floor(q.start/TG_KW)%2){t.fillStyle='#f1f2f4';t.fillRect(p1,a.top,p2-p1,a.bottom-a.top);}\n" +
+    "   var mid=(p1+p2)/2;\n" +
+    "   var lab=q.wacht?'geen prijs':q.carried?'laatst bekend':(q.afrr?'aFRR':'onbalans');\n" +
+    "   var live=q.start<=Date.now()&&Date.now()<q.end;\n" +
+    "   \n" +
+    "   t.font='600 9.5px system-ui,-apple-system,sans-serif';\n" +
+    "   t.fillStyle=q.wacht?'#8a8f98':(q.afrr?'#6B3FA0':'#2f6f9f');\n" +
+    "   var ruimte=p2-p1-4;\n" +
+    "   if(ruimte>=t.measureText(lab).width){\n" +
+    "    t.fillText(lab,mid,a.top+11);\n" +
+    "   }else if(ruimte>=24){\n" +
+    "    t.font='600 8px system-ui,-apple-system,sans-serif';\n" +
+    "    t.fillText(q.wacht?'wacht':(q.afrr?'aFRR':'onb.'),mid,a.top+11);\n" +
+    "   }else if(ruimte>=8){\n" +
+    "    t.save();t.translate(mid,a.top+4);t.rotate(-Math.PI/2);t.textAlign='right';\n" +
+    "    t.fillText(lab,0,3);t.restore();\n" +
+    "   }\n" +
+    "   if(ruimte<24)return;\n" +
+    "   if(q.res==null||Math.abs(q.res)<0.005)return;\n" +
+    "   var bt=tgBedrag(q.res)+(q.deel?'\\u2026':'');\n" +
+    "   t.font='700 12px system-ui,-apple-system,sans-serif';\n" +
+    "   if(p2-p1<t.measureText(bt).width+8)return;\n" +
+    "   t.fillStyle=q.deel?'#8a8f98':(q.res<0?'#dc3545':'#198754');\n" +
+    "   t.fillText(bt,mid,a.top+25);\n" +
+    "  });\n" +
+    "  t.restore();\n" +
+    " }});\n" +
+    " var tgChart=null;\n" +
+    " function tgMaak(){\n" +
+    "  if(tgChart&&tgChart.canvas&&tgChart.canvas.isConnected)return tgChart;\n" +
+    "  var cv=document.getElementById('be-tarief-chart'); if(!cv)return null;\n" +
+    "  var o=Chart.getChart(cv); if(o)o.destroy();\n" +
+    "  tgChart=new Chart(cv,{type:'line',data:{datasets:[\n" +
+    "   {label:'Afname',borderColor:'#dc3545',borderWidth:2,pointRadius:0,stepped:'before',fill:false,tension:0,segment:{borderDash:function(s){return s.p0.raw.beLive?[5,4]:[];}}},\n" +
+    "   {label:'Invoeding',borderColor:'#198754',borderWidth:2,pointRadius:0,stepped:'before',fill:false,tension:0,segment:{borderDash:function(s){return s.p0.raw.beLive?[5,4]:[];}}}]},\n" +
+    "   options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'nl-NL',\n" +
+    "    layout:{padding:{top:6}},interaction:{mode:'index',intersect:false},\n" +
+    "    scales:{y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{size:11},callback:function(v){return v.toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});}}}},\n" +
+    "    plugins:{legend:{display:true,position:'top',align:'end',labels:{boxWidth:12,boxHeight:2,padding:6,font:{size:11}}},\n" +
+    "     tooltip:{callbacks:{title:function(i){\n" +
+    "       if(!i.length)return '';\n" +
+    "       var tm=i[0].parsed.x;\n" +
+    "       var q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
+    "       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' \u00b7 afname '+q.marktImport+' / invoeding '+q.marktExport:'');\n" +
+    "      },afterBody:function(i){\n" +
+    "       if(!i.length)return [];\n" +
+    "       var tm=i[0].parsed.x, q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
+    "       if(!q)return [];\n" +
+    "       var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend \u00b7 voorlopig':q.provisional===false?'Definitief':'Voorlopig'];\n" +
+    "       return out;\n" +
+    "      },\n" +
+    "      label:function(z){return z.dataset.label+': '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+' / kWh';}}}}}});\n" +
+    "  return tgChart;\n" +
+    " }\n" +
+    " function tgVul(){\n" +
+    "  var rij=document.getElementById('be-tarief-row');\n" +
+    "  if(rij)rij.hidden=!TG.aan;\n" +
+    "  if(!TG.aan)return;\n" +
+    "  var ch=tgMaak(); if(!ch)return;\n" +
+    "  var bv=chart();\n" +
+    "  if(bv&&bv.options.scales&&bv.options.scales.x){\n" +
+    "   var bx=bv.options.scales.x;\n" +
+    "   ch.options.scales.x=JSON.parse(JSON.stringify({type:bx.type,time:bx.time,bounds:bx.bounds,offset:bx.offset,grid:{display:false},\n" +
+    "    ticks:{maxRotation:bx.ticks.maxRotation,autoSkip:bx.ticks.autoSkip,source:bx.ticks.source,font:bx.ticks.font,color:bx.ticks.color,autoSkipPadding:bx.ticks.autoSkipPadding,padding:bx.ticks.padding}}));\n" +
+    "   if(bv.scales.x){ch.options.scales.x.min=bv.scales.x.min;ch.options.scales.x.max=bv.scales.x.max;}\n" +
+    "  }\n" +
+    "  var mn=ch.options.scales.x.min,mx=ch.options.scales.x.max;\n" +
+    "  var imp=[],exp=[],kw=[],gezien={}; var nu=Date.now();\n" +
+    "  (TG.rijen||[]).forEach(function(r){\n" +
+    "   if(mn!=null&&r.end<mn)return;\n" +
+    "   if(mx!=null&&r.start>mx)return;\n" +
+    "   if(gezien[r.start])return; gezien[r.start]=true;\n" +
+    "   kw.push(r);\n" +
+    "   if(r.wacht)return;\n" +
+    "   var live=r.start<=nu&&nu<r.end;\n" +
+    "   if(live){\n" +
+    "    // Never connect a settled quarter to a later first observation: stepped\n" +
+    "    // interpolation would falsely backdate its price to the quarter boundary.\n" +
+    "    imp.push({x:r.start,y:null}); exp.push({x:r.start,y:null});\n" +
+    "    var samples=(r.verloop||[]).filter(function(v){return v.t>=r.start&&v.t<=nu;});\n" +
+    "    if(samples.length){\n" +
+    "     samples.forEach(function(v){\n" +
+    "      imp.push({x:v.t,y:v.pi,beLive:true});\n" +
+    "      exp.push({x:v.t,y:v.pe,beLive:true});\n" +
+    "     });\n" +
+    "     var last=samples[samples.length-1];\n" +
+    "     imp.push({x:nu,y:last.pi,beLive:true});\n" +
+    "     exp.push({x:nu,y:last.pe,beLive:true});\n" +
+    "    }else{\n" +
+    "     imp.push({x:nu,y:r.pi,beLive:true});\n" +
+    "     exp.push({x:nu,y:r.pe,beLive:true});\n" +
+    "    }\n" +
+    "   }else{\n" +
+    "    imp.push({x:r.start,y:r.pi,beLive:false},{x:r.end,y:r.pi,beLive:false});\n" +
+    "    exp.push({x:r.start,y:r.pe,beLive:false},{x:r.end,y:r.pe,beLive:false});\n" +
+    "   }\n" +
+    "  });\n" +
+    "  ch.data.datasets[0].data=imp; ch.data.datasets[1].data=exp;\n" +
+    "  // Match both plot edges in screen coordinates, including differing canvas offsets.\n" +
+    "  if(bv&&bv.chartArea&&bv.scales.x){\n" +
+    "   var srcRect=bv.canvas.getBoundingClientRect(),dstRect=ch.canvas.getBoundingClientRect();\n" +
+    "   var srcRatio=srcRect.width/bv.width,dstRatio=dstRect.width/ch.width;\n" +
+    "   if(srcRatio>0&&dstRatio>0){\n" +
+    "    var left=(srcRect.left+bv.chartArea.left*srcRatio-dstRect.left)/dstRatio;\n" +
+    "    var right=(srcRect.left+bv.chartArea.right*srcRatio-dstRect.left)/dstRatio;\n" +
+    "    ch.options.layout.padding={top:6,left:0,right:Math.max(0,ch.width-right)};\n" +
+    "    ch.options.scales.y.afterFit=function(axis){axis.width=Math.max(0,left);};\n" +
+    "    var ticks=bv.scales.x.ticks.map(function(t){return {value:t.value};});\n" +
+    "    ch.options.scales.x.afterBuildTicks=function(axis){axis.ticks=ticks;};\n" +
+    "    ch.options.scales.x.ticks.autoSkip=false;\n" +
+    "   }\n" +
+    "  }\n" +
+    "  ch.$beKwartieren=kw; ch.update('none');\n" +
+    " }\n" +
+    " document.addEventListener('be-tarief-update',function(){\n" +
+    "  var n=document.getElementById('be-tarief-data'); if(!n)return;\n" +
+    "  try{TG=Object.assign(TG,JSON.parse(n.textContent||'{}'));tgVul();}\n" +
+    "  catch(e){console.error('[BE tariefgrafiek bridge]',e);}\n" +
+    " });\n" +
+    " setInterval(function(){ if(TG.aan) tgVul(); },3000);\n" +
     " setInterval(wikkel,3000);\n" +
     " console.log('[BE Actueel all-in bridge] actief');\n" +
     "})();\n";
@@ -1678,32 +2018,319 @@
     );
   }
 
-  function actueelHaal() {
-    if (
-      !isActueelPagina()
-    ) {
-      return Promise.resolve();
+  /* ──────────────────────────────────────────────────────────────────
+   *  Tariefgrafiek (v4.6)
+   *
+   *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
+   *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
+   *  tijdas en hetzelfde witte tekenvlak als de grafiek erboven; per vak het
+   *  etiket onbalans of aFRR en het resultaat van dat kwartier in euro.
+   *
+   *  Twee dingen die eerder fout gingen en hier bewust anders staan:
+   *
+   *  - Het etiket komt uit afrrEventIsps, nooit uit een prijsvergelijking.
+   *    Bij gewone onbalans verschillen afname en invoeding ook, want
+   *    opregelen en afregelen zijn twee tarieven. Over 141 kwartieren zat
+   *    een test op "de prijzen lopen uiteen" er 69 keer naast.
+   *
+   *  - Het bedrag komt uit actueelProjectieBereken, dezelfde motor als het
+   *    dagresultaat. Een eigen integratie met een gatgrens van twee minuten
+   *    haalde bijna de helft van de energie uit een kwartier; deze functie
+   *    gebruikt vijf minuten en interpoleert bovendien netjes.
+   * ────────────────────────────────────────────────────────────────── */
+
+  var TARIEF_SLEUTEL = 'be_cfg_tariefgrafiek';
+
+  var tariefAan =
+    localStorage.getItem(TARIEF_SLEUTEL) !== 'uit';
+
+  function tariefZorgBlok() {
+    if (!isActueelPagina()) {
+      return null;
     }
 
-    return beHaalBron(
-      location.origin +
-      '/customer/current-prices/api/',
-      {
-        credentials:
-          'same-origin',
+    var bestaand =
+      document.getElementById('be-tarief-row');
 
-        cache:
-          'no-store'
+    if (bestaand && bestaand.parentElement) {
+      return bestaand;
+    }
+
+    var soc =
+      document.querySelector('.energy-chart-soc-row');
+
+    if (!soc || !soc.parentElement) {
+      return null;
+    }
+
+    var rij =
+      document.createElement('div');
+
+    rij.id = 'be-tarief-row';
+    rij.className = 'energy-chart-soc-row';
+
+    rij.innerHTML =
+      '<div class="chart-frame" style="height:340px;">' +
+        '<canvas id="be-tarief-chart"></canvas>' +
+      '</div>' +
+      '<p class="charging-chart-note" id="be-tarief-noot"></p>';
+
+    soc.parentElement.insertBefore(rij, soc);
+
+    return rij;
+  }
+
+  function tariefStuur() {
+    if (!isActueelPagina()) {
+      return;
+    }
+
+    var blok = tariefZorgBlok();
+
+    if (blok) {
+      blok.hidden = !tariefAan;
+    }
+
+    var n =
+      document.getElementById('be-tarief-data');
+
+    if (!n) {
+      n = document.createElement('script');
+      n.type = 'application/json';
+      n.id = 'be-tarief-data';
+      document.documentElement.appendChild(n);
+    }
+
+    n.textContent =
+      JSON.stringify({
+        rijen: tariefAan ? tariefKwartieren() : [],
+        aan: tariefAan,
+        allin: actueelAan
+      });
+
+    document.dispatchEvent(
+      new Event('be-tarief-update')
+    );
+
+    tariefZetNoot();
+  }
+
+  /* Per kwartier de prijzen en het resultaat. Het resultaat loopt via
+     actueelProjectieBereken zodat het exact dezelfde regels volgt als het
+     dagbedrag in de bedieningsrij. */
+  function tariefKwartieren() {
+    var KW = 15 * 60 * 1000;
+    var nu = Date.now();
+    if (beLivePrijsRows && beLivePrijsRows.length) {
+      beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,nu);
+      actueelRijen=beLivePrijsRows.map(actueelPrijsRij).filter(function(r){return Number.isFinite(r.ki)&&Number.isFinite(r.ke);});
+    }
+    var uit = [];
+
+    var bekend = {};
+
+    actueelRijen.forEach(function (r) {
+      bekend[r.start] = r;
+    });
+
+    /* Balans publiceert een kwartier pas twee a drie minuten na het begin.
+       De lege kwartieren gaan toch mee, zodat het vak en het etiket
+       "prijs volgt" er alvast staan. */
+    var starts = Object.keys(bekend).map(Number);
+
+    var laatste = Math.floor(nu / KW) * KW;
+
+    if (starts.length) {
+      var vroegste = Math.min.apply(null, starts);
+
+      for (var k = vroegste; k <= laatste; k += KW) {
+        if (!bekend[k]) {
+          bekend[k] = { start: k, end: k + KW, ki: null, ke: null, afrr: false };
+        }
       }
-    )
+    }
 
-      .then(function (r) {
-        return r.ok
-          ? r.json()
-          : null;
-      })
+    Object.keys(bekend).map(Number).sort(function (a, b) {
+      return a - b;
+    }).forEach(function (k) {
+      var r = bekend[k];
 
-      .then(function (j) {
+      var heeftPrijs =
+        Number.isFinite(r.ki) &&
+        Number.isFinite(r.ke);
+
+      var res = null;
+      var deel = false;
+
+      if (heeftPrijs && !r.carried && actueelDagPunten.length) {
+        var b =
+          actueelProjectieBereken(
+            actueelDagPunten,
+            [r],
+            r.start,
+            r.end,
+            nu
+          );
+
+        if (b && b.stukken && !b.ongeldig) {
+          res = b.bedrag;
+          deel = b.gedekt < (r.end - r.start) * 0.97;
+        }
+      }
+
+      uit.push({
+        start: r.start,
+        end: r.end,
+        afrr: !!r.afrr,
+        marktImport:r.marktImport, marktExport:r.marktExport,
+        carried:!!r.carried, sourceStart:r.sourceStart,
+        provisional:r.provisional, fresh:r.fresh, updatedAt:r.updatedAt,
+        values:r.values,
+        verloop:(r.verloop || []).map(function (v) {
+          return { t:v.t, carried:!!v.carried,
+            pi:actueelAan ? actueelAllin(v.ki, false) : v.ki,
+            pe:actueelAan ? actueelAllin(v.ke, true) : v.ke };
+        }),
+        wacht: !heeftPrijs,
+        res: res,
+        deel: deel,
+
+        pi: heeftPrijs
+          ? (actueelAan ? actueelAllin(r.ki, false) : r.ki)
+          : null,
+
+        pe: heeftPrijs
+          ? (actueelAan ? actueelAllin(r.ke, true) : r.ke)
+          : null
+      });
+    });
+
+    return uit;
+  }
+
+  function tariefZetNoot() {
+    var n =
+      document.getElementById('be-tarief-noot');
+
+    if (!n) {
+      return;
+    }
+
+    n.textContent = (actueelAan
+      ? 'All-in, incl. btw, leverkosten en energiebelasting. '
+      : 'Kale tarieven, excl. btw, leverkosten en energiebelasting. ') +
+      'Gestippeld = lopend kwartier. Details in de tooltip.';
+  }
+
+  /* De schakelaar hoort naast de All-in knop in de bedieningsrij. In de
+     grafiek zelf zou hij mee verdwijnen zodra je hem uitzet. */
+  function tariefZorgKnop() {
+    if (!isActueelPagina()) {
+      return;
+    }
+
+    var rij =
+      document.getElementById('be-actueel-bedieningsrij') ||
+      document.querySelector('.energy-chart-legend');
+
+    if (!rij) {
+      return;
+    }
+
+    var b =
+      document.getElementById('be-tariefgrafiek-knop');
+
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button';
+      b.id = 'be-tariefgrafiek-knop';
+
+      b.style.cssText =
+        'appearance:none;-webkit-appearance:none;display:flex;' +
+        'align-items:center;gap:8px;border:0;border-left:1px solid #e8e2f0;' +
+        'background:transparent;padding:3px 14px;cursor:pointer;font:inherit;' +
+        'font-size:12px;color:#2b2733;white-space:nowrap;flex:0 0 auto;' +
+        'margin-left:auto;box-shadow:none;';
+
+      b.innerHTML =
+        '<span>Tariefgrafiek</span>' +
+        '<span data-be-tg-track style="position:relative;display:inline-block;' +
+          'width:34px;height:18px;border-radius:999px;flex-shrink:0;' +
+          'transition:background .18s ease;">' +
+          '<span data-be-tg-thumb style="position:absolute;left:2px;top:2px;' +
+            'width:14px;height:14px;border-radius:50%;background:#fff;' +
+            'box-shadow:0 1px 3px rgba(0,0,0,.35);' +
+            'transition:transform .18s ease;"></span>' +
+        '</span>' +
+        '<span data-be-tg-status style="min-width:24px;font-size:10px;' +
+          'font-weight:700;line-height:1;"></span>';
+
+      b.addEventListener('click', function () {
+        tariefAan = !tariefAan;
+
+        try {
+          localStorage.setItem(
+            TARIEF_SLEUTEL,
+            tariefAan ? 'aan' : 'uit'
+          );
+        } catch (e) {}
+
+        tariefTekenKnop();
+        tariefStuur();
+      });
+    }
+
+    var allin =
+      rij.querySelector('[data-be-actueel-allin]');
+
+    if (allin) {
+      if (b.nextElementSibling !== allin) {
+        rij.insertBefore(b, allin);
+      }
+    } else if (b.parentElement !== rij) {
+      rij.appendChild(b);
+    }
+
+    tariefTekenKnop();
+  }
+
+  function tariefTekenKnop() {
+    var b =
+      document.getElementById('be-tariefgrafiek-knop');
+
+    if (!b) {
+      return;
+    }
+
+    b.setAttribute(
+      'aria-pressed',
+      tariefAan ? 'true' : 'false'
+    );
+
+    b.title =
+      tariefAan
+        ? 'Tariefgrafiek verbergen'
+        : 'Tariefgrafiek tonen';
+
+    var track = b.querySelector('[data-be-tg-track]');
+    var thumb = b.querySelector('[data-be-tg-thumb]');
+    var status = b.querySelector('[data-be-tg-status]');
+
+    if (track) {
+      track.style.background = tariefAan ? '#6B3FA0' : '#9ca3af';
+    }
+
+    if (thumb) {
+      thumb.style.transform =
+        tariefAan ? 'translateX(16px)' : 'translateX(0)';
+    }
+
+    if (status) {
+      status.textContent = tariefAan ? 'AAN' : 'UIT';
+    }
+  }
+
+  function actueelPasPrijzenToe(j) {
         if (
           !j ||
           !Array.isArray(
@@ -1713,64 +2340,13 @@
           return;
         }
 
-        var evts = {};
-
-        (
-          j.afrrEventIsps || []
-        ).forEach(
-          function (t) {
-            evts[t] = true;
-          }
-        );
-
-        actueelRijen =
-          j.prices
-            .map(
-              function (p) {
-                var v =
-                  p.values || {};
-
-                var a =
-                  !!evts[
-                    p.start
-                  ];
-
-                var ki =
-                  a
-                    ? v.afrr_import
-                    : v.onbalans_import;
-
-                var ke =
-                  a
-                    ? v.afrr_export
-                    : v.onbalans_export;
-
-                if (
-                  typeof ki !==
-                    'number' ||
-                  !isFinite(ki)
-                ) {
-                  return null;
-                }
-
-                return {
-                  start:
-                    p.start,
-
-                  end:
-                    p.end,
-
-                  ki:
-                    ki,
-
-                  ke:
-                    ke
-                };
-              }
-            )
-            .filter(Boolean);
+        actueelRijen = j.prices.map(actueelPrijsRij).filter(function (r) {
+          return Number.isFinite(r.ki) && Number.isFinite(r.ke);
+        });
 
         actueelStuur();
+
+        tariefStuur();
 
         actueelWerkSchemaBij();
         actueelProjectieToon();
@@ -1783,7 +2359,77 @@
             ? 'aan'
             : 'uit'
         );
+  }
+
+  var beLivePrijsRows = [];
+  var bePrijsHydratie = null;
+  function beHerstelPrijsVerloop(){
+    if(bePrijsHydratie)return;
+    bePrijsHydratie=beLeesBron('prijzen').then(function(saved){
+      beLivePrijsRows=beVoegPrijzenSamen(saved.rows||[],beLivePrijsRows);
+      beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
+      if(isActueelPagina())actueelPasPrijzenToe({prices:beLivePrijsRows});
+    }).catch(function(e){console.warn('[BE prijsarchief lezen]',e.message);});
+  }
+  function beOverbrugPrijzen(rows, nu) {
+    var start=Math.floor(nu/900000)*900000;
+    var current=rows.find(function(p){return p.start===start;});
+    var prior=rows.filter(function(p){return p.end===start;}).pop();
+    if(!prior)return rows;
+    var previous=actueelPrijsRij(prior),r=current&&actueelPrijsRij(current);
+    if(!Number.isFinite(previous.ki)||!Number.isFinite(previous.ke))return rows;
+    var seed={t:start,ki:previous.ki,ke:previous.ke,marktImport:previous.marktImport,marktExport:previous.marktExport,carried:true};
+    var history=(current&&current.verloop||[]).slice();
+    if(!history.length||history[0].t>start)history.unshift(seed);
+    var usable=r&&Number.isFinite(r.ki)&&Number.isFinite(r.ke);
+    var replacement=usable?Object.assign({},current,{verloop:history}):
+      Object.assign({},prior,{start:start,end:start+900000,provisional:true,carried:true,sourceStart:prior.start,verloop:history});
+    return rows.filter(function(p){return p.start!==start;}).concat([replacement]).sort(function(a,b){return a.start-b.start;});
+  }
+  function beOntvangLivePrijzen(j) {
+    if(!j||!Array.isArray(j.prices))return;
+    beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
+    beLivePrijsRows=beVoegPrijzenSamen(beLivePrijsRows,j.prices,j.afrrEventIsps,j.afrrDiscovery);
+    beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
+    actueelPasPrijzenToe({prices:beLivePrijsRows});
+  }
+  function beBewaarPrijzenLater(j) {
+    var werk=beArchiefWachtrij.then(function(){return beVerwerkBron(new URL('/customer/current-prices/api/',location.origin),j);});
+    beArchiefWachtrij=werk.catch(function(e){console.warn('[BE prijsarchief]',e.message);});
+  }
+  var actueelPrijsBezig = false;
+  function actueelHaal() {
+    if (
+      !isActueelPagina()
+    ) {
+      return Promise.resolve();
+    }
+
+    if (actueelPrijsBezig) return Promise.resolve();
+    actueelPrijsBezig = true;
+    beHerstelPrijsVerloop();
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, 12000);
+    return origFetch(
+      location.origin +
+      '/customer/current-prices/api/',
+      {
+        credentials:
+          'same-origin',
+
+        signal: controller.signal,
+        cache:
+          'no-store'
+      }
+    )
+
+      .then(function (r) {
+        return r.ok
+          ? r.json()
+          : null;
       })
+
+      .then(function(j){beOntvangLivePrijzen(j);if(j)beBewaarPrijzenLater(j);})
 
       .catch(
         function (e) {
@@ -1792,7 +2438,10 @@
             e.message
           );
         }
-      );
+      ).finally(function () {
+        clearTimeout(timeout);
+        actueelPrijsBezig = false;
+      });
   }
 
   function actueelHaalDagPunten() {
@@ -1894,6 +2543,8 @@
             );
 
         actueelProjectieToon();
+
+        tariefStuur();
       })
 
       .catch(
@@ -2427,6 +3078,9 @@
 
     actueelStuur();
 
+    /* De tariefgrafiek toont dezelfde prijzen, dus die kantelt mee. */
+    tariefStuur();
+
     actueelWerkSchemaBij();
 
     actueelZetVoetnoot();
@@ -2909,9 +3563,11 @@
 
 
     if (
-      info.innerHTML !== tekst
+      info.__beResultaatTekst !== tekst
     ) {
       info.innerHTML = tekst;
+      info.__beResultaatTekst = tekst;
+      if(beDarkOn){beDarkPending.add(info);beDarkRefresh();}
     }
   }
 
@@ -2946,6 +3602,8 @@
 
     actueelBouwSchakelaar();
 
+    tariefZorgKnop();
+
     actueelProjectieToon();
 
     actueelZetVoetnoot();
@@ -2973,6 +3631,8 @@
       }
 
       actueelHaalDagPunten();
+
+      tariefStuur();
     }
   }
 
@@ -2996,14 +3656,18 @@
         3000
       );
 
+    setInterval(function () {
+      if (isActueelPagina()) actueelHaal();
+    }, 15000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && isActueelPagina()) actueelHaal();
+    });
     actueelHaalTimer =
       setInterval(
         function () {
           if (
             isActueelPagina()
           ) {
-            actueelHaal();
-
             actueelHaalDagPunten();
           }
         },
@@ -9261,6 +9925,17 @@
             init
           );
 
+        // Observe dashboard price refreshes immediately, without changing its response.
+        if (url.indexOf('/customer/current-prices/api/') !== -1) {
+          p.then(function (resp) {
+            if (!resp.ok) return;
+            return resp.clone().json().then(function (j) {
+              if (isActueelPagina()) beOntvangLivePrijzen(j);
+              beBewaarPrijzenLater(j);
+            });
+          }).catch(function () {});
+        }
+
         if (
           url.indexOf(
             'results-v2-api'
@@ -10313,6 +10988,7 @@
 
         cfg.allin =
           !cfg.allin;
+        localStorage.setItem(LS.allin, cfg.allin ? 'aan' : 'uit');
 
         lbl.style.color =
           cfg.allin
@@ -10639,7 +11315,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.5.4.3' +
+        'Instellingen v4.6' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -10674,6 +11350,8 @@
         cfg.start.getFullYear(),
         'text'
       ) +
+
+      knopje('be-p-dark', 'Donkere modus', 'Op alle pagina’s, met behoud van de bestaande indeling', beDarkOn) +
 
       knopje(
         'be-p-sald',
@@ -10749,12 +11427,15 @@
     );
 
     var staat = {
+      dark: beDarkOn,
       sald:
         cfg.saldering,
 
       balans:
         cfg.balansBlok
     };
+
+    hangKnopje('be-p-dark', staat, 'dark');
 
     hangKnopje(
       'be-p-sald',
@@ -10896,6 +11577,8 @@
           );
         }
 
+        beDarkApply(staat.dark);
+
         cfg.voorschot =
           v;
 
@@ -11035,7 +11718,7 @@
 
     startActueelAllin();
     beArchiefOnderhoud();
-    setInterval(beArchiefOnderhoud, 30000);
+    setInterval(beArchiefOnderhoud, 300000);
 
     pols();
 
@@ -11098,7 +11781,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.5.4.3'
+    '4.6'
   );
 
   var TAG =
@@ -13413,8 +14096,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.5.4.3') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.5.4.3');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
