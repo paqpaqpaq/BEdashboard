@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.6.3
+// @name         Balansenergie All-in v4.6.4
 // @namespace    paq.balansenergie
-// @version      4.6.3
+// @version      4.6.4
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.6.3'
+    '4.6.4'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -739,13 +739,15 @@
     tot
   ) {
     var opslag = leesVoorlopigeDagen();
-    if (res && res.prijsOnvolledig) return false;
     if (!voorlopigeBerekeningGeldig(dagKey, res, vanaf, tot)) {
       // Minder beschikbare bronnen wissen nooit een eerder bewezen resultaat.
       return false;
     }
     var eerder = opslag[dagKey];
-    if (eerder && Number.isFinite(eerder.gedektMs) && res.gedekt < eerder.gedektMs) return false;
+    // Reject truncated measurement windows, not a reduced availability of prices.
+    var gemetenMs = Number.isFinite(res.gemetenMs) ? res.gemetenMs : res.gedekt;
+    if (eerder && ((Number.isFinite(eerder.gemetenTot) && tot < eerder.gemetenTot) ||
+        (Number.isFinite(eerder.gemetenMs) && gemetenMs < eerder.gemetenMs))) return false;
     var nu = Date.now();
     var grenzen = voorlopigeDagGrenzen(dagKey);
     var volleDag = grenzen.eind - grenzen.start;
@@ -760,7 +762,12 @@
       voorlopig:
         true,
 
-      deelresultaat: res.gedekt < volleDag * 0.995,
+      deelresultaat: !!res.prijsOnvolledig || res.gedekt < volleDag * 0.995,
+      prijsOnvolledig: !!res.prijsOnvolledig,
+      gemetenMs: gemetenMs,
+      geprijsdeImportKwh: Number.isFinite(res.geprijsdeImportKwh) ? res.geprijsdeImportKwh : res.importKwh,
+      geprijsdeExportKwh: Number.isFinite(res.geprijsdeExportKwh) ? res.geprijsdeExportKwh : res.exportKwh,
+      historischKwh: res.historischKwh || 0,
 
       imp:
         res.importKwh,
@@ -822,6 +829,7 @@
     schrijfVoorlopigeDagen(
       opslag
     );
+    return true;
   }
 
   function voorlopigeDagenVoorMaand(
@@ -2053,7 +2061,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.6.3)
+   *  Tariefgrafiek (v4.6.4)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -5165,11 +5173,11 @@
       balansInk +
       balansVerk;
 
-    var ebInk =
-      -imp * EB;
-
-    var ebVerk =
-      ges * EB;
+    // Match the priced portion used by Actueel, while retaining all measured kWh.
+    var ebImp = r.voorlopig && Number.isFinite(r.geprijsdeImportKwh) ? r.geprijsdeImportKwh : imp;
+    var ebExp = r.voorlopig && Number.isFinite(r.geprijsdeExportKwh) ? r.geprijsdeExportKwh : exp;
+    var ebInk = -ebImp * EB;
+    var ebVerk = Math.max(0, ebExp - onges) * EB;
 
     var eb =
       ebInk +
@@ -11345,7 +11353,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.6.3' +
+        'Instellingen v4.6.4' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11811,7 +11819,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.6.3'
+    '4.6.4'
   );
 
   var TAG =
@@ -14126,8 +14134,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.3') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.3');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.4') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.4');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

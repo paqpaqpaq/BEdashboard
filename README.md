@@ -14,7 +14,7 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 ## Installeren als Chrome-extensie
 
-1. Download [BE_dashboard_4_6_3.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_3.zip).
+1. Download [BE_dashboard_4_6_4.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_4.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -32,7 +32,10 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.6.3**
+**4.6.4**
+
+- Resultaten bewaart ook bijgewerkte voorlopige dagen als enkele tarieven ontbreken. Een wijziging in prijsdekking blokkeert de update niet meer; verkorte meetreeksen worden nog wel geweigerd.
+- De belastingberekening voor het geprijsde deel sluit aan op Actueel; de volledige gemeten import en export blijven zichtbaar.
 
 - Dagtotalen gebruiken de fijnmazige historische vermogensmetingen waar beschikbaar; ontbrekende tarieven laten de gemeten kWh niet verdwijnen.
 - Eerder opgeslagen eindige kwartierprijzen blijven apart bewaard als een nieuwe prijsresponse leeg is. Geldige nieuwe tarieven gaan voor; herstelde tarieven blijven voorlopig.
