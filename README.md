@@ -32,7 +32,17 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.5.4.3**
+**4.6**
+
+- Warm grafiet-darkmode via instellingen, met contrasterende navigatie, kaarten, schakelaars en herkenbare grafiekkleuren.
+- Tariefgrafiek op Actueel met dezelfde tijdas en uitlijning als de vermogensgrafiek.
+- Het lopende kwartier toont waargenomen tariefwijzigingen gestippeld; gesloten kwartieren worden bijgewerkt met latere broncorrecties.
+- Prijsverversing iedere 15 seconden, hergebruik van gelijke aanvragen en een pauze na een rate-limitmelding.
+- All-in op Resultaten onthoudt de gekozen stand. Tooltips zijn ingekort.
+- Minder heropbouw van Resultaat vandaag en darkmode tijdens gegevensupdates.
+
+Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
+
 
 - Voorlopige kosten en opbrengsten staan apart in het maandblok en tellen mee in Stroomkosten; definitieve dagen worden niet dubbel geteld.
 
