@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.6
+// @name         Balansenergie All-in v4.6.3
 // @namespace    paq.balansenergie
-// @version      4.6
+// @version      4.6.3
 // @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
@@ -35,7 +35,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.6'
+    '4.6.3'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -457,12 +457,32 @@
       tx.onerror = tx.onabort = function () { reject(tx.error || new Error('Opslaan mislukt')); };
     });
   }
+  // Historical quotes are recovered from this browser’s own archive.
+  var beLokalePrijsHistorie = {};
+  function beHistorieMetingen(j) {
+    var coarse = (j && j.rows || []).filter(function(r){return r && Number.isFinite(r.t) && Number.isFinite(r.po);});
+    var fine = (j && j.priceSamples || []).filter(function(r){return r && Number.isFinite(r.x) && Number.isFinite(r.y);})
+      .map(function(r){return {t:r.x,po:r.y,detail:2};});
+    return beVoegMetingenSamen(coarse, fine);
+  }
   function beVoegMetingenSamen(oud, nieuw) {
-    var map = new Map((oud || []).map(function (r) { return [r.t, r]; }));
-    (nieuw || []).forEach(function (r) {
-      if (r && Number.isFinite(r.t) && Number.isFinite(r.po)) map.set(r.t, { t: r.t, po: r.po });
+    var map = new Map();
+    [].concat(oud || [], nieuw || []).forEach(function(r){
+      if (!r || !Number.isFinite(r.t) || !Number.isFinite(r.po)) return;
+      var old = map.get(r.t);
+      if (!old || (r.detail || 1) >= (old.detail || 1))
+        map.set(r.t, {t:r.t,po:r.po,detail:r.detail || 1});
     });
-    return Array.from(map.values()).sort(function (a,b) { return a.t-b.t; });
+    var rows = Array.from(map.values()).sort(function(a,b){return a.t-b.t;});
+    var fine = rows.filter(function(r){return r.detail === 2;}), intervals=[];
+    for(var i=1;i<fine.length;i++) if(fine[i].t-fine[i-1].t<=300000)
+      intervals.push([fine[i-1].t,fine[i].t]);
+    var n=0;
+    return rows.filter(function(r){
+      if(r.detail===2)return true;
+      while(n<intervals.length && intervals[n][1]<r.t)n++;
+      return !(n<intervals.length && intervals[n][0]<=r.t && r.t<=intervals[n][1]);
+    });
   }
   function beVoegPrijzenSamen(oud, nieuw, events, discovery) {
     var map = new Map((oud || []).map(function (p) { return [p.start, p]; }));
@@ -483,6 +503,14 @@
         values: Object.assign({}, p.values || {}), afrr: afrr,
         directions: d && Array.isArray(d.directions) ? d.directions.slice() :
           (Array.isArray(p.directions) ? p.directions.slice() : null)
+      });
+      // Preserve last finite same-quarter quotes separately from source nulls.
+      snapshot.bewaardeTarieven = Object.assign({},
+        beLokalePrijsHistorie[p.start] || {}, vorig && vorig.bewaardeTarieven || {}, p.bewaardeTarieven || {});
+      [vorig && vorig.values || {}, p.values || {}].forEach(function(values){
+        Object.keys(values).forEach(function(key){
+          if(Number.isFinite(values[key])) snapshot.bewaardeTarieven[key]=values[key];
+        });
       });
       // Keep observations separately from the latest quarter settlement snapshot.
       var verloop = Array.from(new Map([].concat(vorig && vorig.verloop || [], p.verloop || []).map(function(v){return [v.t,v];})).values()).sort(function(a,b){return a.t-b.t;});
@@ -509,13 +537,21 @@
     var v = p.values || {}, ds = p.directions;
     var ai = Array.isArray(ds) ? ds.indexOf('import') !== -1 : !!p.afrr;
     var ae = Array.isArray(ds) ? ds.indexOf('export') !== -1 : !!p.afrr;
-    return { start:p.start, end:p.end, afrr:ai || ae,
-      marktImport:ai ? 'aFRR' : 'onbalans', marktExport:ae ? 'aFRR' : 'onbalans',
-      ki:v[ai ? 'afrr_import' : 'onbalans_import'],
-      ke:v[ae ? 'afrr_export' : 'onbalans_export'],
-      provisional:p.provisional, fresh:p.fresh, updatedAt:p.updatedAt,
-      carried:!!p.carried, sourceStart:p.sourceStart,
-      verloop:p.verloop || [], values:Object.assign({}, v) };
+    var saved=Object.assign({},beLokalePrijsHistorie[p.start]||{},p.bewaardeTarieven||{});
+    var ik=ai?'afrr_import':'onbalans_import',ek=ae?'afrr_export':'onbalans_export';
+    var ki=v[ik],ke=v[ek],hi=false,he=false;
+    if(!Number.isFinite(ki) && Number.isFinite(saved[ik])){ki=saved[ik];hi=true;}
+    if(!Number.isFinite(ke) && Number.isFinite(saved[ek])){ke=saved[ek];he=true;}
+    // Recorded live observations can repair a same-market quote as well.
+    (p.verloop || []).slice().reverse().forEach(function(o){
+      if(!Number.isFinite(ki) && o.marktImport===(ai?'aFRR':'onbalans') && Number.isFinite(o.ki)){ki=o.ki;hi=true;}
+      if(!Number.isFinite(ke) && o.marktExport===(ae?'aFRR':'onbalans') && Number.isFinite(o.ke)){ke=o.ke;he=true;}
+    });
+    return {start:p.start,end:p.end,afrr:ai||ae,
+      marktImport:ai?'aFRR':'onbalans',marktExport:ae?'aFRR':'onbalans',ki:ki,ke:ke,
+      historischImport:hi,historischExport:he,
+      provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
+      carried:!!p.carried,sourceStart:p.sourceStart,verloop:p.verloop||[],values:Object.assign({},v)};
   }
 
   async function beVerwerkBron(u, j) {
@@ -529,7 +565,7 @@
     var vanaf = Number(u.searchParams.get('start')), tot = Number(u.searchParams.get('end'));
     if (!Number.isFinite(vanaf) || !Number.isFinite(tot) || tot <= vanaf) throw new Error('Ongeldig archiefbereik');
     var nieuwPerDag = {};
-    (j && Array.isArray(j.rows) ? j.rows : []).forEach(function (r) {
+    beHistorieMetingen(j).forEach(function (r) {
       if (!r || !Number.isFinite(r.t) || !Number.isFinite(r.po) || r.t < vanaf || r.t > tot) return;
       var key = iso(new Date(r.t));
       (nieuwPerDag[key] || (nieuwPerDag[key] = [])).push(r);
@@ -583,7 +619,7 @@
       if (!beArchiefImportKlaar) {
         var migratie = await beLeesBron('console-import');
         var oudRapport = localStorage.getItem('be_brononderzoek_v1:' + KLANT);
-        if (oudRapport && !migratie.klaar) {
+        if (oudRapport) {
           var importData = JSON.parse(oudRapport);
           var prijsUrl = new URL('/customer/current-prices/api/', location.origin);
           var taak = beArchiefWachtrij.then(function () {
@@ -606,10 +642,7 @@
       ]);
       var prijzen = await res[1].json();
       if (!prijzen) return;
-      var rijPrijzen = prijzen.prices.map(function (p) {
-        var afrr = prijzen.afrrEventIsps.indexOf(p.start) !== -1;
-        return { start:p.start,end:p.end,ki:p.values[afrr?'afrr_import':'onbalans_import'],ke:p.values[afrr?'afrr_export':'onbalans_export'] };
-      });
+      var rijPrijzen = prijzen.prices.map(actueelPrijsRij);
       var index = await beLeesBron('index');
       for (var key of index.keys || []) {
         var g = voorlopigeDagGrenzen(key), dag = await beLeesBron(key);
@@ -706,6 +739,7 @@
     tot
   ) {
     var opslag = leesVoorlopigeDagen();
+    if (res && res.prijsOnvolledig) return false;
     if (!voorlopigeBerekeningGeldig(dagKey, res, vanaf, tot)) {
       // Minder beschikbare bronnen wissen nooit een eerder bewezen resultaat.
       return false;
@@ -2019,7 +2053,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.6)
+   *  Tariefgrafiek (v4.6.3)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -2123,7 +2157,7 @@
     var nu = Date.now();
     if (beLivePrijsRows && beLivePrijsRows.length) {
       beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,nu);
-      actueelRijen=beLivePrijsRows.map(actueelPrijsRij).filter(function(r){return Number.isFinite(r.ki)&&Number.isFinite(r.ke);});
+      actueelRijen=beLivePrijsRows.map(actueelPrijsRij).filter(function(r){return Number.isFinite(r.ki)||Number.isFinite(r.ke);});
     }
     var uit = [];
 
@@ -2341,7 +2375,7 @@
         }
 
         actueelRijen = j.prices.map(actueelPrijsRij).filter(function (r) {
-          return Number.isFinite(r.ki) && Number.isFinite(r.ke);
+          return Number.isFinite(r.ki) || Number.isFinite(r.ke);
         });
 
         actueelStuur();
@@ -3305,6 +3339,29 @@
     var reeks = punten.filter(function (p) {
       return p && Number.isFinite(p.x) && Number.isFinite(p.y);
     }).slice().sort(function (a, b) { return a.x - b.x; });
+    // Meter totals are independent of tariff availability. Split sign changes
+    // before integrating, so simultaneous daily import/export never cancel out.
+    var gemetenImport = 0, gemetenExport = 0, gemetenMs = 0;
+    for (var mi = 1; mi < reeks.length; mi++) {
+      var ma = reeks[mi - 1], mb = reeks[mi], md = mb.x - ma.x;
+      if (md <= 0 || md > 300000) continue;
+      var ml = Math.max(ma.x, vanaf), mr = Math.min(mb.x, tot, nu);
+      if (mr <= ml) continue;
+      gemetenMs += mr - ml;
+      var mc = [ml, mr];
+      if (ma.y * mb.y < 0) {
+        var mz = ma.x + md * (-ma.y) / (mb.y - ma.y);
+        if (mz > ml && mz < mr) mc.splice(1, 0, mz);
+      }
+      for (var mk = 1; mk < mc.length; mk++) {
+        var mx = mc[mk - 1], my = mc[mk];
+        var mw1 = ma.y + (mb.y - ma.y) * (mx - ma.x) / md;
+        var mw2 = ma.y + (mb.y - ma.y) * (my - ma.x) / md;
+        var me = (mw1 + mw2) / 2 * (my - mx) / 3600000000;
+        gemetenImport += Math.max(0, me);
+        gemetenExport += Math.max(0, -me);
+      }
+    }
     var ps = prijzen.filter(function (p) {
       return Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start;
     }).slice().sort(function (a, b) { return a.start - b.start; });
@@ -3345,6 +3402,8 @@
           var exp = energie < 0;
           var kaal = exp ? prijsRij.ke : prijsRij.ki;
           if (!Number.isFinite(kaal)) continue;
+          if(exp ? prijsRij.historischExport : prijsRij.historischImport)
+            uit.historischKwh=(uit.historischKwh||0)+Math.abs(energie);
           var balansPrijs =
             exp
               ? (
@@ -3392,6 +3451,14 @@
         }
       }
     }
+    uit.geprijsdeImportKwh = uit.importKwh;
+    uit.geprijsdeExportKwh = uit.exportKwh;
+    uit.ongeprijsdeImportKwh = Math.max(0, gemetenImport - uit.importKwh);
+    uit.ongeprijsdeExportKwh = Math.max(0, gemetenExport - uit.exportKwh);
+    uit.importKwh = gemetenImport;
+    uit.exportKwh = gemetenExport;
+    uit.gemetenMs = gemetenMs;
+    uit.prijsOnvolledig = uit.ongeprijsdeImportKwh + uit.ongeprijsdeExportKwh > 0.000001;
     return uit;
   }
 
@@ -3481,7 +3548,7 @@
       tot
     );
 
-    if (!voorlopigeBerekeningGeldig(iso(beginVandaag), res, vanaf, tot)) {
+    if (res.ongeldig || !(res.gemetenMs > 0)) {
       info.textContent = 'Resultaat vandaag — nog geen passende metingen en prijzen';
       return;
     }
@@ -3533,7 +3600,7 @@
         (
           res.stukken
             ? geld(res.bedrag)
-            : '—'
+            : '— · prijzen ontbreken'
         ) +
       '</span>' +
 
@@ -3561,6 +3628,11 @@
       '</span>';
 
 
+
+    info.title = res.prijsOnvolledig
+      ? 'Voorlopig bedrag. Tarief ontbreekt voor ' +
+        (res.ongeprijsdeImportKwh + res.ongeprijsdeExportKwh).toLocaleString('nl-NL', {maximumFractionDigits:2}) + ' kWh.'
+      : res.historischKwh > 0.000001 ? 'Voorlopig bedrag met herstelde historische tarieven.' : '';
 
     if (
       info.__beResultaatTekst !== tekst
@@ -4151,50 +4223,8 @@
                       }
                     );
 
-                    var prijsRijen =
-                      jp.prices
-                        .map(
-                          function (p) {
-                            var v =
-                              p.values || {};
-
-                            var a =
-                              !!evts[p.start];
-
-                            var ki =
-                              a
-                                ? v.afrr_import
-                                : v.onbalans_import;
-
-                            var ke =
-                              a
-                                ? v.afrr_export
-                                : v.onbalans_export;
-
-                            if (
-                              typeof ki !==
-                                'number' ||
-                              !isFinite(ki)
-                            ) {
-                              return null;
-                            }
-
-                            return {
-                              start:
-                                p.start,
-
-                              end:
-                                p.end,
-
-                              ki:
-                                ki,
-
-                              ke:
-                                ke
-                            };
-                          }
-                        )
-                        .filter(Boolean);
+                    var prijsRijen = jp.prices.map(actueelPrijsRij)
+                      .filter(function(r){return Number.isFinite(r.ki)||Number.isFinite(r.ke);});
 
                     var punten =
                       jh.rows
@@ -11315,7 +11345,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.6' +
+        'Instellingen v4.6.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11781,7 +11811,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.6'
+    '4.6.3'
   );
 
   var TAG =
@@ -14096,8 +14126,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.3') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.3');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

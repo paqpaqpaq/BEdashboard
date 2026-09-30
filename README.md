@@ -14,7 +14,7 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 ## Installeren als Chrome-extensie
 
-1. Download [BE_dashboard_4_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6.zip).
+1. Download [BE_dashboard_4_6_3.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_3.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -32,7 +32,12 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.6**
+**4.6.3**
+
+- Dagtotalen gebruiken de fijnmazige historische vermogensmetingen waar beschikbaar; ontbrekende tarieven laten de gemeten kWh niet verdwijnen.
+- Eerder opgeslagen eindige kwartierprijzen blijven apart bewaard als een nieuwe prijsresponse leeg is. Geldige nieuwe tarieven gaan voor; herstelde tarieven blijven voorlopig.
+- Resultaat vandaag toont bedrag en import/export. Informatie over ontbrekende of herstelde tarieven staat in de tooltip.
+- Deze uitgave bevat geen persoonlijke hersteldata; historische prijsgegevens worden uit het eigen browserarchief hersteld.
 
 - Warm grafiet-darkmode via instellingen, met contrasterende navigatie, kaarten, schakelaars en herkenbare grafiekkleuren.
 - Tariefgrafiek op Actueel met dezelfde tijdas en uitlijning als de vermogensgrafiek.
