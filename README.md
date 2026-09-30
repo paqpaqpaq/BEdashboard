@@ -14,7 +14,7 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 ## Installeren als Chrome-extensie
 
-1. Download de nieuwste `BE_dashboard_*.zip`.
+1. Download [BE_dashboard_4_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
