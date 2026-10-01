@@ -14,7 +14,7 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 ## Installeren als Chrome-extensie
 
-1. Download [BE_dashboard_4_6_4.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_4.zip).
+1. Download [BE_dashboard_4_6_5.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_5.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -32,7 +32,14 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## Huidige versie
 
-**4.6.4**
+**4.6.5**
+
+- EPEX NL day-ahead is ingebouwd. De compacte schakelaar staat rechts boven de tariefgrafiek; de legenda staat links op dezelfde regel, uitgelijnd met de y-as.
+- All-in past dezelfde btw en energiebelasting toe, plus eenmaal € 0,02 opslag inclusief btw. Uitgeschakeld toont EPEX de kale prijs.
+- De EPEX-stand wordt onthouden. De openbare prijsbron wordt maximaal eens per kwartier opgehaald zolang EPEX aan staat en de pagina zichtbaar is.
+- **Schakel de losse BE EPEX Day-ahead-plugin uit** bij deze upgrade. De hoofdplugin bevat deze functie nu zelf.
+- De userscriptmanager kan toestemming vragen voor `api.energy-charts.info`. Alleen openbare marktprijzen worden opgevraagd, zonder accountcookie.
+- Prijsbron: [Energy-Charts](https://www.energy-charts.info/api.html) / Bundesnetzagentur / SMARD.de, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). EUR/MWh wordt omgerekend naar EUR/kWh; All-in voegt bovenstaande toeslagen toe.
 
 - Resultaten bewaart ook bijgewerkte voorlopige dagen als enkele tarieven ontbreken. Een wijziging in prijsdekking blokkeert de update niet meer; verkorte meetreeksen worden nog wel geweigerd.
 - De belastingberekening voor het geprijsde deel sluit aan op Actueel; de volledige gemeten import en export blijven zichtbaar.
