@@ -14,7 +14,7 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie
+## Installeren als Chrome-extensie — v4.6.5
 
 1. Download [BE_dashboard_4_6_5.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_5.zip).
 2. Pak het ZIP-bestand uit.
@@ -31,6 +31,14 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 3. Voeg eventueel een nieuwe versie-zip toe voor gebruikers van de uitgepakte Chrome-extensie.
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
+
+## Changelog — v4.6.6
+
+- **Resultaten → All time** toont nu de volledige periode vanaf de eerste geregistreerde aansluitdag tot en met vandaag. De all-in-weergave kon hiervoor ten onrechte de laatst geladen maand tonen.
+- Beschikbare voorlopige metingen na de laatste verwerkte dag worden toegevoegd, zonder definitieve dagen dubbel te tellen of ontbrekende metingen met prognoses aan te vullen. De aansluitdatum, verwerkingsdatum en ontbrekende of onvolledige dagen worden zichtbaar vermeld.
+- De all-in-kaart en grafiek gebruiken dezelfde periode. Bij wisselen tussen Maand en All time kan een later ontvangen maandresultaat het All time-overzicht niet meer overschrijven.
+- De volledige userscriptcode is weer leesbaar over ruim 14.000 regels. Alle actuele versieverwijzingen zijn bijgewerkt naar 4.6.6.
+- Deze update is beschikbaar als userscript. De bestaande Chrome-extensie-zip blijft versie 4.6.5.
 
 ## Changelog — v4.6.5
 

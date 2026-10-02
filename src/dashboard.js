@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.6.5'
+    '4.6.6'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -1726,7 +1726,7 @@
   var actueelHaalTimer = null;
   var actueelOnderhoudTimer = null;
   var actueelVoetnootTimer = null;
-  
+
   function isActueelPagina() {
     return (
       /^\/customer\/?$/.test(
@@ -2047,7 +2047,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.6.5)
+   *  Tariefgrafiek (v4.6.6)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -2584,7 +2584,7 @@
         }
       );
   }
-    
+
   function actueelHuidigeRij() {
     var nu =
       Date.now();
@@ -3025,7 +3025,7 @@
 
       return rij;
     }
-    
+
   function actueelTekenSchakelaar(b) {
     b =
       b ||
@@ -3317,7 +3317,7 @@
       );
   }
 
-        
+
   /* Actueel: voorlopig variabel stroomresultaat over de grafiekperiode.
    * Netaansluiting is gemeten in W; positief = import, negatief = export.
    * Integreer lineair tussen metingen, gesplitst op prijsgrenzen en nul.
@@ -9212,6 +9212,7 @@
   }
 
   function pasVoorlopigeMaandGrafiekAan(chart, rijen, allin) {
+    if (laatste && laatste.interval === 'all_time') { pasAllTimeGrafiekAan(chart, rijen && rijen.beAllTime, allin); return; }
     if (!chart || !laatste || laatste.interval !== 'month') return;
     var mk = laatste.periode;
     if (!/^\d{4}-\d{2}$/.test(String(mk))) return;
@@ -9292,7 +9293,8 @@
 
     if (
       renderId !== chartRenderId ||
-      laatste !== bron
+      laatste !== bron ||
+      !pastBijActievePeriode(bron, actievePeriode())
     ) {
       return;
     }
@@ -9697,6 +9699,72 @@
   var periodeCache = {};
   var timer = null;
 
+  // All time spans the installation's first recorded day through today.
+  // Confirmed data wins; recent missing days may be supplemented by measured
+  // provisional records. Missing measurements are never replaced by forecasts.
+  function maakAllTime(bron, opslag, g, nu) {
+    var vandaag = iso(nu), begin = g && g.min_day;
+    var verwerkt = g && g.max_day;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(begin || '') || !/^\d{4}-\d{2}-\d{2}$/.test(verwerkt || '')) return null;
+    var dagen = Math.max(0, datumDagNummer(nu) - datumDagNummer(new Date(begin + 'T12:00:00')) + 1);
+    var velden = ['imp','exp','inkoop','verkoop','laden','ontladen','pv','afrrImp','afrrExp','afrrVergoeding','dealsAantal'];
+    var maanden = {}, extra = [], ontbreekt = [], onvolledig = [];
+    (bron.rijen || []).forEach(function(r) {
+      var m = Object.assign({}, r, {geprijsdeImportKwh:r.imp,geprijsdeExportKwh:r.exp});
+      maanden[r.key] = m;
+    });
+    Object.keys(opslag).sort().forEach(function(key) {
+      var r = opslag[key];
+      if (key <= verwerkt || key < begin || key > vandaag || !r || !r.voorlopig ||
+          !['imp','exp','inkoop','verkoop'].every(function(k){return Number.isFinite(r[k]);})) return;
+      extra.push(r);
+      if (r.deelresultaat || r.prijsOnvolledig) onvolledig.push(key);
+      var mk = key.slice(0,7), m = maanden[mk];
+      if (!m) { m = {key:mk,bronAanwezig:true,geprijsdeImportKwh:0,geprijsdeExportKwh:0}; velden.forEach(function(k){m[k]=0;}); maanden[mk]=m; }
+      velden.forEach(function(k){m[k]=getal(m[k])+getal(r[k]);});
+      m.voorlopig = true;
+      m.geprijsdeImportKwh += Number.isFinite(r.geprijsdeImportKwh) ? r.geprijsdeImportKwh : r.imp;
+      m.geprijsdeExportKwh += Number.isFinite(r.geprijsdeExportKwh) ? r.geprijsdeExportKwh : r.exp;
+    });
+    var heeft = new Set(extra.map(function(r){return r.key;}));
+    var cursor = new Date(verwerkt+'T12:00:00'); cursor.setDate(cursor.getDate()+1);
+    while (iso(cursor) <= vandaag) { if (!heeft.has(iso(cursor))) ontbreekt.push(iso(cursor)); cursor.setDate(cursor.getDate()+1); }
+    var rijen = Object.keys(maanden).sort().map(function(k){return maanden[k];});
+    // Preserve annual settlement boundaries instead of netting separate years.
+    var groepen = {}, saldMap = {};
+    rijen.forEach(function(r){
+      var y=+r.key.slice(0,4), m=+r.key.slice(5,7);
+      var groep=y-(m<cfg.start.getMonth()+1?1:0);
+      (groepen[groep]||(groepen[groep]=[])).push(r);
+    });
+    Object.keys(groepen).forEach(function(k){salderingReeks(groepen[k],false).forEach(function(r){saldMap[r.key]=r.ongesaldeerd;});});
+    var totaal=Object.assign({},bron.totaal), geprijsdImp=bron.totaal.imp, geprijsdExp=bron.totaal.exp;
+    extra.forEach(function(r){
+      velden.forEach(function(k){totaal[k]=getal(totaal[k])+getal(r[k]);});
+      geprijsdImp+=Number.isFinite(r.geprijsdeImportKwh)?r.geprijsdeImportKwh:r.imp;
+      geprijsdExp+=Number.isFinite(r.geprijsdeExportKwh)?r.geprijsdeExportKwh:r.exp;
+    });
+    if(extra.length){totaal.voorlopig=true;totaal.geprijsdeImportKwh=geprijsdImp;totaal.geprijsdeExportKwh=geprijsdExp;}
+    var onges=rijen.reduce(function(n,r){return n+(saldMap[r.key]||0);},0);
+    var berekend=rijen.map(function(r){return bereken(r,saldMap[r.key]||0,0);});
+    return {a:bereken(totaal,onges,dagen), rijen:rijen, berekend:berekend, extra:extra,
+      begin:begin, einde:vandaag, verwerkt:verwerkt, ontbreekt:ontbreekt, onvolledig:onvolledig,
+      ruw:{inkoop:totaal.inkoop,verkoop:totaal.verkoop,prijsInk:totaal.imp?totaal.inkoop/totaal.imp:0,prijsVerk:totaal.exp?totaal.verkoop/totaal.exp:0}};
+  }
+
+  function pasAllTimeGrafiekAan(chart, info, aan) {
+    if (!chart || !info || !aan) return;
+    var labels=chart.data.labels.slice(),sets=chart.data.datasets.map(function(d){return {ref:d,data:d.data.slice()};});
+    var nativeKeys=laatste.rijen.map(function(r){return r.key;});
+    chart.data.labels=info.rijen.map(function(r){var i=nativeKeys.indexOf(r.key);return i>=0?labels[i]:'~'+maandLabel(r.key);});
+    chart.data.datasets.forEach(function(d){
+      var field={'Inkoop kosten':'allinInk','Verkoop opbrengsten':'allinVerk','Totaal':'stroom','Energiebelasting':'eb'}[d.label];
+      if(field)d.data=info.berekend.map(function(a){return field==='allinInk'?-a[field]:a[field];});
+    });
+    chart.$beVoorlopig={basisLabels:labels,datasets:sets,projectedLabels:chart.data.labels.slice()};
+    chart.$beVoorlopigIndices=info.rijen.map(function(r,i){return r.voorlopig?i:-1;}).filter(function(i){return i>=0;});
+  }
+
   function isJaarInterval(interval) {
     return interval === 'year' || interval === 'rolling_year';
   }
@@ -9704,6 +9772,11 @@
   function actievePeriode() {
     var knop = document.querySelector('.summary-granularity.active');
     var g = knop ? knop.textContent.trim().toLowerCase() : 'maand';
+
+    // All time has its own API period; never fall back to the hidden month picker.
+    if ((knop && knop.getAttribute('data-granularity') === 'all_time') || g === 'all time') {
+      return { interval: 'all_time', periode: 'all' };
+    }
 
     if (g === 'dag') {
       var dagPicker = document.getElementById('dayPicker');
@@ -10207,6 +10280,7 @@
   }
 
   function periodeNaam() {
+    if (laatste && laatste.interval === 'all_time') return 'All time';
     var t =
       document.getElementById(
         'summary-title'
@@ -10310,7 +10384,7 @@
       contractMaand
     ]).then(
       function (res) {
-        if (laatste !== renderBron) return;
+        if (laatste !== renderBron || !pastBijActievePeriode(renderBron, actievePeriode())) return;
         var jaar =
           res[0];
 
@@ -10509,7 +10583,7 @@
             );
 
           periodeWoord =
-            'deze periode';
+            laatste.interval === 'all_time' ? 'de gehele beschikbare periode' : 'deze periode';
         }
 
         var a =
@@ -10569,9 +10643,17 @@
             res[3]
           );
 
+        var allTimeInfo = laatste.interval === 'all_time'
+          ? maakAllTime(laatste, leesVoorlopigeDagen(), grenzen(), new Date()) : null;
+        if (allTimeInfo) {
+          a = allTimeInfo.a;
+          voorlopigeRijen = allTimeInfo.extra.slice();
+          voorlopigeRijen.beAllTime = allTimeInfo;
+          perPeriode = laatste.rijen.map(function(r){return allTimeInfo.berekend.find(function(x){return x.key===r.key;});});
+        }
         pasBalansKaartenAan(
           a,
-          laatste.ruw,
+          allTimeInfo ? allTimeInfo.ruw : laatste.ruw,
           cfg.allin
         );
 
@@ -10707,6 +10789,18 @@
             kaartCtx
           );
 
+        if (allTimeInfo) {
+          var fmt = function(key) { var p=key.split('-');return p[2]+'-'+p[1]+'-'+p[0]; };
+          var melding = document.createElement('div');
+          melding.id='be-all-time-bereik';
+          melding.style.cssText='font-size:12px;color:'+D.grijs+';margin-bottom:12px;line-height:1.6';
+          melding.textContent='Vanaf aansluiting '+fmt(allTimeInfo.begin)+' t/m vandaag '+fmt(allTimeInfo.einde)+
+            '. Verwerkt t/m '+fmt(allTimeInfo.verwerkt)+'.'+
+            (allTimeInfo.extra.length ? ' '+allTimeInfo.extra.length+' voorlopige dag(en) meegerekend.' : '')+
+            (allTimeInfo.onvolledig.length ? ' Voorlopige metingen/prijzen deels onvolledig: '+allTimeInfo.onvolledig.map(fmt).join(', ')+'.' : '')+
+            (allTimeInfo.ontbreekt.length ? ' Nog geen resultaat voor: '+allTimeInfo.ontbreekt.map(fmt).join(', ')+'.' : '');
+          kaartEl.insertBefore(melding,kaartEl.firstChild.nextSibling);
+        }
         kaartEl.appendChild(
           bouwPrijsopbouw(
             a
@@ -11339,7 +11433,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.6.5' +
+        'Instellingen v4.6.6' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11773,9 +11867,9 @@
     );
   }
 
-    
 
-    
+
+
 })();
 
 
@@ -11805,7 +11899,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.6.5'
+    '4.6.6'
   );
 
   var TAG =
@@ -11839,7 +11933,7 @@
    * De bron is de bestaande Wikipedia-lijst "List of humorous units
    * of measurement". We bewaren een succesvolle lijst 24 uur lokaal.
    * Als Wikipedia/CORS/CSP niet beschikbaar is, blijft de ingebouwde
-   * v4.4.7-verzameling gewoon als fallback werken.
+   * verzameling gewoon als fallback werken.
    */
   var ABSURD_WIKI_API =
     'https://en.wikipedia.org/w/api.php?' +
@@ -14120,8 +14214,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.5') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.5');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.6') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.6');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
