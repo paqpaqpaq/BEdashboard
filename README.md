@@ -2,6 +2,15 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
+## Downloads — nieuwste versie 4.6.6
+
+| Variant | Download |
+| --- | --- |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.6.6.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.6.6.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_6_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_6.zip) |
+
+[Release v4.6.6 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.6.6). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+
 ## Installeren als userscript — aanbevolen
 
 Dit werkt met **Tampermonkey** in Chrome/Edge en met **Userscripts** in Safari op macOS, iOS en iPadOS.
@@ -14,13 +23,15 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.6.5
+## Installeren als Chrome-extensie — v4.6.6
 
-1. Download [BE_dashboard_4_6_5.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_5.zip).
+1. Download [BE_dashboard_4_6_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_6.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
 5. Kies **Uitgepakte extensie laden** en selecteer de uitgepakte map.
+
+Bij een bestaande installatie: pak de nieuwe zip uit, vervang de bestanden in de geladen extensiemap en klik op **Opnieuw laden** bij de extensie. Herlaad daarna het dashboard.
 
 Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet automatisch vanaf GitHub bijgewerkt. Gebruik Tampermonkey als automatische updates gewenst zijn.
 
@@ -28,7 +39,8 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 
 1. Verhoog `@version` in `Balansenergie-All-in.user.js` en `Balansenergie-All-in.meta.js`.
 2. Vervang beide vaste bestanden op de `main`-branch.
-3. Voeg eventueel een nieuwe versie-zip toe voor gebruikers van de uitgepakte Chrome-extensie.
+3. Werk `src/dashboard.js` bij en bouw de Chrome-extensie-zip met hetzelfde versienummer in `manifest.json`.
+4. Werk de versiegebonden userscriptdownload, alle actuele README-downloadlinks en de GitHub-release met beide varianten bij.
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
 
@@ -38,7 +50,7 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 - Beschikbare voorlopige metingen na de laatste verwerkte dag worden toegevoegd, zonder definitieve dagen dubbel te tellen of ontbrekende metingen met prognoses aan te vullen. De aansluitdatum, verwerkingsdatum en ontbrekende of onvolledige dagen worden zichtbaar vermeld.
 - De all-in-kaart en grafiek gebruiken dezelfde periode. Bij wisselen tussen Maand en All time kan een later ontvangen maandresultaat het All time-overzicht niet meer overschrijven.
 - De volledige userscriptcode is weer leesbaar over ruim 14.000 regels. Alle actuele versieverwijzingen zijn bijgewerkt naar 4.6.6.
-- Deze update is beschikbaar als userscript. De bestaande Chrome-extensie-zip blijft versie 4.6.5.
+- Beide varianten zijn bijgewerkt naar 4.6.6: het userscript en de downloadbare Chrome-extensie.
 
 ## Changelog — v4.6.5
 
