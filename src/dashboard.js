@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7.1'
+    '4.7.2'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -2078,7 +2078,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7.1)
+   *  Tariefgrafiek (v4.7.2)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -6625,13 +6625,9 @@
 
   function staatRij(o) {
     var bg =
-      o.nu
-        ? 'rgba(107,63,160,.06)'
-        : (
-            o.even
-              ? 'rgba(107,63,160,.02)'
-              : 'transparent'
-          );
+      o.even
+        ? 'rgba(107,63,160,.02)'
+        : 'transparent';
 
     var dim =
       o.geschat
@@ -11150,7 +11146,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7.1' +
+        'Instellingen v4.7.2' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11627,7 +11623,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7.1'
+    '4.7.2'
   );
 
   var TAG =
@@ -13942,8 +13938,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.1') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.1');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.2') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.2');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

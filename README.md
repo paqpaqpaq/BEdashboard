@@ -2,14 +2,14 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
-## Downloads — nieuwste versie 4.7.1
+## Downloads — nieuwste versie 4.7.2
 
 | Variant | Download |
 | --- | --- |
-| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.1.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.1.user.js) |
-| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_1.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_1.zip) |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.2.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.2.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_2.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_2.zip) |
 
-[Release v4.7.1 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.1). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+[Release v4.7.2 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.2). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
 
 ## Installeren als userscript — aanbevolen
 
@@ -23,9 +23,9 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.7.1
+## Installeren als Chrome-extensie — v4.7.2
 
-1. Download [BE_dashboard_4_7_1.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_1.zip).
+1. Download [BE_dashboard_4_7_2.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_2.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -43,6 +43,11 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 4. Werk de versiegebonden userscriptdownload, alle actuele README-downloadlinks en de GitHub-release met beide varianten bij.
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
+
+## Changelog — v4.7.2
+
+- De lopende maand volgt weer de gewone afwisselende achtergrondkleur van de maandregels; de afwijkende paarse markering is verwijderd.
+- Userscript, updatebestand en Chrome/Edge-download bijgewerkt naar 4.7.2.
 
 ## Changelog — v4.7.1
 
