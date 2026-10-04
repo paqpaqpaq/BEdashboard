@@ -2,14 +2,14 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
-## Downloads — nieuwste versie 4.6.6
+## Downloads — nieuwste versie 4.6.7
 
 | Variant | Download |
 | --- | --- |
-| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.6.6.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.6.6.user.js) |
-| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_6_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_6.zip) |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.6.7.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.6.7.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_6_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_7.zip) |
 
-[Release v4.6.6 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.6.6). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+[Release v4.6.7 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.6.7). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
 
 ## Installeren als userscript — aanbevolen
 
@@ -23,9 +23,9 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.6.6
+## Installeren als Chrome-extensie — v4.6.7
 
-1. Download [BE_dashboard_4_6_6.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_6.zip).
+1. Download [BE_dashboard_4_6_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_7.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -44,6 +44,13 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
 
+## Changelog — v4.6.7
+
+- **Actueel → Resultaat vandaag:** beweeg de muis over de import-/exporttotalen of het ⓘ om de afzonderlijke eurobedragen en gemiddelde prijs per kWh te bekijken. De balk zelf blijft compact.
+- Het infoveld is ook met klikken of aantikken te openen en sluiten, zodat het op een smartphone bruikbaar is. Klik buiten het veld of druk op Escape om het te sluiten.
+- De bedragen volgen de All-in/kaal-schakelaar. De gemiddelde prijzen zijn gewogen naar de kWh waarvoor prijzen beschikbaar zijn; ontbrekende prijzen worden vermeld.
+- Beschikbaar als compleet, leesbaar userscript en als Chrome/Edge-extensie, beide versie 4.6.7.
+
 ## Changelog — v4.6.6
 
 - **Resultaten → All time** toont nu de volledige periode vanaf de eerste geregistreerde aansluitdag tot en met vandaag. De all-in-weergave kon hiervoor ten onrechte de laatst geladen maand tonen.
@@ -52,11 +59,6 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 - De volledige userscriptcode is weer leesbaar over ruim 14.000 regels. Alle actuele versieverwijzingen zijn bijgewerkt naar 4.6.6.
 - Beide varianten zijn bijgewerkt naar 4.6.6: het userscript en de downloadbare Chrome-extensie.
 
-## Changelog — v4.6.5
+## EPEX-prijsbron
 
-- EPEX NL day-ahead is ingebouwd. De compacte schakelaar staat rechts boven de tariefgrafiek; de legenda staat links op dezelfde regel, uitgelijnd met de y-as.
-- All-in past dezelfde btw en energiebelasting toe, plus eenmaal € 0,02 opslag inclusief btw. Uitgeschakeld toont EPEX de kale prijs.
-- De EPEX-stand wordt onthouden. De openbare prijsbron wordt maximaal eens per kwartier opgehaald zolang EPEX aan staat en de pagina zichtbaar is.
-- **Schakel de losse BE EPEX Day-ahead-plugin uit** bij deze upgrade. De hoofdplugin bevat deze functie nu zelf.
-- De userscriptmanager kan toestemming vragen voor `api.energy-charts.info`. Alleen openbare marktprijzen worden opgevraagd, zonder accountcookie.
-- Prijsbron: [Energy-Charts](https://www.energy-charts.info/api.html) / Bundesnetzagentur / SMARD.de, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). EUR/MWh wordt omgerekend naar EUR/kWh; All-in voegt bovenstaande toeslagen toe.
+Energy-Charts / Bundesnetzagentur / SMARD.de, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Bron: [Energy-Charts API](https://www.energy-charts.info/api.html). De bronvermelding staat ook onder het ⓘ bij EPEX. Schakel de oudere losse BE EPEX Day-ahead-plugin uit wanneer je de ingebouwde EPEX-functie gebruikt.

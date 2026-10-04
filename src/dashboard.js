@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.6.6'
+    '4.6.7'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -2047,7 +2047,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.6.6)
+   *  Tariefgrafiek (v4.6.7)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -2864,6 +2864,7 @@
       'be-actueel-mobiel-css';
 
     stijl.textContent =
+      "#be-actueel-resultaat { flex-wrap:wrap; row-gap:8px!important; }\n.be-dag-label { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9274bb; background:rgba(107,63,160,.06); border-radius:6px; padding:4px 7px; }\n.be-dag-saldo { font-size:16px; font-weight:700; white-space:nowrap; }\n.be-dag-info { position:relative; min-width:0; color:#6c757d; font-size:11px; }\n.be-dag-info summary { cursor:pointer; list-style:none; white-space:normal; line-height:1.5; border-radius:4px; }\n.be-dag-info summary::-webkit-details-marker { display:none; }\n.be-dag-info summary:focus-visible { outline:2px solid #9274bb; outline-offset:4px; }\n.be-dag-info-icoon { color:#9274bb; margin-left:3px; }\n.be-dag-popup { display:none; position:absolute; top:100%; right:0; z-index:1000; width:280px; max-width:calc(100vw - 48px); padding:14px 16px; background:#fff; color:#302c36; border:1px solid #e6ddef; border-radius:10px; box-shadow:0 6px 22px #30203a24; white-space:normal; text-align:left; }\n.be-dag-info[open]>.be-dag-popup { display:block; }\n@media(hover:hover) and (pointer:fine) { .be-dag-info:not([data-dismissed]):hover>.be-dag-popup { display:block; } }\n.be-dag-popup-kop { font-size:11px; font-weight:600; color:#9274bb; margin-bottom:10px; }\n.be-dag-stroom { display:flex; flex-direction:column; gap:4px; }\n.be-dag-stroom+.be-dag-stroom { margin-top:10px; padding-top:10px; border-top:1px solid #e6ddef; }\n.be-dag-volume { font-size:12px; color:#6c757d; }\n.be-dag-detail { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 8px; font-size:13px; }\n.be-dag-bedrag { font-weight:600; white-space:nowrap; }\n.be-dag-prijs { color:#6c757d; font-size:11px; white-space:nowrap; }\n.be-dag-onvolledig { font-size:10px; color:#6c757d; }\n@media(max-width:700px) {\n  #be-actueel-resultaat { white-space:normal!important; width:100%; }\n  #be-actueel-resultaat .be-dag-info { flex:1 1 100%; }\n  .be-dag-popup { left:0; right:auto; }\n}\n" +
       '@media (max-width: 700px) and (orientation: portrait){' +
         '#be-actueel-bedieningsrij{' +
           'display:flex!important;' +
@@ -3326,6 +3327,7 @@
   function actueelProjectieBereken(punten, prijzen, vanaf, tot, nu) {
     var uit = { bedrag: 0, importKwh: 0, exportKwh: 0, gedekt: 0,
       inkoopEur: 0, verkoopEur: 0,
+      resultaatImportEur: 0, resultaatExportEur: 0,
       ouder: 0, recent: 0, huidig: 0, stukken: 0,
       bronVanaf: vanaf, bronTot: tot, gaten: 0, ongeldig: false };
     var kwartier = 15 * 60 * 1000;
@@ -3436,6 +3438,11 @@
             : slot + kwartier <= nu - 20 * 60 * 1000 ? 'ouder' : 'recent';
           uit[groep] += bedrag;
           uit.bedrag += bedrag;
+          if (exp) {
+            uit.resultaatExportEur += bedrag;
+          } else {
+            uit.resultaatImportEur -= bedrag;
+          }
           uit.importKwh += Math.max(0, energie);
           uit.exportKwh += Math.max(0, -energie);
           if (gedektTot !== null && x > gedektTot) uit.gaten++;
@@ -3454,6 +3461,99 @@
     uit.gemetenMs = gemetenMs;
     uit.prijsOnvolledig = uit.ongeprijsdeImportKwh + uit.ongeprijsdeExportKwh > 0.000001;
     return uit;
+  }
+
+  // Bedragen en gemiddelden gebruiken dezelfde tariefstand als het dagsaldo.
+  function actueelResultaatHtml(res, aan) {
+    function getal(n, decimalen) {
+      return n.toLocaleString('nl-NL', {
+        minimumFractionDigits: decimalen,
+        maximumFractionDigits: decimalen
+      });
+    }
+    function geld(n) {
+      return (n < 0 ? '− ' : '+ ') + '€ ' + getal(Math.abs(n), 2);
+    }
+    function kleur(n) {
+      return n < 0 ? '#dc3545' : '#198754';
+    }
+    function stroom(exportStroom) {
+      var kwh = exportStroom ? res.exportKwh : res.importKwh;
+      var geprijsd = exportStroom ? res.geprijsdeExportKwh : res.geprijsdeImportKwh;
+      var ongeprijsd = exportStroom ? res.ongeprijsdeExportKwh : res.ongeprijsdeImportKwh;
+      var kosten = exportStroom ? res.resultaatExportEur : res.resultaatImportEur;
+      var bedrag = exportStroom ? kosten : -kosten;
+      var bekend = geprijsd > 0 || kwh === 0;
+      var gedeeltelijk = ongeprijsd > 0.000001;
+      var gemiddelde = geprijsd > 0 ? '€ ' + getal(kosten / geprijsd, 3) : '—';
+      return '<span class="be-dag-stroom">' +
+        '<span class="be-dag-volume">' + getal(kwh, 1) + ' kWh ' +
+          (exportStroom ? 'export' : 'import') + '</span>' +
+        '<span class="be-dag-detail">' +
+          '<span class="be-dag-bedrag" style="color:' + (bekend ? kleur(bedrag) : '#6c757d') + '">' +
+            (bekend ? geld(bedrag) : '—') + '</span>' +
+          '<span class="be-dag-prijs">gem. ' + gemiddelde + '/kWh</span>' +
+        '</span>' +
+        (gedeeltelijk ? '<span class="be-dag-onvolledig">' +
+          (bekend ? 'deels geprijsd' : 'prijzen ontbreken') + '</span>' : '') +
+      '</span>';
+    }
+    return '<span class="be-dag-label">Resultaat vandaag</span>' +
+      '<span class="be-dag-saldo" style="color:' + kleur(res.bedrag) + '">' +
+        (res.stukken ? geld(res.bedrag) : '— · prijzen ontbreken') + '</span>' +
+      '<details class="be-dag-info">' +
+        '<summary aria-label="Details import en export">' +
+          getal(res.importKwh, 1) + ' kWh import · ' + getal(res.exportKwh, 1) +
+          ' kWh export <span class="be-dag-info-icoon" aria-hidden="true">ⓘ</span>' +
+        '</summary>' +
+        '<div class="be-dag-popup">' +
+          '<div class="be-dag-popup-kop">Vandaag · ' + (aan ? 'all-in' : 'kaal') + '</div>' +
+          stroom(false) + stroom(true) +
+        '</div>' +
+      '</details>';
+  }
+
+  // Native details ondersteunt tikken en Enter/Spatie, hover is alleen voor muizen.
+  function actueelResultaatInfoBediening() {
+    if (document.__beDagInfoBediening) return;
+    document.__beDagInfoBediening = true;
+    document.addEventListener('pointerdown', function (event) {
+      var info = document.querySelector('#be-actueel-resultaat .be-dag-info');
+      if (info && !info.contains(event.target)) { info.open = false; delete info.dataset.pinned; }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      var info = document.querySelector('#be-actueel-resultaat .be-dag-info');
+      if (!info) return;
+      info.open = false;
+      delete info.dataset.pinned;
+      info.setAttribute('data-dismissed', '1');
+    });
+    document.addEventListener('pointerover', function (event) {
+      var info = event.target.closest && event.target.closest('.be-dag-info');
+      if (info && !info.contains(event.relatedTarget)) {
+        info.removeAttribute('data-dismissed');
+        if (event.pointerType === 'mouse' && matchMedia('(hover:hover)').matches) info.open = true;
+      }
+    });
+    document.addEventListener('pointerout', function (event) {
+      var info = event.target.closest && event.target.closest('.be-dag-info');
+      if (info && event.pointerType === 'mouse' && !info.dataset.pinned && !info.contains(event.relatedTarget)) info.open = false;
+    });
+    document.addEventListener('click', function (event) {
+      var info = event.target.closest && event.target.closest('.be-dag-info');
+      if (!info || !event.target.closest('summary')) return;
+      event.preventDefault();
+      var openen = info.dataset.pinned !== '1';
+      info.open = openen;
+      if (openen) {
+        info.dataset.pinned = '1';
+        info.removeAttribute('data-dismissed');
+      } else {
+        delete info.dataset.pinned;
+        info.setAttribute('data-dismissed', '1');
+      }
+    });
   }
 
     function actueelProjectieToon() {
@@ -3547,81 +3647,7 @@
       return;
     }
 
-    var tijd = function (t) { return new Date(t).toLocaleString('nl-NL', {
-      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-    }); };
-
-    var geld = function (n) {
-      return (
-        (n < 0 ? '− ' : '+ ') +
-        '€ ' +
-        Math.abs(n).toLocaleString(
-          'nl-NL',
-          {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-          }
-        )
-      );
-    };
-
-    var tekst =
-      '<span style="' +
-        'font-size:10px;' +
-        'font-weight:700;' +
-        'letter-spacing:.08em;' +
-        'text-transform:uppercase;' +
-        'color:' +
-        D.label +
-        ';background:rgba(107,63,160,.06);' +
-        'border-radius:6px;' +
-        'padding:4px 7px;' +
-      '">' +
-        'Resultaat vandaag' +
-      '</span>' +
-
-      '<span style="' +
-        'font-size:16px;' +
-        'font-weight:700;' +
-        'font-variant-numeric:tabular-nums;' +
-        'color:' +
-        (
-          res.bedrag < 0
-            ? '#dc3545'
-            : '#198754'
-        ) +
-      '">' +
-        (
-          res.stukken
-            ? geld(res.bedrag)
-            : '— · prijzen ontbreken'
-        ) +
-      '</span>' +
-
-      '<span style="' +
-        'font-size:11px;' +
-        'color:' +
-        D.grijs +
-        ';' +
-      '">' +
-        res.importKwh
-          .toFixed(1)
-          .replace('.', ',') +
-        ' kWh import' +
-        ' · ' +
-        res.exportKwh
-          .toFixed(1)
-          .replace('.', ',') +
-        ' kWh export' +
-        (
-          actueelAan
-            ? ''
-            : ' · kaal'
-        ) +
-
-      '</span>';
-
-
+    var tekst = actueelResultaatHtml(res, actueelAan);
 
     info.title = res.prijsOnvolledig
       ? 'Voorlopig bedrag. Tarief ontbreekt voor ' +
@@ -3631,7 +3657,18 @@
     if (
       info.__beResultaatTekst !== tekst
     ) {
+      var vorigeInfo = info.querySelector('.be-dag-info');
+      var wasOpen = vorigeInfo && vorigeInfo.open;
+      var wasPinned = vorigeInfo && vorigeInfo.dataset.pinned;
+      var hadFocus = vorigeInfo && vorigeInfo.contains(document.activeElement);
       info.innerHTML = tekst;
+      var nieuweInfo = info.querySelector('.be-dag-info');
+      if (nieuweInfo) {
+        nieuweInfo.open = !!wasOpen;
+        if (wasPinned) nieuweInfo.dataset.pinned = wasPinned;
+        if (hadFocus) nieuweInfo.querySelector('summary').focus({ preventScroll: true });
+      }
+      actueelResultaatInfoBediening();
       info.__beResultaatTekst = tekst;
       if(beDarkOn){beDarkPending.add(info);beDarkRefresh();}
     }
@@ -11433,7 +11470,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.6.6' +
+        'Instellingen v4.6.7' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11899,7 +11936,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.6.6'
+    '4.6.7'
   );
 
   var TAG =
@@ -14214,8 +14251,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.6') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.6');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.7') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.7');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
