@@ -2,14 +2,14 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
-## Downloads — nieuwste versie 4.6.7
+## Downloads — nieuwste versie 4.7
 
 | Variant | Download |
 | --- | --- |
-| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.6.7.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.6.7.user.js) |
-| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_6_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_7.zip) |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7.zip) |
 
-[Release v4.6.7 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.6.7). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+[Release v4.7 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
 
 ## Installeren als userscript — aanbevolen
 
@@ -23,9 +23,9 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.6.7
+## Installeren als Chrome-extensie — v4.7
 
-1. Download [BE_dashboard_4_6_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_6_7.zip).
+1. Download [BE_dashboard_4_7.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -44,20 +44,21 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
 
+## Changelog — v4.7
+
+- Het lopende contractjaar schuift automatisch door op de jaardag. Het nieuwe overzicht begint met een eigen saldo; historische gegevens blijven behouden.
+- De maandstaat bevat ook de laatste gedeeltelijke maand: dertien regels bij een start midden in de maand, twaalf bij een start op de eerste. Start- en einddatum staan klein onder de maandnaam, zonder extra rijhoogte. De oorspronkelijke balken en kleuren blijven behouden.
+- Gedeeltelijke maanden gebruiken daggegevens binnen de contractgrenzen. Vaste kosten worden per contractdag berekend. Voorschotten blijven twaalf geschatte termijnen op de maandelijkse startdag, geen dertiende termijn.
+- De prognose gebruikt vergelijkbare volledige maanden van het vorige jaar. Vanaf twee volledige maanden in het nieuwe jaar geldt **60% historie + 40% bijgewerkt seizoensprofiel**. Zonder bruikbare historie blijft de bestaande prognose de basis.
+- De lopende maand vermeldt bijvoorbeeld **berekend t/m 2 oktober · 3 en 4 voorlopig**, met arcering voor het voorlopige deel.
+- Compleet, leesbaar userscript en Chrome/Edge-extensie bijgewerkt naar **4.7**.
+
 ## Changelog — v4.6.7
 
 - **Actueel → Resultaat vandaag:** beweeg de muis over de import-/exporttotalen of het ⓘ om de afzonderlijke eurobedragen en gemiddelde prijs per kWh te bekijken. De balk zelf blijft compact.
 - Het infoveld is ook met klikken of aantikken te openen en sluiten, zodat het op een smartphone bruikbaar is. Klik buiten het veld of druk op Escape om het te sluiten.
 - De bedragen volgen de All-in/kaal-schakelaar. De gemiddelde prijzen zijn gewogen naar de kWh waarvoor prijzen beschikbaar zijn; ontbrekende prijzen worden vermeld.
 - Beschikbaar als compleet, leesbaar userscript en als Chrome/Edge-extensie, beide versie 4.6.7.
-
-## Changelog — v4.6.6
-
-- **Resultaten → All time** toont nu de volledige periode vanaf de eerste geregistreerde aansluitdag tot en met vandaag. De all-in-weergave kon hiervoor ten onrechte de laatst geladen maand tonen.
-- Beschikbare voorlopige metingen na de laatste verwerkte dag worden toegevoegd, zonder definitieve dagen dubbel te tellen of ontbrekende metingen met prognoses aan te vullen. De aansluitdatum, verwerkingsdatum en ontbrekende of onvolledige dagen worden zichtbaar vermeld.
-- De all-in-kaart en grafiek gebruiken dezelfde periode. Bij wisselen tussen Maand en All time kan een later ontvangen maandresultaat het All time-overzicht niet meer overschrijven.
-- De volledige userscriptcode is weer leesbaar over ruim 14.000 regels. Alle actuele versieverwijzingen zijn bijgewerkt naar 4.6.6.
-- Beide varianten zijn bijgewerkt naar 4.6.6: het userscript en de downloadbare Chrome-extensie.
 
 ## EPEX-prijsbron
 

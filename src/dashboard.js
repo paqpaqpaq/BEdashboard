@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.6.7'
+    '4.7'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -1364,32 +1364,59 @@
     );
   }
 
-  function contractMaanden() {
-    var uit = [];
-
-    for (
-      var i = 0;
-      i < 12;
-      i++
-    ) {
-      var d =
-        new Date(
-          cfg.start.getFullYear(),
-          cfg.start.getMonth() + i,
-          1
-        );
-
-      uit.push(
-        d.getFullYear() +
-        '-' +
-        n2(
-          d.getMonth() + 1
-        )
-      );
+  // De aansluitdatum blijft vast; het zichtbare contractjaar schuift op de jaardag door.
+  function huidigContract(nu) {
+    nu = nu || new Date();
+    var index = Math.max(0, nu.getFullYear() - cfg.start.getFullYear());
+    var begin = datumPlusMaanden(cfg.start, index * 12);
+    if (index > 0 && datumDagNummer(nu) < datumDagNummer(begin)) {
+      index--;
+      begin = datumPlusMaanden(cfg.start, index * 12);
     }
-
-    return uit;
+    var grens = datumPlusMaanden(cfg.start, (index + 1) * 12);
+    var einde = new Date(grens); einde.setDate(einde.getDate() - 1);
+    var delen = [], cursor = new Date(begin.getFullYear(), begin.getMonth(), 1);
+    while (cursor < grens) {
+      var volgend = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      var van = new Date(Math.max(+cursor, +begin));
+      var tot = new Date(Math.min(+volgend, +grens));
+      var laatste = new Date(tot); laatste.setDate(laatste.getDate() - 1);
+      delen.push({ key: iso(cursor).slice(0,7), van: iso(van), tot: iso(laatste),
+        dagen: datumDagNummer(tot) - datumDagNummer(van),
+        eerste: delen.length === 0, laatste: +tot === +grens });
+      cursor = volgend;
+    }
+    var termijnen = [];
+    for (var i = 0; i < 12; i++) termijnen.push(iso(datumPlusMaanden(begin, i)));
+    return {index:index, begin:begin, grens:grens, einde:einde, delen:delen, termijnen:termijnen};
   }
+
+  function contractDatumTekst(key) { return key.split('-').reverse().join('-'); }
+
+  function contractSomDagen(dagen, deel) {
+    var velden = ['imp','exp','inkoop','verkoop','laden','ontladen','pv','afrrImp','afrrExp','afrrVergoeding','dealsAantal'];
+    var op = {};
+    dagen.forEach(function(r) {
+      if (r && r.bronAanwezig !== false && r.key >= deel.van && r.key <= deel.tot) op[r.key] = r;
+    });
+    var keys = Object.keys(op).sort(), totaal = {key:deel.key, leeg:!keys.length, contractDeel:deel, contractDagKeys:keys};
+    velden.forEach(function(k){totaal[k]=keys.reduce(function(n,key){return n+getal(op[key][k]);},0);});
+    totaal.contractBekendeDagen = keys.length;
+    return totaal;
+  }
+
+  function contractPrognose(r, historie, ank, aantalVolledig) {
+    var deel = r.contractDeel, fractie = deel.dagen / dagenInMaand(r.key);
+    var basis = prognoseBedrag(r.key, ank) * fractie;
+    var oud = historie.find(function(h){return h.key===String(+r.key.slice(0,4)-1)+r.key.slice(4) && !h.leeg && h.bronAanwezig!==false;});
+    if (!oud) return basis;
+    // Hergebruik kWh en kale opbrengsten; pas de huidige rekenregels toe op het doeljaar.
+    var vergelijkbaar = Object.assign({}, oud, {key:r.key});
+    var vorig = bereken(vergelijkbaar, naSaldering(r.key) ? oud.exp : Math.max(0,oud.exp-oud.imp), 0).stroom * fractie;
+    return aantalVolledig >= 2 ? vorig * 0.60 + basis * 0.40 : vorig;
+  }
+
+  function contractMaanden() { return huidigContract().delen.map(function(d){return d.key;}); }
 
   function el(
     tag,
@@ -2047,7 +2074,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.6.7)
+   *  Tariefgrafiek (v4.7)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -4586,73 +4613,38 @@
   }
 
   var contractCache = null;
+  var contractCacheSleutel = '';
+  var contractHistorie = [];
 
   function haalContractjaar() {
-    if (contractCache) {
-      return Promise.resolve(
-        contractCache
-      );
-    }
-
+    var periode = huidigContract(), vandaag = iso(new Date());
+    var sleutel = KLANT + ':' + iso(periode.begin) + ':' + vandaag;
+    if (contractCache && contractCacheSleutel === sleutel) return Promise.resolve(contractCache);
     var jaren = {};
-
-    contractMaanden()
-      .forEach(
-        function (mk) {
-          jaren[
-            mk.slice(0, 4)
-          ] = true;
+    periode.delen.forEach(function(d){jaren[d.key.slice(0,4)]=true;});
+    // Vorige kalenderjaren leveren de vergelijkbare maand; originele historie blijft intact.
+    periode.delen.forEach(function(d){if(periode.index>0)jaren[String(+d.key.slice(0,4)-1)]=true;});
+    return Promise.all(Object.keys(jaren).map(haalJaar)).then(function(sets){
+      var op = {};
+      sets.forEach(function(rs){rs.forEach(function(r){op[r.key]=r;});});
+      contractHistorie = Object.keys(op).sort().filter(function(k){
+        return k < vandaag.slice(0,7) && k+'-01' >= iso(cfg.start);
+      }).map(function(k){return op[k];});
+      return Promise.all(periode.delen.map(function(deel){
+        var r = op[deel.key];
+        if (deel.van > vandaag) return contractSomDagen([],deel);
+        // Alleen gehele afgesloten maanden kunnen veilig uit maandtotalen komen.
+        if (deel.dagen === dagenInMaand(deel.key) && deel.key < vandaag.slice(0,7) && r && !r.leeg && r.bronAanwezig!==false) {
+          return Object.assign({},r,{contractDeel:deel,contractBekendeDagen:deel.dagen});
         }
-      );
-
-    return Promise.all(
-      Object.keys(jaren)
-        .map(haalJaar)
-    ).then(
-      function (sets) {
-        var op = {};
-
-        sets.forEach(
-          function (rijen) {
-            rijen.forEach(
-              function (r) {
-                if (r.key) {
-                  op[r.key] =
-                    r;
-                }
-              }
-            );
-          }
-        );
-
-        contractCache =
-          contractMaanden()
-            .map(
-              function (mk) {
-                return (
-                  op[mk] ||
-                  {
-                    key: mk,
-                    leeg: true,
-                    imp: 0,
-                    exp: 0,
-                    inkoop: 0,
-                    verkoop: 0,
-                    laden: 0,
-                    ontladen: 0,
-                    pv: 0,
-                    afrrImp: 0,
-                    afrrExp: 0,
-                    afrrVergoeding: 0,
-                    dealsAantal: 0
-                  }
-                );
-              }
-            );
-
-        return contractCache;
+        return haalMaandDagen(deel.key).then(function(dagen){return contractSomDagen(dagen.filter(function(d){return d.key<=vandaag;}),deel);});
+      }));
+    }).then(function(rijen){
+      if (iso(huidigContract().begin) === iso(periode.begin)) {
+        contractCache=rijen; contractCacheSleutel=sleutel;
       }
-    );
+      return rijen;
+    });
   }
 
   function grenzen() {
@@ -5065,6 +5057,10 @@
             }
           }
 
+          if (geschat && metPrognose && r.contractDeel) {
+            var fractie = r.contractDeel.dagen / dagenInMaand(r.key);
+            imp *= fractie; exp *= fractie;
+          }
           cumImp += imp;
           cumExp += exp;
 
@@ -6580,7 +6576,7 @@
   var STAAT_GRID =
     'grid-template-columns:' +
     KOL1 +
-    ' minmax(60px,1fr) 104px 84px 84px 96px;' +
+    ' minmax(60px,1fr) 104px 84px 84px 96px;min-width:650px;' +
     'gap:12px;';
 
   function staatKop() {
@@ -6800,10 +6796,13 @@
             : '400'
         ) +
         ';">' +
+        '<span style="display:inline-block;position:relative;white-space:nowrap;">' +
         maandLabel(
           o.key
         ) +
-        '</div>' +
+        (o.contractLabel ? '<span style="position:absolute;left:0;top:100%;font-size:8px;font-weight:400;font-style:normal;line-height:1;margin-top:1px;white-space:nowrap;color:' +
+          D.grijs + ';">' + o.contractLabel + '</span>' : '') +
+        '</span></div>' +
 
         '<div>' +
 
@@ -6998,377 +6997,74 @@
     );
   }
 
-  function bouwMaandstaat(
-    rijen,
-    sald,
-    saldProg,
-    huidigeKey,
-    voorlopigeRijen,
-    voorlopigeKey
-  ) {
-    var c =
-      sectie(
-        'be-staat',
-        'Voorschot &amp; verrekening'
-      );
-
-    var werkelijkPer = {};
-    var bekendBedrag = {};
-
-    var voorlopigTekst =
-      voorlopigeKey
-        ? voorlopigeDagenTekst(
-            voorlopigeRijen,
-            voorlopigeKey
-          )
-        : '';
-
-    var voorlopigStroom = 0;
-    var voorlopigAantal = 0;
-
-    (voorlopigeRijen || [])
-      .forEach(
-        function (r) {
-          if (
-            !r ||
-            !r.voorlopig ||
-            !voorlopigeKey ||
-            String(r.key || '')
-              .indexOf(
-                voorlopigeKey + '-'
-              ) !== 0
-          ) {
-            return;
-          }
-
-          var ongesaldeerd =
-            naSaldering(
-              r.key
-            )
-              ? r.exp
-              : 0;
-
-          var p =
-            bereken(
-              r,
-              ongesaldeerd,
-              1
-            );
-
-          voorlopigStroom +=
-            p.stroom;
-
-          voorlopigAantal++;
-        }
-      );
-
-    rijen.forEach(
-      function (r, i) {
-        if (r.leeg) {
-          return;
-        }
-
-        var a =
-          bereken(
-            r,
-            sald[i].ongesaldeerd,
-            dagenVerstreken(
-              r.key
-            )
-          );
-
-        a.dagenEcht =
-          a.dagen;
-
-        a.stroomEcht =
-          a.stroom;
-
-        a.voorlopigStroom =
-          0;
-
-        a.voorlopigAantal =
-          0;
-
-        if (
-          r.key ===
-            voorlopigeKey &&
-          voorlopigAantal > 0
-        ) {
-          a.voorlopigStroom =
-            voorlopigStroom;
-
-          a.voorlopigAantal =
-            voorlopigAantal;
-
-          a.stroom +=
-            voorlopigStroom;
-
-          a.vast +=
-            voorlopigAantal *
-            VAST_DAG;
-
-          a.dagen +=
-            voorlopigAantal;
-
-          a.totaal =
-            a.stroom +
-            a.vast;
-
-          a.saldo =
-            a.totaal +
-            cfg.voorschot;
-        }
-
-        werkelijkPer[
-          r.key
-        ] = a;
-
-        if (
-          a.dagen >=
-          dagenInMaand(
-            r.key
-          )
-        ) {
-          bekendBedrag[
-            r.key
-          ] = a.stroom;
-        }
+  function bouwMaandstaat(rijen, sald, saldProg, huidigeKey, voorlopigeRijen, voorlopigeKey) {
+    var c = sectie('be-staat', 'Voorschot &amp; verrekening');
+    var periode = huidigContract(), vandaag = iso(new Date());
+    var contractStart = periode.begin;
+    // Voeg uitsluitend nog niet definitief verwerkte dagen binnen dit contractjaar toe.
+    var echt = rijen.map(function(r){
+      var copy = Object.assign({},r), deel=r.contractDeel;
+      var keys=new Set(r.contractDagKeys||[]), extra=[];
+      (voorlopigeRijen||[]).forEach(function(d){
+        if(d && d.voorlopig && d.key>=deel.van && d.key<=deel.tot && d.key<=vandaag &&
+          !keys.has(d.key) && !(r.contractBekendeDagen===deel.dagen)) {keys.add(d.key);extra.push(d);}
+      });
+      var velden=['imp','exp','inkoop','verkoop','laden','ontladen','pv','afrrImp','afrrExp','afrrVergoeding','dealsAantal'];
+      extra.forEach(function(d){velden.forEach(function(k){copy[k]=getal(copy[k])+getal(d[k]);});});
+      copy.contractVoorlopig=extra; copy.contractBekendeDagen=(r.contractBekendeDagen||0)+extra.length;
+      copy.leeg=!(copy.contractBekendeDagen>0);
+      if(extra.length){
+        copy.voorlopig=true;
+        copy.geprijsdeImportKwh=getal(r.imp)+extra.reduce(function(n,d){return n+(Number.isFinite(d.geprijsdeImportKwh)?d.geprijsdeImportKwh:d.imp);},0);
+        copy.geprijsdeExportKwh=getal(r.exp)+extra.reduce(function(n,d){return n+(Number.isFinite(d.geprijsdeExportKwh)?d.geprijsdeExportKwh:d.exp);},0);
       }
-    );
-
-    var ank =
-      ankers(
-        bekendBedrag
-      );
-
-    var cum = 0;
-    var betaald = 0;
-    var werkelijk = 0;
-    var vastTot = 0;
-    var maandenBekend = 0;
-    var jaarStroom = 0;
-    var jaarVast = 0;
-
-    var html =
-      staatKop();
-
-    rijen.forEach(
-      function (r, i) {
-        var a =
-          werkelijkPer[
-            r.key
-          ];
-
-        var loopt =
-          isLopendeMaand(
-            r.key
-          );
-
-        var prog =
-          prognoseBedrag(
-            r.key,
-            ank
-          );
-
-        if (
-          naSaldering(
-            r.key
-          ) &&
-          saldProg[i]
-        ) {
-          prog -=
-            saldProg[i].exp *
-            EB;
-        }
-
-        var stroom;
-        var vast;
-        var geschat;
-        var vs;
-        var sub = null;
-        var subKleur = null;
-        var naast = null;
-
-        if (a) {
-          geschat =
-            false;
-
-          stroom =
-            a.stroom;
-
-          vast =
-            a.vast;
-
-          vs =
-            cfg.voorschot;
-
-          betaald +=
-            vs;
-
-          werkelijk +=
-            stroom;
-
-          vastTot +=
-            vast;
-
-          maandenBekend++;
-
-          if (loopt) {
-            sub =
-              'berekend t/m ' +
-              (
-                Number.isFinite(
-                  a.dagenEcht
-                )
-                  ? a.dagenEcht
-                  : a.dagen
-              ) +
-              ' ' +
-              maandNaam(
-                r.key
-              ) +
-              (
-                voorlopigTekst
-                  ? ' · ' +
-                    voorlopigTekst
-                  : ''
-              );
-
-            if (
-              Math.abs(
-                stroom
-              ) <
-              Math.abs(
-                prog
-              )
-            ) {
-              naast =
-                prog;
-            }
-
-          } else if (
-            a.dagen <
-            dagenInMaand(
-              r.key
-            )
-          ) {
-            sub =
-              'nog ' +
-              (
-                dagenInMaand(
-                  r.key
-                ) -
-                a.dagen
-              ) +
-              ' dagen open';
-
-            subKleur =
-              D.oranje;
-          }
-
-          if (
-            loopt &&
-            Math.abs(
-              prog
-            ) >
-            Math.abs(
-              stroom
-            )
-          ) {
-            jaarStroom +=
-              prog;
-
-            jaarVast +=
-              dagenInMaand(
-                r.key
-              ) *
-              VAST_DAG;
-
-          } else {
-            jaarStroom +=
-              stroom;
-
-            jaarVast +=
-              vast;
-          }
-
-        } else {
-          geschat =
-            true;
-
-          stroom =
-            prog;
-
-          vast =
-            dagenInMaand(
-              r.key
-            ) *
-            VAST_DAG;
-
-          vs =
-            cfg.voorschot;
-
-          jaarStroom +=
-            stroom;
-
-          jaarVast +=
-            vast;
-        }
-
-        cum +=
-          stroom +
-          vast +
-          vs;
-
-        html +=
-          staatRij({
-            key:
-              r.key,
-
-            nu:
-              r.key ===
-              huidigeKey,
-
-            even:
-              i % 2 === 0,
-
-            geschat:
-              geschat,
-
-            stroom:
-              stroom,
-
-            stroomEcht:
-              a
-                ? a.stroomEcht
-                : stroom,
-
-            voorlopigStroom:
-              a
-                ? a.voorlopigStroom
-                : 0,
-
-            vast:
-              vast,
-
-            voorschot:
-              vs,
-
-            cum:
-              cum,
-
-            sub:
-              sub,
-
-            subKleur:
-              subKleur,
-
-            naast:
-              naast
-          });
+      return copy;
+    });
+    var saldEcht=salderingReeks(echt,false), saldDefinitief=salderingReeks(rijen,false), bekendBedrag={}, werkelijkPer={};
+    echt.forEach(function(r,i){
+      if(r.leeg)return;
+      var a=bereken(r,saldEcht[i].ongesaldeerd,r.contractBekendeDagen);
+      var origineel=rijen[i];
+      a.stroomEcht=origineel.leeg?0:bereken(origineel,saldDefinitief[i].ongesaldeerd,origineel.contractBekendeDagen||0).stroom;
+      a.voorlopigStroom=a.stroom-a.stroomEcht;
+      werkelijkPer[r.key]=a;
+      if(r.contractBekendeDagen===dagenInMaand(r.key) && r.key<vandaag.slice(0,7))bekendBedrag[r.key]=a.stroom;
+    });
+    var ank=ankers(bekendBedrag), aantalVolledig=Object.keys(bekendBedrag).length;
+    var cum=0,betaald=0,werkelijk=0,vastTot=0,maandenBekend=0,jaarStroom=0,jaarVast=0;
+    var html=staatKop();
+    echt.forEach(function(r,i){
+      var deel=r.contractDeel,a=werkelijkPer[r.key];
+      var verwacht=contractPrognose(r,contractHistorie,ank,aantalVolledig);
+      var nog=Math.max(0,deel.dagen-r.contractBekendeDagen);
+      var prog=a ? a.stroom+verwacht*nog/deel.dagen : verwacht;
+      var vs=periode.termijnen.filter(function(d){return d.slice(0,7)===r.key;}).length*cfg.voorschot;
+      var betaaldMaand=periode.termijnen.filter(function(d){return d.slice(0,7)===r.key && d<=vandaag;}).length*cfg.voorschot;
+      betaald+=betaaldMaand;
+      if(betaaldMaand)maandenBekend++;
+      var verstreken=Math.max(0,Math.min(deel.dagen,datumDagNummer(new Date(vandaag+'T12:00:00'))-datumDagNummer(new Date(deel.van+'T12:00:00'))+1));
+      var vastWerkelijk=verstreken*VAST_DAG;
+      werkelijk+=a?a.stroom:0; vastTot+=vastWerkelijk;
+      jaarStroom+=prog; jaarVast+=deel.dagen*VAST_DAG;
+      var stroom=a?a.stroom:prog;
+      var vast=a?vastWerkelijk:deel.dagen*VAST_DAG;
+      cum+=stroom+vast+vs;
+      var sub=null;
+      if(r.key===vandaag.slice(0,7)) {
+        var definitieveKeys=(rijen[i].contractDagKeys||[]).slice().sort();
+        var laatsteDefinitief=definitieveKeys.length?definitieveKeys[definitieveKeys.length-1]:null;
+        if(!laatsteDefinitief && rijen[i].contractBekendeDagen===deel.dagen)laatsteDefinitief=deel.tot;
+        sub=laatsteDefinitief?'berekend t/m '+parseInt(laatsteDefinitief.slice(8),10)+' '+maandNaam(r.key):'nog geen definitieve dagen';
       }
-    );
-
+      var voorlopigTekst=voorlopigeDagenTekst(r.contractVoorlopig,r.key);
+      if(voorlopigTekst)sub=(sub?sub+' · ':'')+voorlopigTekst;
+      if(verstreken>r.contractBekendeDagen)sub=(sub?sub+' · ':'')+(verstreken-r.contractBekendeDagen)+' dagen zonder resultaat';
+      html+=staatRij({key:r.key,nu:r.key===vandaag.slice(0,7),even:i%2===0,geschat:!a,
+        stroom:stroom,stroomEcht:a?a.stroomEcht:stroom,voorlopigStroom:a?a.voorlopigStroom:0,vast:vast,voorschot:vs,cum:cum,
+        sub:sub,subKleur:verstreken>r.contractBekendeDagen?D.oranje:null,naast:a&&nog>0?prog:null,
+        contractLabel:deel.eerste?'Start '+contractDatumTekst(deel.van):deel.laatste?'Einde '+contractDatumTekst(deel.tot):null,
+        contractLaatste:deel.laatste});
+    });
     var jaarVoorschot =
       12 *
       cfg.voorschot;
@@ -7471,7 +7167,7 @@
 
     var voortgang =
       contractVoortgang(
-        cfg.start,
+        contractStart,
         new Date()
       );
 
@@ -7534,13 +7230,13 @@
         'margin-bottom:14px;',
 
         cel(
-          'Betaald t/m nu',
+          'Voorschotten t/m nu',
           '+' +
           eur(
             betaald
           ),
           maandenBekend +
-          ' \u00d7 ' +
+          (maandenBekend === 1 ? ' termijn × ' : ' termijnen × ') +
           eur(
             cfg.voorschot
           ),
@@ -7588,13 +7284,13 @@
         '">' +
 
           '<span>' +
-          cfg.start.getDate() +
+          contractStart.getDate() +
           ' ' +
           MND_LANG[
-            cfg.start.getMonth()
+            contractStart.getMonth()
           ] +
           ' ' +
-          cfg.start.getFullYear() +
+          contractStart.getFullYear() +
           '</span>' +
 
           '<span>' +
@@ -7707,7 +7403,7 @@
       '\u25bc Maanddetails verbergen' +
       '</summary>' +
 
-      '<div style="margin-top:11px;">' +
+      '<div style="margin-top:11px;overflow-x:auto;">' +
       html +
       '</div>' +
 
@@ -7718,13 +7414,13 @@
       D.grijs +
       ';line-height:1.5;' +
       '">' +
-      'Cursief met ~ is prognose, geschat uit de eigen geschiedenis. ' +
-      'Arcering in de lopende maand is het voorlopige deel dat al in ' +
-      'het maandresultaat en huidig saldo is meegenomen. ' +
-      'Zodra results-v2-api die dag definitief levert, vervangt de echte data ' +
-      'de provisional automatisch. ' +
-      'Een maand die nog loopt telt in de jaarprognose mee voor ' +
-      'het hoogste van werkelijk en verwacht.' +
+      'Cursief met ~ is prognose. Vergelijkbare volledige maanden uit het vorige jaar ' +
+      'vormen de basis; vanaf twee volledige maanden in dit jaar telt het actuele ' +
+      'seizoensprofiel voor 40% mee (60% historie). Dit is een schatting, geen voorspelling van marktprijzen. ' +
+      'Ontbrekende dagresultaten blijven herkenbaar. Vaste kosten tellen alleen binnen ' +
+      'de getoonde contractperiode. Voorschotten zijn berekend als twaalf termijnen ' +
+      'op de maandelijkse startdag; controleer dit met je werkelijke betalingen. ' +
+      'Op de jaardag begint een nieuw overzicht; historische meetgegevens blijven bewaard.' +
       '</div>';
 
     det.addEventListener(
@@ -11470,7 +11166,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.6.7' +
+        'Instellingen v4.7' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11837,6 +11533,7 @@
    * ============================================================
    */
 
+  var contractLaatsteDag = iso(new Date());
   function pols() {
     if (
       location.pathname.indexOf(
@@ -11844,6 +11541,15 @@
       ) === -1
     ) {
       return;
+    }
+
+    var contractVandaag = iso(new Date());
+    if (contractVandaag !== contractLaatsteDag) {
+      contractLaatsteDag = contractVandaag;
+      contractCache = null;
+      cacheJaar = {};
+      cacheMaandDagen = {};
+      plan();
     }
 
     injecteerKop();
@@ -11875,6 +11581,7 @@
     beArchiefOnderhoud();
     setInterval(beArchiefOnderhoud, 300000);
 
+    setInterval(function(){ if (iso(new Date()) !== contractLaatsteDag) pols(); }, 30000);
     pols();
 
     if (
@@ -11936,7 +11643,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.6.7'
+    '4.7'
   );
 
   var TAG =
@@ -14251,8 +13958,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.6.7') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.6.7');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
