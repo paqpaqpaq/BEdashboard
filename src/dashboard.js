@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7'
+    '4.7.1'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -1391,6 +1391,10 @@
     return {index:index, begin:begin, grens:grens, einde:einde, delen:delen, termijnen:termijnen};
   }
 
+  function contractVoorschot(deel, dagen) {
+    return cfg.voorschot * Math.max(0, Math.min(deel.dagen, dagen)) / dagenInMaand(deel.key);
+  }
+
   function contractDatumTekst(key) { return key.split('-').reverse().join('-'); }
 
   function contractSomDagen(dagen, deel) {
@@ -2074,7 +2078,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7)
+   *  Tariefgrafiek (v4.7.1)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -7038,11 +7042,11 @@
       var verwacht=contractPrognose(r,contractHistorie,ank,aantalVolledig);
       var nog=Math.max(0,deel.dagen-r.contractBekendeDagen);
       var prog=a ? a.stroom+verwacht*nog/deel.dagen : verwacht;
-      var vs=periode.termijnen.filter(function(d){return d.slice(0,7)===r.key;}).length*cfg.voorschot;
-      var betaaldMaand=periode.termijnen.filter(function(d){return d.slice(0,7)===r.key && d<=vandaag;}).length*cfg.voorschot;
-      betaald+=betaaldMaand;
-      if(betaaldMaand)maandenBekend++;
       var verstreken=Math.max(0,Math.min(deel.dagen,datumDagNummer(new Date(vandaag+'T12:00:00'))-datumDagNummer(new Date(deel.van+'T12:00:00'))+1));
+      var betaaldMaand=contractVoorschot(deel,verstreken);
+      var vs=contractVoorschot(deel,deel.van>vandaag?deel.dagen:verstreken);
+      betaald+=betaaldMaand;
+      if(verstreken>0)maandenBekend++;
       var vastWerkelijk=verstreken*VAST_DAG;
       werkelijk+=a?a.stroom:0; vastTot+=vastWerkelijk;
       jaarStroom+=prog; jaarVast+=deel.dagen*VAST_DAG;
@@ -7065,9 +7069,9 @@
         contractLabel:deel.eerste?'Start '+contractDatumTekst(deel.van):deel.laatste?'Einde '+contractDatumTekst(deel.tot):null,
         contractLaatste:deel.laatste});
     });
-    var jaarVoorschot =
-      12 *
-      cfg.voorschot;
+    var jaarVoorschot = periode.delen.reduce(function(totaal, deel) {
+      return totaal + contractVoorschot(deel, deel.dagen);
+    }, 0);
 
     var jaarSaldo =
       jaarStroom +
@@ -7235,11 +7239,7 @@
           eur(
             betaald
           ),
-          maandenBekend +
-          (maandenBekend === 1 ? ' termijn × ' : ' termijnen × ') +
-          eur(
-            cfg.voorschot
-          ),
+          eur(cfg.voorschot) + ' per maand · naar rato van dagen',
           D.inkt
         ) +
 
@@ -7405,22 +7405,6 @@
 
       '<div style="margin-top:11px;overflow-x:auto;">' +
       html +
-      '</div>' +
-
-      '<div style="' +
-      'margin-top:12px;' +
-      'font-size:10.5px;' +
-      'color:' +
-      D.grijs +
-      ';line-height:1.5;' +
-      '">' +
-      'Cursief met ~ is prognose. Vergelijkbare volledige maanden uit het vorige jaar ' +
-      'vormen de basis; vanaf twee volledige maanden in dit jaar telt het actuele ' +
-      'seizoensprofiel voor 40% mee (60% historie). Dit is een schatting, geen voorspelling van marktprijzen. ' +
-      'Ontbrekende dagresultaten blijven herkenbaar. Vaste kosten tellen alleen binnen ' +
-      'de getoonde contractperiode. Voorschotten zijn berekend als twaalf termijnen ' +
-      'op de maandelijkse startdag; controleer dit met je werkelijke betalingen. ' +
-      'Op de jaardag begint een nieuw overzicht; historische meetgegevens blijven bewaard.' +
       '</div>';
 
     det.addEventListener(
@@ -11166,7 +11150,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7' +
+        'Instellingen v4.7.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11643,7 +11627,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7'
+    '4.7.1'
   );
 
   var TAG =
@@ -13958,8 +13942,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.1') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.1');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
