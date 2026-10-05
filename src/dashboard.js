@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7.2'
+    '4.7.3'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -2078,7 +2078,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7.2)
+   *  Tariefgrafiek (v4.7.3)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -11146,7 +11146,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7.2' +
+        'Instellingen v4.7.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11623,7 +11623,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7.2'
+    '4.7.3'
   );
 
   var TAG =
@@ -13938,8 +13938,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.2') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.2');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.3') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.3');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';

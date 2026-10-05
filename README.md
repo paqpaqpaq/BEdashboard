@@ -2,14 +2,14 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
-## Downloads — nieuwste versie 4.7.2
+## Downloads — nieuwste versie 4.7.3
 
 | Variant | Download |
 | --- | --- |
-| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.2.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.2.user.js) |
-| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_2.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_2.zip) |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.3.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.3.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_3.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_3.zip) |
 
-[Release v4.7.2 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.2). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+[Release v4.7.3 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.3). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
 
 ## Installeren als userscript — aanbevolen
 
@@ -23,9 +23,9 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.7.2
+## Installeren als Chrome-extensie — v4.7.3
 
-1. Download [BE_dashboard_4_7_2.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_2.zip).
+1. Download [BE_dashboard_4_7_3.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_3.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -43,6 +43,14 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 4. Werk de versiegebonden userscriptdownload, alle actuele README-downloadlinks en de GitHub-release met beide varianten bij.
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
+
+## Changelog — v4.7.3
+
+- EPEX-prijsbron vervangen door de werkende EnergyZero Public API na uitval van Energy-Charts (HTTP 503).
+- Nederlandse day-ahead-kwartierprijzen met expliciete begin- en eindtijden. De aanvraag gebruikt de datum in Europe/Amsterdam.
+- Kale prijzen in EUR/kWh; btw, leverkosten en energiebelasting worden in de all-in weergave één keer toegevoegd.
+- Aparte prijscache en bijgewerkte bronvermelding en netwerktoestemmingen voor Userscripts en Chrome/Edge.
+- Lokaal getest en door de gebruiker bevestigd op het dashboard.
 
 ## Changelog — v4.7.2
 
@@ -68,4 +76,6 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 
 ## EPEX-prijsbron
 
-Energy-Charts / Bundesnetzagentur / SMARD.de, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Bron: [Energy-Charts API](https://www.energy-charts.info/api.html). De bronvermelding staat ook onder het ⓘ bij EPEX. Schakel de oudere losse BE EPEX Day-ahead-plugin uit wanneer je de ingebouwde EPEX-functie gebruikt.
+Bron: [EnergyZero Public API](https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/), Nederlandse day-ahead-kwartierprijzen. De plugin gebruikt de kale prijsreeks (`base`) zonder btw, energiebelasting of leveranciersopslag. De all-in weergave voegt de dashboardinstellingen één keer toe. Bron en toelichting staan ook onder het ⓘ bij EPEX.
+
+Schakel de oudere losse BE EPEX Day-ahead-plugin en de lokale EPEX-testversie uit wanneer je deze versie gebruikt.

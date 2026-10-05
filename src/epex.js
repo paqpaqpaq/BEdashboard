@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const ID='be-epex-addon', KEY='be_epex_enabled_v1', CACHE='be_epex_prices_v1';
+  const ID='be-epex-addon', KEY='be_epex_enabled_v1', CACHE='be_epex_energyzero_prices_v1';
   if(document.getElementById(ID))return;
   const stateNode=document.createElement('script');stateNode.type='application/json';stateNode.id=ID;
   document.documentElement.appendChild(stateNode);
@@ -9,15 +9,19 @@
   let enabled=read(KEY)==='aan', rows=[],cache=null,busy=false,retryAt=0,error='',button,status;
   try{cache=JSON.parse(read(CACHE));if(cache)rows=normalise(cache.body);}catch(_){cache=null;}
   function normalise(body){
-    if(!body||!/^EUR\s*\/\s*MWh$/i.test(body.unit)||!Array.isArray(body.unix_seconds)||!Array.isArray(body.price)||body.unix_seconds.length!==body.price.length)throw Error('Onbekend prijsformaat');
-    const all=body.unix_seconds.map((t,i)=>({t:t*1000,v:body.price[i]})).filter(r=>Number.isFinite(r.t)).sort((a,b)=>a.t-b.t);
-    const steps=all.slice(1).map((r,i)=>r.t-all[i].t).filter(d=>d>0&&d<=3600000);
-    const step=steps.length?Math.min(...steps):900000;
-    return all.filter(r=>Number.isFinite(r.v)).map(r=>{
-      const i=all.indexOf(r),next=all[i+1];
-      return {start:r.t,end:Math.min(r.t+step,next?next.t:r.t+step),price:r.v/1000};
-    });
+    if(!body || body.interval!=='RESPONSE_INTERVAL_QUARTER' || !Array.isArray(body.base))throw Error('Onbekend EnergyZero-prijsformaat');
+    const rows=body.base.map(r=>{
+      const value=r?.price?.value;
+      const start=Date.parse(r?.start),end=Date.parse(r?.end);
+      // EnergyZero base is EUR/kWh, without VAT, energy tax or supplier markup.
+      const price=typeof value==='string' && value.trim()!==''?Number(value):NaN;
+      if(!Number.isFinite(start)||!Number.isFinite(end)||end-start!==900000||!Number.isFinite(price))throw Error('Onvolledige EnergyZero-kwartierprijs');
+      return {start,end,price};
+    }).sort((a,b)=>a.start-b.start);
+    for(let i=1;i<rows.length;i++)if(rows[i].start<rows[i-1].end)throw Error('Overlappende EnergyZero-prijzen');
+    return rows;
   }
+  function coversNow(data){const now=Date.now();return data.some(r=>r.start<=now && now<r.end);}
   function settings(){
     try{return JSON.parse(document.getElementById('be-actueel-allin-data')?.textContent||'{}');}catch(_){return {};}
   }
@@ -37,8 +41,10 @@
 
   }
   function range(){
-    const d=new Date();d.setUTCHours(0,0,0,0);const start=new Date(d.getTime()-2*86400000).toISOString().slice(0,10),end=new Date(d.getTime()+86400000).toISOString().slice(0,10);
-    return {start,end,key:start+'/'+end};
+    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const part=t=>parts.find(p=>p.type===t).value;
+    const date=part('day')+'-'+part('month')+'-'+part('year');
+    return {date,key:date};
   }
   function request(url){
     return new Promise((resolve,reject)=>{
@@ -52,11 +58,11 @@
   }
   async function refresh(){
     if(!enabled||busy||document.hidden||!document.getElementById('be-tarief-chart')||Date.now()<retryAt)return;
-    const r=range();if(cache&&cache.key===r.key&&Date.now()-cache.at<900000){publish();return;}
+    const r=range();if(cache&&cache.key===r.key&&Date.now()-cache.at<900000&&coversNow(rows)){publish();return;}
     busy=true;publish();
     try{
-      const body=await request('https://api.energy-charts.info/price?bzn=NL&start='+r.start+'&end='+r.end);
-      const parsed=normalise(body);if(!parsed.length)throw Error('Nog geen day-ahead-prijzen beschikbaar');
+      const body=await request('https://public.api.energyzero.nl/v1/prices?date='+r.date+'&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY');
+      const parsed=normalise(body);if(!coversNow(parsed))throw Error('Geen actuele day-ahead-prijzen beschikbaar');
       rows=parsed;cache={key:r.key,at:Date.now(),body};save(CACHE,JSON.stringify(cache));error='';
     }catch(e){error=e.message+(rows.length?' · eerder opgehaalde prijzen zichtbaar':'');retryAt=Date.now()+300000;}
     finally{busy=false;publish();}
@@ -93,9 +99,9 @@
     button.addEventListener('click',()=>{enabled=!enabled;save(KEY,enabled?'aan':'uit');publish();refresh();});
     status=document.createElement('span');status.id='be-epex-status';status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
-    source.href='https://www.energy-charts.info/api.html';source.target='_blank';source.rel='noopener noreferrer';
+    source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
     source.setAttribute('aria-label','Bron en toelichting EPEX');
-    source.title='EPEX NL day-ahead. All-in: kale prijs × btw + € 0,02 opslag + energiebelasting. Opslag is inclusief btw en telt één keer mee. Bron: Energy-Charts / Bundesnetzagentur / SMARD · CC BY 4.0.';
+    source.title='EPEX NL day-ahead. All-in: kale prijs × btw + € 0,02 opslag + energiebelasting. Opslag is inclusief btw en telt één keer mee. Bron: EnergyZero Public API, Nederlandse day-ahead-kwartierprijzen. Kale prijsreeks (base), zonder btw, belasting of leveranciersopslag.';
     const legend=document.createElement('div');legend.id='be-epex-legend';legend.setAttribute('aria-label','Grafieklegenda');
     box.append(legend,button,status,source);host.prepend(box);publish();refresh();
   }
