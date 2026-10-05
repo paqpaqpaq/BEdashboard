@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7.3'
+    '4.7.4'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -2078,7 +2078,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7.3)
+   *  Tariefgrafiek (v4.7.4)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -11146,7 +11146,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7.3' +
+        'Instellingen v4.7.4' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11623,7 +11623,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7.3'
+    '4.7.4'
   );
 
   var TAG =
@@ -13938,8 +13938,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.3') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.3');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.4') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.4');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
@@ -14243,3 +14243,121 @@
   window.addEventListener('resize', planScan, { passive: true });
   window.addEventListener('popstate', planScan, { passive: true });
 }());
+
+
+// Break-evenmarkeringen van het cumulatieve dagresultaat.
+(function () {
+    const GUARD = '__beDagBreakeven01';
+    if (window[GUARD]) return;
+    window[GUARD] = true;
+    const ZONE = 'Europe/Amsterdam';
+    const clock = new Intl.DateTimeFormat('en-GB', {
+      timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    });
+    function parts(t) {
+      const p = Object.fromEntries(clock.formatToParts(new Date(t)).map(x => [x.type, x.value]));
+      return {day: p.year + '-' + p.month + '-' + p.day, midnight: p.hour === '00' && p.minute === '00'};
+    }
+    // Use the main plugin's quarter results: same tariffs, all-in switch and energy integration.
+    // No new network calls, no EPEX substitution for the actual settlement price.
+    function crossings(rows, now) {
+      const today = parts(now).day;
+      const day = rows.filter(r => Number.isFinite(r.start) && parts(r.start).day === today && r.start < now)
+        .slice().sort((a, b) => a.start - b.start);
+      if (!day.length || !parts(day[0].start).midnight || day[0].start % 900000 !== 0) return [];
+      let sum = 0, previousEnd = day[0].start, lastSign = 0, zeroTime = null;
+      const out = [], EPS = 1e-9;
+      for (const r of day) {
+        // Missing or partial quarters invalidate the later cumulative balance.
+        // Earlier proven crossings remain visible; never reset the sum after a gap.
+        if (r.start !== previousEnd || r.end - r.start !== 900000 || r.end > now ||
+            !Number.isFinite(r.res) || r.deel || r.wacht || r.carried) break;
+        const before = sum;
+        sum += r.res;
+        const sign = sum > EPS ? 1 : sum < -EPS ? -1 : 0;
+        if (!sign) {
+          if (lastSign && zeroTime === null) zeroTime = r.end;
+        } else {
+          if (lastSign && sign !== lastSign) {
+            // Approximate within a completed quarter; quarter totals cannot locate sub-quarter reversals.
+            const t = zeroTime !== null ? zeroTime : r.start + (r.end - r.start) * (-before / r.res);
+            out.push({t, from: lastSign, to: sign});
+          }
+          lastSign = sign;
+          zeroTime = null;
+        }
+        previousEnd = r.end;
+      }
+      return out;
+    }
+    let data = null, chartLibrary = null, pending = false;
+    function read() {
+      try { data = JSON.parse(document.getElementById('be-tarief-data')?.textContent || 'null'); }
+      catch (_) { data = null; }
+    }
+    const plugin = {
+      id: 'beDagBreakevenTest',
+      afterDatasetsDraw(chart) {
+        if (chart.canvas?.id !== 'be-tarief-chart' || !data?.aan || !Array.isArray(data.rijen)) return;
+        const a = chart.chartArea, x = chart.scales.x, ctx = chart.ctx;
+        if (!a || !x) return;
+        const marks = crossings(data.rijen, Date.now());
+        ctx.save();
+        ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip();
+        let lastLabelX = -Infinity, lane = 0;
+        marks.forEach(m => {
+          const px = x.getPixelForValue(m.t);
+          if (px < a.left || px > a.right) return;
+          lane = px - lastLabelX < 100 ? (lane + 1) % 3 : 0;
+          const y = a.bottom - 15 - lane * 24;
+          ctx.strokeStyle = '#9274bb'; ctx.lineWidth = 1;
+          ctx.setLineDash([3, 4]);ctx.beginPath();ctx.moveTo(px, a.top);ctx.lineTo(px, a.bottom);ctx.stroke();ctx.setLineDash([]);
+          // Signs stay on their respective sides of the time marker.
+          ctx.font = '700 14px system-ui, sans-serif';ctx.textBaseline = 'middle';
+          ctx.textAlign = 'right';ctx.fillStyle = m.from > 0 ? '#198754' : '#dc3545';
+          if (px - 7 > a.left + 8) ctx.fillText(m.from > 0 ? '+' : '−', px - 7, y);
+          ctx.textAlign = 'left';ctx.fillStyle = m.to > 0 ? '#198754' : '#dc3545';
+          if (px + 7 < a.right - 8) ctx.fillText(m.to > 0 ? '+' : '−', px + 7, y);
+          ctx.font = '600 10px system-ui, sans-serif';
+          // Vertical caption beside the line, leaving the signs at the bottom clear.
+          const label = 'Break even';
+          const labelWidth = ctx.measureText(label).width;
+          const labelX = px + 17 < a.right ? px + 11 : px - 11;
+          const labelBottom = y - 17;
+          if (labelBottom - labelWidth >= a.top + 4) {
+            ctx.save();
+            ctx.translate(labelX, labelBottom);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = document.documentElement.getAttribute('data-be-dark') === 'aan' ? '#373229' : '#ffffff';
+            ctx.fillRect(-3, -7, labelWidth + 6, 14);
+            ctx.fillStyle = '#9274bb';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, 0, 0);
+            ctx.restore();
+          }
+          lastLabelX = px;
+        });
+        ctx.restore();
+      }
+    };
+    function update() {
+      pending = false; read();
+      const C = window.Chart;
+      if (!C || typeof C.register !== 'function') return;
+      if (chartLibrary !== C) { C.register(plugin); chartLibrary = C; }
+      const chart = C.getChart('be-tarief-chart');
+      if (chart) chart.draw();
+    }
+    function schedule() {
+      if (pending) return;
+      pending = true; setTimeout(update, 0);
+    }
+    document.addEventListener('be-tarief-update', schedule);
+    document.addEventListener('be-dark-change', schedule);
+    document.addEventListener('visibilitychange', schedule);
+    // The main plugin and Chart may start after this separate userscript.
+    setInterval(update, 3000);
+    update();
+})();
