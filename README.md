@@ -2,14 +2,14 @@
 
 Voegt all-in stroomprijzen, voorlopige dagresultaten, prognoses en aanvullende financiële overzichten toe aan het Balansenergie-dashboard.
 
-## Downloads — nieuwste versie 4.7.4
+## Downloads — nieuwste versie 4.7.5
 
 | Variant | Download |
 | --- | --- |
-| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.4.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.4.user.js) |
-| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_4.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_4.zip) |
+| Userscript voor Safari/Userscripts en Chrome/Edge/Tampermonkey | [Balansenergie-All-in-v4.7.5.user.js](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/Balansenergie-All-in-v4.7.5.user.js) |
+| Uitgepakte Chrome/Edge-extensie | [BE_dashboard_4_7_5.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_5.zip) |
 
-[Release v4.7.4 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.4). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
+[Release v4.7.5 met beide downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v4.7.5). De vaste userscript-installatie- en update-URL hieronder blijven beschikbaar voor automatische updates. Oudere zipbestanden in de repository zijn historische versies.
 
 ## Installeren als userscript — aanbevolen
 
@@ -23,9 +23,9 @@ De userscriptmanager kan nieuwe versies automatisch ophalen. De geïnstalleerde 
 
 Bij installatie over een lokale testversie 4.7.x: open de RAW-installatielink en vervang handmatig. Automatische updates installeren doorgaans geen lager versienummer.
 
-## Installeren als Chrome-extensie — v4.7.4
+## Installeren als Chrome-extensie — v4.7.5
 
-1. Download [BE_dashboard_4_7_4.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_4.zip).
+1. Download [BE_dashboard_4_7_5.zip](https://github.com/paqpaqpaq/BEdashboard/raw/refs/heads/main/BE_dashboard_4_7_5.zip).
 2. Pak het ZIP-bestand uit.
 3. Open `chrome://extensions`.
 4. Schakel **Ontwikkelaarsmodus** in.
@@ -43,6 +43,14 @@ Een handmatig geladen Chrome-extensie werkt, maar wordt op Windows en macOS niet
 4. Werk de versiegebonden userscriptdownload, alle actuele README-downloadlinks en de GitHub-release met beide varianten bij.
 
 Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's maken de updatecontrole mogelijk.
+
+## Changelog — v4.7.5
+
+- Break-even volgt nu dezelfde bekende bedragen als **Resultaat vandaag**. Een ontbrekende kwartierprijs blokkeert niet langer alle latere markers.
+- Nuldoorgangen worden ook tijdens het lopende kwartier getoond.
+- Bij ontbrekende prijzen of een lopend kwartier verschijnt **Break even ≈**, met een korte toelichting dat het berekende resultaat voorlopig is. Ontbrekende meetdekking blijft de berekening onderbreken.
+- Prijzen worden per werkelijk gebruikte stroomrichting verwerkt; een ontbrekende prijs voor de andere richting blokkeert het kwartierresultaat niet.
+- Lokaal getest en door de gebruiker bevestigd op het dashboard. De losse aFRR BID-plugin is **niet opgenomen** in deze release.
 
 ## Changelog — v4.7.4
 

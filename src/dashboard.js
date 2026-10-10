@@ -21,7 +21,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7.4'
+    '4.7.5'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -2078,7 +2078,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7.4)
+   *  Tariefgrafiek (v4.7.5)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -2220,8 +2220,9 @@
 
       var res = null;
       var deel = false;
+      var breakEven = null;
 
-      if (heeftPrijs && !r.carried && actueelDagPunten.length) {
+      if (!r.carried && actueelDagPunten.length) {
         var b =
           actueelProjectieBereken(
             actueelDagPunten,
@@ -2231,9 +2232,19 @@
             nu
           );
 
-        if (b && b.stukken && !b.ongeldig) {
-          res = b.bedrag;
-          deel = b.gedekt < (r.end - r.start) * 0.97;
+        if (b && !b.ongeldig && b.gemetenMs > 0) {
+          // Match Resultaat vandaag: sum known prices without inventing missing ones.
+          // Keep meter coverage separate from tariff coverage.
+          breakEven = {
+            bedrag: b.bedrag,
+            gemetenMs: b.gemetenMs,
+            prijsOnvolledig: !!b.prijsOnvolledig,
+            tot: Math.min(r.end, nu, actueelDagPunten[actueelDagPunten.length - 1].x)
+          };
+          if (b.stukken) {
+            res = b.bedrag;
+            deel = b.gedekt < (r.end - r.start) * 0.97;
+          }
         }
       }
 
@@ -2252,6 +2263,7 @@
         }),
         wacht: !heeftPrijs,
         res: res,
+        breakEven: breakEven,
         deel: deel,
 
         pi: heeftPrijs
@@ -11146,7 +11158,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7.4' +
+        'Instellingen v4.7.5' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11623,7 +11635,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7.4'
+    '4.7.5'
   );
 
   var TAG =
@@ -13938,8 +13950,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.4') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.4');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.5') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.5');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
@@ -14266,23 +14278,31 @@
       const day = rows.filter(r => Number.isFinite(r.start) && parts(r.start).day === today && r.start < now)
         .slice().sort((a, b) => a.start - b.start);
       if (!day.length || !parts(day[0].start).midnight || day[0].start % 900000 !== 0) return [];
-      let sum = 0, previousEnd = day[0].start, lastSign = 0, zeroTime = null;
+      let sum = 0, previousEnd = day[0].start, lastSign = 0, zeroTime = null, estimated = false;
       const out = [], EPS = 1e-9;
       for (const r of day) {
-        // Missing or partial quarters invalidate the later cumulative balance.
-        // Earlier proven crossings remain visible; never reset the sum after a gap.
-        if (r.start !== previousEnd || r.end - r.start !== 900000 || r.end > now ||
-            !Number.isFinite(r.res) || r.deel || r.wacht || r.carried) break;
+        // Require continuous metering. A missing tariff is already omitted from
+        // the displayed daily subtotal; follow that subtotal with an explicit caveat.
+        if (r.start !== previousEnd || r.end - r.start !== 900000 || r.carried) break;
+        const info = r.breakEven;
+        const end = info ? info.tot : r.end;
+        if (!Number.isFinite(end) || end <= r.start || end > Math.min(r.end, now)) break;
+        const amount = info ? info.bedrag : r.res;
+        if (!Number.isFinite(amount)) break;
+        if (info) {
+          if (!Number.isFinite(info.gemetenMs) || info.gemetenMs < (end - r.start) * 0.97) break;
+          estimated = estimated || info.prijsOnvolledig || end < r.end;
+        } else if (r.deel || r.wacht || r.end > now) break;
         const before = sum;
-        sum += r.res;
+        sum += amount;
         const sign = sum > EPS ? 1 : sum < -EPS ? -1 : 0;
         if (!sign) {
-          if (lastSign && zeroTime === null) zeroTime = r.end;
+          if (lastSign && zeroTime === null) zeroTime = end;
         } else {
           if (lastSign && sign !== lastSign) {
             // Approximate within a completed quarter; quarter totals cannot locate sub-quarter reversals.
-            const t = zeroTime !== null ? zeroTime : r.start + (r.end - r.start) * (-before / r.res);
-            out.push({t, from: lastSign, to: sign});
+            const t = zeroTime !== null ? zeroTime : r.start + (end - r.start) * (-before / amount);
+            out.push({t, from: lastSign, to: sign, estimated: !!estimated});
           }
           lastSign = sign;
           zeroTime = null;
@@ -14321,7 +14341,7 @@
           if (px + 7 < a.right - 8) ctx.fillText(m.to > 0 ? '+' : '−', px + 7, y);
           ctx.font = '600 10px system-ui, sans-serif';
           // Vertical caption beside the line, leaving the signs at the bottom clear.
-          const label = 'Break even';
+          const label = m.estimated ? 'Break even ≈' : 'Break even';
           const labelWidth = ctx.measureText(label).width;
           const labelX = px + 17 < a.right ? px + 11 : px - 11;
           const labelBottom = y - 17;
@@ -14349,6 +14369,17 @@
       if (chartLibrary !== C) { C.register(plugin); chartLibrary = C; }
       const chart = C.getChart('be-tarief-chart');
       if (chart) chart.draw();
+      let note = document.getElementById('be-break-even-note');
+      const row = document.getElementById('be-tarief-row');
+      if (!row) return;
+      if (!note) {
+        note = document.createElement('p'); note.id = 'be-break-even-note';
+        note.className = 'charging-chart-note'; row.appendChild(note);
+      }
+      const marks = data?.aan && Array.isArray(data.rijen) ? crossings(data.rijen, Date.now()) : [];
+      const indicative = marks.some(m => m.estimated);
+      note.hidden = !indicative;
+      note.textContent = indicative ? '≈ Break even van het berekende dagresultaat; ontbrekende prijzen of het lopende kwartier maken dit voorlopig.' : '';
     }
     function schedule() {
       if (pending) return;
