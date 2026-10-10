@@ -50,7 +50,6 @@ Laat de bestandsnamen van de twee userscriptbestanden gelijk; de vaste URL's mak
 - Nuldoorgangen worden ook tijdens het lopende kwartier getoond.
 - Bij ontbrekende prijzen of een lopend kwartier verschijnt **Break even ≈**, met een korte toelichting dat het berekende resultaat voorlopig is. Ontbrekende meetdekking blijft de berekening onderbreken.
 - Prijzen worden per werkelijk gebruikte stroomrichting verwerkt; een ontbrekende prijs voor de andere richting blokkeert het kwartierresultaat niet.
-- Lokaal getest en door de gebruiker bevestigd op het dashboard. De losse aFRR BID-plugin is **niet opgenomen** in deze release.
 
 ## Changelog — v4.7.4
 
