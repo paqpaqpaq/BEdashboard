@@ -16,7 +16,7 @@ Vervang de bestaande versie en herlaad het dashboard. Schakel losse BID-, EPEX- 
 - **All-in zoals voorheen:** eigen totaal van verkoop minus inkoop, met de bijbehorende kosten en gemiddelde prijzen. De resultatentabel staat onder de salderingsbalans.
 - **EB + btw uitschakelbaar:** standaard aan. Uitschakelen past de resultaatgrafiek en bijbehorende bedragen aan; € 0,02/kWh opslag bij inkoop en inhouding bij verkoop blijven staan. Het contractoverzicht behoudt zijn volledige belastingberekening.
 - **Maandbedrag per ingangsdatum:** voorschotten worden vanaf die datum, inclusief die dag, naar rato van kalenderdagen berekend.
-- **BID-info inbegrepen**, naast EPEX en break-even. Zonder Mijnbatterij-integratie.
+
 
 De getoonde resultaten zijn berekeningen, geen officiële afrekening. Ontbrekende brondata worden niet als nul ingevuld. Voorschotten zijn berekend op basis van je instellingen, geen gecontroleerd betalingsoverzicht.
 
