@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v4.7.5
+// @name         Balansenergie All-in v5.0
 // @namespace    paq.balansenergie
-// @version      4.7.5
-// @description  All-in Resultaten-dashboard met voorlopige dagen, schakelbare all-in kwartierprijzen op Actueel en Absurd Units in het Balans-resultaat bij All-in AAN.
+// @version      5.0
+// @description  All-in dashboard met BID-info, eigen resultaattotalen, EB/btw-schakelaar, kwartier-CSV en voorschotwijzigingen per datum.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @supportURL   https://github.com/paqpaqpaq/BEdashboard/issues
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '4.7.5'
+    '5.0'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -224,6 +224,7 @@
   };
 
   var cfg = {
+    voorschotHistorie: (function(){try{return beVoorschotValideer(JSON.parse(localStorage.getItem('be_cfg_voorschot_historie')||'[]'));}catch(e){return [];}})(),
     voorschot: parseFloat(
       localStorage.getItem(LS.voorschot) || '42.98'
     ),
@@ -246,7 +247,8 @@
       localStorage.getItem(LS.balansBlok) !== 'uit',
 
     // Resultaten begint bij iedere paginalaad met de originele Balans-data.
-    allin: localStorage.getItem(LS.allin) === 'aan'
+    allin: localStorage.getItem(LS.allin) === 'aan',
+    resultaatBelastingen: localStorage.getItem('be_cfg_resultaat_belastingen') !== 'uit'
   };
 
   var salderingPrognose = false;
@@ -1336,36 +1338,46 @@
     return dagenInMaand(mk);
   }
 
-  function voorschotVoor(
-    mk,
-    dagen,
-    geschat
-  ) {
-    if (
-      geschat ||
-      !mk ||
-      !/^\d{4}-\d{2}$/.test(
-        String(mk)
-      )
-    ) {
-      return cfg.voorschot;
+  // Kalenderdagen rekenen voorkomt afwijkingen bij zomer- en wintertijd.
+  function beVoorschotValideer(rows) {
+    if(!Array.isArray(rows))throw Error('Ongeldige voorschothistorie.');
+    var gezien=new Set();
+    return rows.map(function(r){
+      var datum=String(r.datum||''),bedrag=Number(r.bedrag);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(datum)||!Number.isFinite(Date.parse(datum))||new Date(datum).toISOString().slice(0,10)!==datum||gezien.has(datum)||!Number.isFinite(bedrag)||bedrag<0||r.bedrag==='')throw Error('Vul een geldige, unieke ingangsdatum en een bedrag vanaf € 0 in.');
+      gezien.add(datum);return {datum:datum,bedrag:bedrag};
+    }).sort(function(a,b){return a.datum.localeCompare(b.datum);});
+  }
+  function beVoorschotSom(van,aantal) {
+    var totaal=0,start=Date.parse(van),historie=cfg.voorschotHistorie||[];
+    for(var i=0;i<Math.max(0,aantal);i++){
+      var dag=new Date(start+i*86400000).toISOString().slice(0,10),bedrag=cfg.voorschot;
+      historie.forEach(function(r){if(r.datum<=dag)bedrag=r.bedrag;});
+      totaal+=bedrag/dagenInMaand(dag.slice(0,7));
     }
-
-    var totaal =
-      dagenInMaand(mk);
-
-    if (
-      !(dagen > 0) ||
-      dagen >= totaal
-    ) {
-      return cfg.voorschot;
+    return totaal;
+  }
+  function voorschotVoor(mk,dagen,geschat) {
+    if(!/^\d{4}-\d{2}$/.test(String(mk)))return cfg.voorschot;
+    var totaal=dagenInMaand(mk);
+    return beVoorschotSom(mk+'-01',geschat?totaal:Math.max(0,Math.min(totaal,Number(dagen)||0)));
+  }
+  function beVoorschotInstellingen(host) {
+    host.innerHTML='<div style="font-weight:600;margin:12px 0 6px">Wijzigingen maandbedrag</div><div style="font-size:11px;margin-bottom:8px">Het basisbedrag geldt tot de eerste wijziging. Het nieuwe bedrag geldt vanaf de ingangsdatum, inclusief die dag, naar rato van kalenderdagen.</div><div class="be-vs-rijen"></div><button type="button" class="be-vs-toevoegen">+ Wijziging toevoegen</button>';
+    var lijst=host.querySelector('.be-vs-rijen');
+    var toevoegen=host.querySelector('.be-vs-toevoegen');
+    toevoegen.style.cssText='border:1px solid '+D.paarsLicht+';border-radius:6px;padding:8px 12px;background:transparent;color:'+D.paars+';font:600 11px system-ui;cursor:pointer;margin:4px 0 8px';
+    function rij(r){
+      var el=document.createElement('div');el.style.cssText='display:flex;gap:6px;margin:6px 0;align-items:center';
+      var datum=document.createElement('input'),bedrag=document.createElement('input'),weg=document.createElement('button');
+      datum.type='date';datum.value=r.datum;datum.setAttribute('aria-label','Ingangsdatum voorschot');
+      bedrag.type='number';bedrag.min='0';bedrag.step='.01';bedrag.value=r.bedrag;bedrag.setAttribute('aria-label','Nieuw maandbedrag');
+      [datum,bedrag].forEach(function(i){i.style.cssText='min-width:0;width:44%;padding:7px;border:1px solid '+D.rand+';border-radius:6px';});
+      weg.type='button';weg.style.cssText='border:1px solid '+D.rand+';border-radius:6px;background:transparent;color:'+D.paars+';padding:5px 9px;font:600 16px system-ui;cursor:pointer';weg.textContent='×';weg.setAttribute('aria-label','Wijziging verwijderen');weg.onclick=function(){el.remove();};
+      el.append(datum,bedrag,weg);lijst.appendChild(el);
     }
-
-    return (
-      cfg.voorschot *
-      dagen /
-      totaal
-    );
+    (cfg.voorschotHistorie||[]).forEach(rij);
+    toevoegen.onclick=function(){rij({datum:iso(new Date()),bedrag:cfg.voorschot});};
   }
 
   function isLopendeMaand(mk) {
@@ -1414,7 +1426,7 @@
   }
 
   function contractVoorschot(deel, dagen) {
-    return cfg.voorschot * Math.max(0, Math.min(deel.dagen, dagen)) / dagenInMaand(deel.key);
+    return beVoorschotSom(deel.van, Math.max(0, Math.min(deel.dagen, dagen)));
   }
 
   function contractDatumTekst(key) { return key.split('-').reverse().join('-'); }
@@ -2100,7 +2112,7 @@
   }
 
   /* ──────────────────────────────────────────────────────────────────
-   *  Tariefgrafiek (v4.7.5)
+   *  Tariefgrafiek (v5.0)
    *
    *  Een tweede grafiek tussen de vermogensgrafiek en de SOC-rij, met het
    *  afname- en invoedtarief per kwartier. Dezelfde kwartiervakken, dezelfde
@@ -2537,117 +2549,70 @@
       });
   }
 
+  var actueelDagOphaling = null;
+  var actueelDagPuntenScope = '';
+  var actueelDagRevisie = 0;
   function actueelHaalDagPunten() {
-    if (
-      !isActueelPagina() ||
-      !KLANT
-    ) {
-      return Promise.resolve();
+    if (!isActueelPagina() || !KLANT) return Promise.resolve();
+    var klant = KLANT, beginVandaag = new Date();
+    beginVandaag.setHours(0,0,0,0);
+    var vanaf = beginVandaag.getTime(), tot = Date.now(), dagKey = iso(beginVandaag);
+    var scope = klant + ':' + dagKey;
+    if (actueelDagOphaling && actueelDagOphaling.scope === scope) return actueelDagOphaling.promise;
+    if (actueelDagPuntenScope !== scope) {
+      actueelDagPunten = [];
+      actueelDagPuntenScope = scope;
     }
-
-    var beginVandaag =
-      new Date();
-
-    beginVandaag.setHours(
-      0,
-      0,
-      0,
-      0
-    );
-
-    var u =
-      new URL(
-        location.origin +
-        '/customer/current-history/api/'
-      );
-
-    u.searchParams.set(
-      'installation',
-      KLANT
-    );
-
-    u.searchParams.set(
-      'start',
-      String(
-        beginVandaag.getTime()
-      )
-    );
-
-    u.searchParams.set(
-      'end',
-      String(
-        Date.now()
-      )
-    );
-
-    return beHaalBron(
-      u,
-      {
-        credentials:
-          'same-origin',
-
-        cache:
-          'no-store'
-      }
-    )
-
-      .then(function (r) {
-        return r.ok
-          ? r.json()
-          : null;
-      })
-
-      .then(function (j) {
-        if (
-          !j ||
-          !Array.isArray(
-            j.rows
-          )
-        ) {
-          return;
-        }
-
-        actueelDagPunten =
-          j.rows
-            .filter(
-              function (r) {
-                return (
-                  r &&
-                  Number.isFinite(r.t) &&
-                  Number.isFinite(r.po)
-                );
-              }
-            )
-            .map(
-              function (r) {
-                return {
-                  x:
-                    r.t,
-
-                  y:
-                    r.po
-                };
-              }
-            )
-            .sort(
-              function (a, b) {
-                return a.x - b.x;
-              }
-            );
-
-        actueelProjectieToon();
-
-        tariefStuur();
-      })
-
-      .catch(
-        function (e) {
-          console.warn(
-            '[BE Actueel] daghistorie ophalen mislukt:',
-            e.message
-          );
-        }
-      );
+    var revisie = ++actueelDagRevisie;
+    function ontvang(rows) {
+      if (revisie !== actueelDagRevisie) return;
+      if (KLANT !== klant || iso(new Date()) !== dagKey || actueelDagPuntenScope !== scope) return;
+      var map = new Map(actueelDagPunten.map(function(p){return [p.x,p];}));
+      (rows || []).forEach(function(r){
+        if(r && Number.isFinite(r.t) && Number.isFinite(r.po) && r.t >= vanaf && r.t <= tot)
+          map.set(r.t,{x:r.t,y:r.po});
+      });
+      actueelDagPunten = Array.from(map.values()).sort(function(a,b){return a.x-b.x;});
+      actueelProjectieToon();
+      tariefStuur();
+    }
+    // Render existing day measurements without waiting for network or archive writes.
+    var versOntvangen = false;
+    beLeesBron(dagKey).then(function(dag){
+      // An older storage snapshot must not overwrite a fresh response.
+      if (!versOntvangen) ontvang(dag.rows);
+    }).catch(function(e){console.warn('[BE Actueel] dagcache:',e.message);});
+    var u = new URL('/customer/current-history/api/',location.origin);
+    u.searchParams.set('installation',klant);
+    u.searchParams.set('start',String(vanaf));
+    u.searchParams.set('end',String(tot));
+    var controller = new AbortController();
+    var timeout = setTimeout(function(){controller.abort();},12000);
+    var taak = {scope:scope,promise:null};
+    actueelDagOphaling = taak;
+    taak.promise = Promise.resolve().then(function(){
+      return origFetch(u.href,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+    }).then(function(r){
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return r.json();
+    }).then(function(j){
+      if(KLANT!==klant || iso(new Date())!==dagKey)return;
+      // Publish raw measurements first; storage latency cannot hide the result.
+      versOntvangen = true;
+      ontvang(beHistorieMetingen(j));
+      var werk = beArchiefWachtrij.then(function(){
+        if(KLANT!==klant)return null;
+        return beVerwerkBron(u,j);
+      });
+      beArchiefWachtrij = werk.catch(function(e){console.warn('[BE Actueel] dagarchief:',e.message);});
+      werk.then(function(archief){if(archief)ontvang(archief.rows);}).catch(function(){});
+    }).catch(function(e){
+      console.warn('[BE Actueel] daghistorie ophalen mislukt:',e.message);
+    }).finally(function(){
+      clearTimeout(timeout);
+      if(actueelDagOphaling===taak)actueelDagOphaling=null;
+    });
+    return taak.promise;
   }
 
   function actueelHuidigeRij() {
@@ -3665,6 +3630,7 @@
           }
         );
       if (punten.length < 2) {
+        info.__beResultaatTekst = null;
         info.textContent =
           actueelAan
             ? 'Voorlopig all-in resultaat — wachten op meetgegevens.'
@@ -3708,6 +3674,7 @@
     );
 
     if (res.ongeldig || !(res.gemetenMs > 0)) {
+      info.__beResultaatTekst = null;
       info.textContent = 'Resultaat vandaag — nog geen passende metingen en prijzen';
       return;
     }
@@ -5814,11 +5781,7 @@
           contractPeriode
             ? rij(
                 'Betaald voorschot',
-                ctx.contractMaanden +
-                  ' × ' +
-                  eur(
-                    cfg.voorschot
-                  ),
+                'Volgens ingangsdata · naar rato van dagen',
                 ctx.contractBetaald,
                 {
                   neutraal:
@@ -6008,6 +5971,14 @@
         'Prijsopbouw per kWh'
       );
 
+    if (a.zonderBelastingen) {
+      c.appendChild(el('div', 'display:flex;gap:24px;flex-wrap:wrap;line-height:1.6',
+        kolom('Afname', eur(a.prijsInk,3) + ' / kWh', 'kaal + € 0,02/kWh opslag', D.rood) +
+        kolom('Teruglevering', eur(a.prijsVerk,3) + ' / kWh', 'kaal − € 0,02/kWh opslag', D.groen)));
+      c.appendChild(el('div','font-size:11px;margin-top:10px;color:'+D.grijs,
+        'EB en btw uitgeschakeld voor deze stroomkostenweergave. Het contractoverzicht hieronder behoudt zijn volledige berekening.'));
+      return c;
+    }
     function kolomPrijs(
       titel,
       balansPrijs,
@@ -7269,7 +7240,7 @@
           eur(
             betaald
           ),
-          eur(cfg.voorschot) + ' per maand · naar rato van dagen',
+          'Volgens ingangsdata · naar rato van dagen',
           D.inkt
         ) +
 
@@ -8327,6 +8298,12 @@
       return;
     }
 
+    if (a.zonderBelastingen) {
+      ['summary-stroom-voordeel','summary-deal-result','summary-buy-price','summary-sell-price'].forEach(function(id) {
+        zetPopover(id, 'Zonder EB en btw', 'Kale stroomprijs, met € 0,02/kWh opslag bij inkoop en € 0,02/kWh aftrek bij verkoop. Energiebelasting en btw zijn uit deze weergave gelaten.');
+      });
+      return;
+    }
     var ebPerKwhVerk =
       a.exp > 0
         ? (
@@ -8636,6 +8613,10 @@
       true
     );
 
+    if (a.zonderBelastingen) {
+      zetSubInfo('summary-stroom-voordeel', kwh(a.imp) + ' · zonder EB en btw · + € 0,02/kWh opslag');
+      zetSubInfo('summary-deal-result', kwh(a.exp) + ' · zonder EB en btw · − € 0,02/kWh opslag');
+    }
     pasPopoversAan(
       a,
       true
@@ -8746,6 +8727,176 @@
     return JSON.stringify(
       uit
     );
+  }
+
+  // BE noemt de vergelijkingsreeks sinds 15 oktober anders. Alleen All-in
+  // vervangt deze reeks door het eigen stroomresultaat; UIT herstelt de bron.
+  // Presentatiefilter voor grafiek en geselecteerde stroomkostenperiode.
+  // Het contractoverzicht en de opgeslagen bronresultaten blijven bruto.
+  function beResultaatWeergave(a) {
+    if (!a || cfg.resultaatBelastingen !== false || a.zonderBelastingen) return a;
+    var b = Object.assign({}, a);
+    b.zonderBelastingen = true;
+    // De bron is inclusief btw en de bestaande 2 ct opslag. Eerst die
+    // opslag terugdraaien, dan de btw, dan exact 2 ct per kant toepassen.
+    b.allinInk = (a.balansInk + a.imp * OPSLAG) / BTW - a.imp * OPSLAG;
+    b.allinVerk = (a.balansVerk + a.exp * OPSLAG) / BTW - a.exp * OPSLAG;
+    b.balansInk = b.allinInk;
+    b.balansVerk = b.allinVerk;
+    b.eb = b.ebInk = b.ebVerk = 0;
+    b.stroom = b.balansNetto = b.allinInk + b.allinVerk;
+    b.prijsInk = b.prijsInkBalans = a.imp ? -b.allinInk / a.imp : 0;
+    b.prijsVerk = b.prijsVerkBalans = a.exp ? b.allinVerk / a.exp : 0;
+    return b;
+  }
+
+  function beCsvCel(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') return Number.isFinite(v) ? String(v).replace('.', ',') : '';
+    var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    if (/^[=+@\-\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  function beCsvMaak(rijen) {
+    var keys = Array.from(new Set(rijen.flatMap(function(r) { return Object.keys(r); })));
+    return '\ufeff' + [keys.map(beCsvCel).join(';')].concat(rijen.map(function(r) {
+      return keys.map(function(k) { return beCsvCel(r[k]); }).join(';');
+    })).join('\r\n');
+  }
+  function beCsvDatums(van, tot) {
+    if (![van,tot].every(function(d) {return /^\d{4}-\d{2}-\d{2}$/.test(d) &&
+      Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10) === d;}) || van > tot)
+      throw Error('Kies een geldige begin- en einddatum.');
+    var dagen=[];
+    for(var t=Date.parse(van); t<=Date.parse(tot); t+=86400000) dagen.push(new Date(t).toISOString().slice(0,10));
+    return dagen;
+  }
+  function beCsvRijen(j, dag) {
+    var lijst = j && j.day_detail && j.day_detail.intervals;
+    if (!j || j.period !== dag || j.interval !== 'day' || !j.pricing ||
+        j.pricing.include_vat !== false || j.pricing.include_delivery_cost !== false)
+      throw Error('Bron bevestigt de gevraagde dag en kale prijzen niet.');
+    if (!Array.isArray(lijst) || !lijst.length) return [{datum:dag,export_status:'geen kwartierdata beschikbaar'}];
+    var seen=new Set();
+    return lijst.map(function(r) {
+      if (!r.timestamp || !Number.isFinite(Date.parse(r.timestamp)) || seen.has(r.timestamp))
+        throw Error('Ontbrekende of dubbele kwartiertijd in de bron.');
+      seen.add(r.timestamp);
+      return Object.assign({datum:dag,tijdzone:'Europe/Amsterdam',
+        lokale_start:new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Amsterdam',dateStyle:'short',timeStyle:'long'}).format(new Date(r.timestamp)),
+        export_status:'brondata',include_vat:false,include_delivery_cost:false,
+        bron_status:j.data_quality && j.data_quality.status || ''},r);
+    });
+  }
+  function beCsvSlaOp(naam, rijen) {
+    var a=document.createElement('a'),u=URL.createObjectURL(new Blob([beCsvMaak(rijen)],{type:'text/csv;charset=utf-8'}));
+    a.href=u;a.download=naam;a.click();setTimeout(function(){URL.revokeObjectURL(u);},60000);
+  }
+  var beCsvBezig = false;
+  function beResultaatExtraBediening(wrap) {
+    wrap.style.flexWrap='wrap';
+    var belastingKnop=document.createElement('button');
+    belastingKnop.type='button';belastingKnop.id='be-resultaat-belastingen';
+    belastingKnop.setAttribute('role','switch');
+    belastingKnop.setAttribute('aria-label','EB & btw');
+    belastingKnop.style.cssText='display:flex;align-items:center;gap:9px;border:0;padding:0;background:transparent;color:'+D.paars+';font:600 13px system-ui;letter-spacing:.03em;cursor:pointer';
+    var belastingLabel=document.createElement('span');belastingLabel.textContent='EB & btw';
+    var belastingTrack=document.createElement('span');belastingTrack.setAttribute('aria-hidden','true');
+    belastingTrack.style.cssText='position:relative;display:inline-block;box-sizing:border-box;width:44px;height:24px;border-radius:12px;flex-shrink:0;border:1.5px solid '+D.paarsLicht+';transition:background .25s';
+    var belastingThumb=document.createElement('span');
+    belastingThumb.style.cssText='position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);transition:transform .25s';
+    belastingTrack.appendChild(belastingThumb);belastingKnop.append(belastingLabel,belastingTrack);
+    function update(){
+      belastingKnop.hidden=!cfg.allin;
+      belastingKnop.style.display=cfg.allin?'flex':'none';
+      belastingKnop.setAttribute('aria-checked',String(cfg.resultaatBelastingen));
+      belastingLabel.style.color=cfg.resultaatBelastingen?D.paars:D.paarsLicht;
+      belastingTrack.style.background=cfg.resultaatBelastingen?D.paars:D.rand;
+      belastingThumb.style.transform=cfg.resultaatBelastingen?'translateX(20px)':'translateX(0)';
+      belastingKnop.title='Grafiek en stroomkosten: energiebelasting en btw. De opslag van € 0,02 per kWh blijft aan beide kanten staan.';
+    }
+    belastingKnop.addEventListener('click',function(){
+      cfg.resultaatBelastingen=!cfg.resultaatBelastingen;
+      localStorage.setItem('be_cfg_resultaat_belastingen',cfg.resultaatBelastingen?'aan':'uit');
+      update();herteken();
+    });
+    wrap.appendChild(belastingKnop);
+    wrap.querySelector('label').addEventListener('click',function(){update();});
+    update();
+  }
+  var beCsvPaneel;
+  function beKwartierExportBediening(wrap) {
+    if(beCsvPaneel){wrap.appendChild(beCsvPaneel);return;}
+    var det=document.createElement('details');beCsvPaneel=det;det.open=true;det.style.cssText='font-size:12px;max-width:100%;color:'+D.paars;
+    var sum=document.createElement('summary');sum.textContent='Download kwartierdata';sum.style.cursor='pointer';det.appendChild(sum);
+    var box=document.createElement('div');box.style.cssText='display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 0';
+    var vandaag=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Amsterdam'}).format(new Date());
+    function datum(naam,waarde){var l=document.createElement('label');l.textContent=naam+' ';var i=document.createElement('input');i.type='date';i.value=waarde;i.max=vandaag;i.style.cssText='max-width:150px;padding:5px;border:1px solid '+D.rand+';border-radius:6px;font:inherit';l.appendChild(i);box.appendChild(l);return i;}
+    var van=datum('Vanaf',iso(cfg.start)),tot=datum('Tot en met',vandaag);
+    var start=document.createElement('button'),stop=document.createElement('button'),status=document.createElement('div');
+    start.type=stop.type='button';start.textContent='Download CSV';stop.textContent='Stoppen';stop.hidden=true;
+    [start,stop].forEach(function(b){b.style.cssText='border:1px solid '+D.paarsLicht+';border-radius:8px;padding:8px 12px;background:transparent;color:'+D.paars+';font:inherit;cursor:pointer';box.appendChild(b);});
+    var voortgang=document.createElement('progress');voortgang.max=1;voortgang.value=0;voortgang.hidden=true;voortgang.style.cssText='width:100%;height:10px;accent-color:'+D.paars;voortgang.setAttribute('aria-label','Voortgang kwartierexport');box.appendChild(voortgang);
+    status.setAttribute('role','status');status.style.cssText='flex-basis:100%;line-height:1.5';
+    status.textContent='Alle bronvelden per kwartier. Prijzen zonder btw, energiebelasting en opslag; lege bronwaarden blijven leeg. UTC-tijden blijven behouden.';
+    box.appendChild(status);det.appendChild(box);wrap.appendChild(det);
+    var afgebroken=false,controller;
+    stop.onclick=function(){afgebroken=true;if(controller)controller.abort();};
+    start.onclick=async function(){
+      if(beCsvBezig)return;
+      var dagen;
+      try{dagen=beCsvDatums(van.value,tot.value);if(tot.value>vandaag)throw Error('De einddatum mag niet in de toekomst liggen.');}
+      catch(e){status.textContent=e.message;return;}
+      var begin=van.value,eind=tot.value,rijen=[],fouten=0,leeg=0,klaar=0;
+      afgebroken=false;beCsvBezig=true;status.textContent='Export voorbereiden · 0/'+dagen.length+' dagen';voortgang.hidden=false;voortgang.max=dagen.length;voortgang.value=0;start.disabled=van.disabled=tot.disabled=true;stop.hidden=false;
+      function wacht(ms){return new Promise(function(resolve){var t=Date.now();function tick(){if(afgebroken||Date.now()-t>=ms)resolve();else setTimeout(tick,200);}tick();});}
+      try {
+        for(var dag of dagen){
+          if(afgebroken)break;
+          var gelukt=false;
+          for(var poging=0;poging<4&&!afgebroken;poging++){
+            await wacht(1250);if(afgebroken)break;
+            status.textContent='Ophalen '+dag+' · '+klaar+'/'+dagen.length+' dagen';
+            controller=new AbortController();var timeout=setTimeout(function(){controller.abort();},45000);
+            try {
+              var u=new URL('/customer/'+encodeURIComponent(KLANT)+'/results-v2-api/',location.origin);
+              u.search=new URLSearchParams({interval:'day',period:dag,include_vat:'0',include_delivery_cost:'0'});
+              var r=await origFetch(u.href,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+              if(r.status===429&&poging<3){
+                clearTimeout(timeout);var delay=Math.max(60000,(Number(r.headers.get('Retry-After'))||0)*1000);
+                var hervat=Date.now()+delay;
+                while(!afgebroken&&Date.now()<hervat){
+                  status.textContent=klaar+'/'+dagen.length+' dagen · BE vraagt om een pauze · verder over '+Math.ceil((hervat-Date.now())/1000)+' s';
+                  await wacht(Math.min(1000,hervat-Date.now()));
+                }
+                continue;
+              }
+              if(!r.ok)throw Error('HTTP '+r.status);
+              var jr=beCsvRijen(await r.json(),dag);rijen.push.apply(rijen,jr);
+              if(jr.length===1&&jr[0].export_status!=='brondata')leeg++;
+              gelukt=true;break;
+            } catch(e) {
+              if(afgebroken)break;
+              if(poging===3){rijen.push({datum:dag,export_status:'ophalen mislukt',fout:e.message});fouten++;}
+            } finally {clearTimeout(timeout);controller=null;}
+          }
+          if(!afgebroken){klaar++;voortgang.value=klaar;}
+        }
+        if(rijen.length)beCsvSlaOp('BE-kwartierdata-'+begin+'-tot-'+eind+(afgebroken||fouten?'-gedeeltelijk':'')+'.csv',rijen);
+        status.textContent=(afgebroken?'Gestopt. Deelbestand gedownload. ':'CSV gedownload. ')+klaar+'/'+dagen.length+' dagen; '+fouten+' mislukt; '+leeg+' zonder kwartierdata.';
+      } catch(e){status.textContent='Export onderbroken: '+e.message;if(rijen.length)beCsvSlaOp('BE-kwartierdata-'+begin+'-gedeeltelijk.csv',rijen);}
+      finally {beCsvBezig=false;start.disabled=van.disabled=tot.disabled=false;stop.hidden=true;}
+    };
+  }
+
+  function beGrafiekRol(label) {
+    return label === 'Totaal voordeel t.o.v. vast' ? 'Totaal' : label;
+  }
+
+  function beGrafiekDataSignatuur(chart) {
+    return JSON.stringify([chart.data.labels, chart.data.datasets.map(function (d) {
+      return [d.label, d.data];
+    })]);
   }
 
   var CHART_SETS = [
@@ -9013,7 +9164,7 @@
         : item && item.rij
           ? voorlopigDagLabel(key)
           : key);
-      var a = item && item.rij ? bereken(item.rij, naSaldering(key) ? item.rij.exp : 0, 1) : null;
+      var a = item && item.rij ? beResultaatWeergave(bereken(item.rij, naSaldering(key) ? item.rij.exp : 0, 1)) : null;
       if (a) indices.push(dag - 1);
       datasets.forEach(function (o, di) {
         var value = null;
@@ -9090,9 +9241,27 @@
       chart.$beHerstelRenderId !==
       renderId
     ) {
-      herstelVoorlopigeGrafiek(
-        chart
-      );
+      // Een nieuwe native render kan ook dezelfde maand opnieuw aanleveren.
+      // Bewaar die actuele bron, nooit de vorige All-in-projectie als origineel.
+      var externGewijzigd = chart.$beAllinSignatuur &&
+        chart.$beAllinSignatuur !== beGrafiekDataSignatuur(chart);
+      if (externGewijzigd) {
+        chart.$beVoorlopig = null;
+        chart.$beVoorlopigIndices = [];
+        chartOrig = null;
+      }
+      herstelVoorlopigeGrafiek(chart);
+      if (!externGewijzigd && chartOrig && chartOrig.chart === chart) {
+        chart.data.datasets = chart.data.datasets.filter(function (d) {
+          return d.label !== 'Energiebelasting';
+        });
+        chartOrig.sets.forEach(function (o) {
+          var d = chart.data.datasets.find(function (v) {
+            return beGrafiekRol(v.label) === beGrafiekRol(o.label);
+          });
+          if (d) { d.label = o.label; d.data = o.data.slice(); }
+        });
+      }
 
       chart.$beHerstelRenderId =
         renderId;
@@ -9111,7 +9280,7 @@
             function (d) {
               return (
                 CHART_SETS.indexOf(
-                  d.label
+                  beGrafiekRol(d.label)
                 ) !== -1
               );
             }
@@ -9370,9 +9539,10 @@
             }
 
             if (
-              ds.label ===
+              beGrafiekRol(ds.label) ===
               'Totaal'
             ) {
+              ds.label = 'Totaal';
               ds.data =
                 perPeriode.map(
                   function (a) {
@@ -9383,7 +9553,7 @@
           }
         );
 
-      chart.data.datasets.push({
+      if (cfg.resultaatBelastingen !== false) chart.data.datasets.push({
         label:
           'Energiebelasting',
 
@@ -9410,11 +9580,20 @@
      * Dat gebeurt vóór onderstaande normale Chart.js-update, zodat breedte
      * en schaal in dezelfde layoutpass opnieuw worden berekend.
      */
-    pasVoorlopigeMaandGrafiekAan(
-      chart,
-      voorlopigeRijen || [],
-      !!aan
-    );
+    if (aan && perPeriode && perPeriode.length === n) {
+      pasVoorlopigeMaandGrafiekAan(chart, voorlopigeRijen || [], true);
+    }
+    // De toelichting hoort bij de weergegeven berekening, niet bij BE's vergelijking.
+    var toelichting = document.querySelector('.results-summary-card .card-header small');
+    if (toelichting) {
+      if (toelichting.$beOrigineel === undefined) toelichting.$beOrigineel = toelichting.textContent;
+      toelichting.textContent = aan && perPeriode && perPeriode.length === n
+        ? (cfg.resultaatBelastingen !== false
+          ? 'Totaal: verkoopopbrengst min inkoopkosten, inclusief all-in-correcties. Zonder besparingen ten opzichte van een vast contract.'
+          : 'Totaal: verkoop min inkoop, zonder EB en btw. Met € 0,02/kWh opslag bij inkoop en € 0,02/kWh aftrek bij verkoop.')
+        : toelichting.$beOrigineel;
+    }
+    chart.$beAllinSignatuur = beGrafiekDataSignatuur(chart);
 
     if (
       chart.options.scales &&
@@ -9506,7 +9685,7 @@
     chart.data.labels=info.rijen.map(function(r){var i=nativeKeys.indexOf(r.key);return i>=0?labels[i]:'~'+maandLabel(r.key);});
     chart.data.datasets.forEach(function(d){
       var field={'Inkoop kosten':'allinInk','Verkoop opbrengsten':'allinVerk','Totaal':'stroom','Energiebelasting':'eb'}[d.label];
-      if(field)d.data=info.berekend.map(function(a){return field==='allinInk'?-a[field]:a[field];});
+      if(field)d.data=info.berekend.map(function(a){a=beResultaatWeergave(a);return field==='allinInk'?-a[field]:a[field];});
     });
     chart.$beVoorlopig={basisLabels:labels,datasets:sets,projectedLabels:chart.data.labels.slice()};
     chart.$beVoorlopigIndices=info.rijen.map(function(r,i){return r.voorlopig?i:-1;}).filter(function(i){return i>=0;});
@@ -10042,6 +10221,66 @@
         );
   }
 
+  // Bewaar de oorspronkelijke BE-cellen per DOM-rij; herladen maakt nieuwe rijen.
+  var beTabelOrigineel = new WeakMap();
+  function beResultatenTabel(perPeriode, bron) {
+    var wrapper=document.getElementById('summary-table-wrapper');
+    var heading=document.getElementById('summary-table-heading');
+    var panelen=document.getElementById('be-panelen');
+    if(!wrapper||!panelen||!panelen.parentNode)return;
+    var host=document.getElementById('be-resultatentabel');
+    if(!host){
+      host=document.createElement('div');host.id='be-resultatentabel';
+      host.style.cssText='margin-top:18px;padding:18px;border:1px solid '+D.rand+';border-radius:12px;min-width:0';
+      panelen.parentNode.insertBefore(host,panelen.nextSibling);
+    }
+    // Buiten be-panelen: hertekenen van onze kaarten mag de BE-rijen niet wissen.
+    if(heading&&heading.parentNode!==host)host.appendChild(heading);
+    if(wrapper.parentNode!==host)host.appendChild(wrapper);
+    var body=document.getElementById('summary-table-body');
+    if(!body)return;
+    var rows=Array.from(body.rows),headers=Array.from(wrapper.querySelectorAll('thead th'));
+    var aan=cfg.allin&&bron&&bron.interval!=='day';
+    host.hidden=!bron||bron.interval==='day'||!rows.length;
+    var note=document.getElementById('be-resultatentabel-uitleg');
+    if(!note){note=document.createElement('p');note.id='be-resultatentabel-uitleg';note.style.cssText='font-size:12px;color:'+D.grijs+';margin:10px 0';host.insertBefore(note,wrapper);}
+    var uitleg=aan?'Totaal = verkoopopbrengsten − inkoopkosten. '+(cfg.resultaatBelastingen?'Inclusief btw en energiebelasting na saldering.':'Zonder btw en energiebelasting.')+' Opslag aan beide kanten inbegrepen. Beschikbare bronperioden; prognoses en losse voorlopige aanvullingen staan in het overzicht erboven.':'';
+    if(note.textContent!==uitleg)note.textContent=uitleg;
+    note.hidden=!aan;
+    function herstel(node){
+      var oud=beTabelOrigineel.get(node);
+      if(oud&&node.innerHTML!==oud)node.innerHTML=oud;
+    }
+    headers.forEach(function(th,i){
+      if(!beTabelOrigineel.has(th))beTabelOrigineel.set(th,th.innerHTML);
+      th.hidden=aan&&(i===5||i===6);
+      if(i===1){
+        if(!th.dataset.beOrigTitle)th.dataset.beOrigTitle=th.title||' ';
+        th.title=aan?'Verkoopopbrengsten min inkoopkosten, volgens de gekozen belastingstand.':th.dataset.beOrigTitle.trim();
+      }
+    });
+    rows.forEach(function(row,index){
+      if(!beTabelOrigineel.has(row))beTabelOrigineel.set(row,row.innerHTML);
+      if(!aan){herstel(row);return;}
+      var a=perPeriode&&perPeriode[index],r=bron.rijen&&bron.rijen[index];
+      // Nooit resultaten op een andere bronperiode plakken.
+      var geldig=rows.length===bron.rijen.length&&a&&r&&a.key===r.key&&r.bronAanwezig!==false;
+      var cells=Array.from(row.cells);if(cells.length<9)return;
+      [5,6].forEach(function(i){cells[i].hidden=true;});
+      function zet(i,value,decimalen){
+        var tekst=Number.isFinite(value)?new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',minimumFractionDigits:decimalen,maximumFractionDigits:decimalen}).format(value):'—';
+        if(cells[i].textContent!==tekst)cells[i].textContent=tekst;
+        cells[i].removeAttribute('title');
+      }
+      zet(1,geldig?a.stroom:NaN,2);zet(2,geldig?-a.allinInk:NaN,2);zet(3,geldig?a.allinVerk:NaN,2);
+      cells[1].classList.remove('text-success','text-danger');
+      cells[1].style.color=geldig?(a.stroom<0?D.rood:D.groen):D.grijs;
+      var prijs=function(n){return Number.isFinite(n)?new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',minimumFractionDigits:3,maximumFractionDigits:3}).format(n)+' / kWh':'—';};
+      var prijzen=prijs(geldig&&a.imp>0?-a.allinInk/a.imp:NaN)+'<br>'+prijs(geldig&&a.exp>0?a.allinVerk/a.exp:NaN);
+      if(cells[4].innerHTML!==prijzen)cells[4].innerHTML=prijzen;
+    });
+  }
+
   function herteken() {
     if (!kiesActieveCache()) {
       zelfHalen()
@@ -10398,6 +10637,9 @@
           voorlopigeRijen.beAllTime = allTimeInfo;
           perPeriode = laatste.rijen.map(function(r){return allTimeInfo.berekend.find(function(x){return x.key===r.key;});});
         }
+        a = beResultaatWeergave(a);
+        perPeriode = perPeriode.map(beResultaatWeergave);
+        beResultatenTabel(perPeriode, laatste);
         pasBalansKaartenAan(
           a,
           allTimeInfo ? allTimeInfo.ruw : laatste.ruw,
@@ -10524,9 +10766,9 @@
           kaartCtx.voorlopigStroom = 0;
           kaartCtx.voorlopigAantal = voorlopigeRijen.length;
           voorlopigeRijen.forEach(function (r) {
-            kaartCtx.voorlopigStroom += bereken(
+            kaartCtx.voorlopigStroom += beResultaatWeergave(bereken(
               r, naSaldering(r.key) ? r.exp : 0, 1
-            ).stroom;
+            )).stroom;
           });
         }
 
@@ -10877,6 +11119,7 @@
     wrap.appendChild(
       schakel
     );
+    beResultaatExtraBediening(wrap);
 
     var gear =
       el(
@@ -11137,7 +11380,10 @@
         D.rand +
         ';border-radius:10px;' +
         'padding:17px 19px;' +
-        'width:330px;' +
+        'width:min(430px, calc(100vw - 24px));' +
+        'box-sizing:border-box;' +
+        'max-height:min(82vh, 760px);' +
+        'overflow:auto;' +
         'box-shadow:0 6px 22px rgba(107,63,160,.16);'
       );
 
@@ -11180,7 +11426,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v4.7.5' +
+        'Instellingen v5.0' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11194,12 +11440,21 @@
 
       '</div>' +
 
+      '<div style="display:flex;gap:6px;margin-bottom:13px;">' +
+        '<button id="be-tabknop-alg" data-tab="alg" class="be-tabknop" style="flex:1;padding:7px;border-radius:6px;border:1px solid ' + D.paars + ';background:' + D.paars + ';color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Algemeen</button>' +
+        '<button id="be-tabknop-download" data-tab="download" class="be-tabknop" style="flex:1;padding:7px;border-radius:6px;border:1px solid ' + D.rand + ';background:#fff;color:' + D.paars + ';font-size:11px;font-weight:600;cursor:pointer;">Downloads</button>' +
+      '</div>' +
+
+      '<div id="be-tab-alg">' +
+
       veld(
         'be-p-voorschot',
-        'Voorschot per maand (\u20ac)',
+        'Basisvoorschot per maand (\u20ac)',
         cfg.voorschot.toFixed(2),
         'number'
       ) +
+
+      '<div id="be-voorschot-historie"></div>' +
 
       veld(
         'be-p-start',
@@ -11271,6 +11526,11 @@
 
       '</div>' +
 
+      '</div>' +
+
+      '<div id="be-tab-download" style="display:none;">' +
+      '</div>' +
+
       '<div id="be-p-melding" style="' +
       'margin-top:11px;' +
       'font-size:11px;' +
@@ -11282,6 +11542,33 @@
       p
     );
 
+    // De 340 hieronder hoorde bij het oude paneel van 330 breed. Nu het
+    // paneel breder is en per scherm kan verschillen, plaatsen we hem na het
+    // toevoegen opnieuw op zijn werkelijke breedte en klemmen we hem binnen
+    // beeld, zodat hij er aan de rechterkant niet meer afloopt.
+    (function plaatsPaneel() {
+      function zet() {
+        var rr = hdr.getBoundingClientRect();
+        var breedte = p.offsetWidth || 430;
+        var rand = 12;
+        var zichtbaar = document.documentElement.clientWidth;
+        var wens = window.scrollX + rr.right - breedte;
+        var meest = window.scrollX + zichtbaar - breedte - rand;
+        var minst = window.scrollX + rand;
+        p.style.left = Math.round(Math.max(minst, Math.min(wens, meest))) + 'px';
+        p.style.top = Math.round(window.scrollY + rr.bottom + 6) + 'px';
+      }
+      zet();
+      window.addEventListener('resize', zet);
+      var weg = new MutationObserver(function () {
+        if (!document.getElementById('be-paneel')) {
+          window.removeEventListener('resize', zet);
+          weg.disconnect();
+        }
+      });
+      weg.observe(document.body, { childList: true });
+    })();
+
     document.getElementById(
       'be-p-sluit'
     ).addEventListener(
@@ -11290,6 +11577,26 @@
         p.remove();
       }
     );
+
+    // Instellingen en downloads hebben ieder een eigen sectie.
+    Array.prototype.forEach.call(p.querySelectorAll('.be-tabknop'), function (knop) {
+      knop.addEventListener('click', function () {
+        var welke = knop.getAttribute('data-tab');
+        Array.prototype.forEach.call(p.querySelectorAll('.be-tabknop'), function (k) {
+          var aan = k === knop;
+          k.style.background = aan ? D.paars : '#fff';
+          k.style.color = aan ? '#fff' : D.paars;
+          k.style.borderColor = aan ? D.paars : D.rand;
+        });
+        var alg = document.getElementById('be-tab-alg');
+        var downloads = document.getElementById('be-tab-download');
+        if (alg) alg.style.display = welke === 'alg' ? '' : 'none';
+        if (downloads) downloads.style.display = welke === 'download' ? '' : 'none';
+      });
+    });
+
+    beKwartierExportBediening(document.getElementById('be-tab-download'));
+    beVoorschotInstellingen(document.getElementById('be-voorschot-historie'));
 
     var staat = {
       dark: beDarkOn,
@@ -11442,6 +11749,12 @@
           );
         }
 
+        var historie;
+        try {
+          historie=beVoorschotValideer(Array.from(document.querySelectorAll('#be-voorschot-historie .be-vs-rijen > div')).map(function(r){return {datum:r.children[0].value,bedrag:r.children[1].value};}));
+        }catch(e){return fout(e.message);}
+        cfg.voorschotHistorie=historie;
+        localStorage.setItem('be_cfg_voorschot_historie',JSON.stringify(historie));
         beDarkApply(staat.dark);
 
         cfg.voorschot =
@@ -11595,6 +11908,8 @@
     beArchiefOnderhoud();
     setInterval(beArchiefOnderhoud, 300000);
 
+
+
     setInterval(function(){ if (iso(new Date()) !== contractLaatsteDag) pols(); }, 30000);
     pols();
 
@@ -11657,7 +11972,7 @@
 
   document.documentElement.setAttribute(
     BE_ABSURD_GUARD,
-    '4.7.5'
+    '5.0'
   );
 
   var TAG =
@@ -13972,8 +14287,8 @@
   if (window.top !== window.self) return;
 
   var RUSTAAGH_RUNTIME_GUARD = 'data-be-rustaagh-runtime';
-  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '4.7.5') return;
-  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '4.7.5');
+  if (document.documentElement.getAttribute(RUSTAAGH_RUNTIME_GUARD) === '5.0') return;
+  document.documentElement.setAttribute(RUSTAAGH_RUNTIME_GUARD, '5.0');
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
@@ -14529,7 +14844,8 @@
     button.setAttribute('role','switch');button.setAttribute('aria-label','EPEX day-ahead');
     button.innerHTML='<span>EPEX</span><span class="be-epex-track" aria-hidden="true"><span class="be-epex-thumb"></span></span><span class="be-epex-state" aria-hidden="true"></span>';
     button.addEventListener('click',()=>{enabled=!enabled;save(KEY,enabled?'aan':'uit');publish();refresh();});
-    status=document.createElement('span');status.id='be-epex-status';status.setAttribute('role','status');
+    status=document.createElement('span');status.id='be-epex-status';var voortgang=document.createElement('progress');voortgang.max=1;voortgang.value=0;voortgang.hidden=true;voortgang.style.cssText='width:100%;height:10px;accent-color:'+D.paars;voortgang.setAttribute('aria-label','Voortgang kwartierexport');box.appendChild(voortgang);
+    status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
     source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
     source.setAttribute('aria-label','Bron en toelichting EPEX');
@@ -14600,4 +14916,212 @@
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();refresh();}});
   window.addEventListener('storage',e=>{if(e.key===KEY){enabled=e.newValue==='aan';publish();refresh();}});
   mount();setInterval(refresh,60000);
+})();
+
+
+
+/* aFRR BID-info — waargenomen biedingen naast de tariefgrafiek. */
+
+
+(function () {
+  'use strict';
+  function main() {
+    if (window.__beAfrrBid01) return;
+    window.__beAfrrBid01 = true;
+    const QUARTER = 900000;
+    const directions = ['import', 'export'];
+    const colours = {import: '#c96f22', export: '#7851ae'};
+    const bids = new Map();
+    let library, timer, busy = false, enabled = true, error = '', unavailable = false;
+    let lastSuccess = 0, ui, button, status;
+    const clock = new Intl.DateTimeFormat('nl-NL', {
+      timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit'
+    });
+    const euro = n => '€ ' + n.toLocaleString('nl-NL', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+    function read(id) {
+      try { return JSON.parse(document.getElementById(id)?.textContent || 'null'); }
+      catch (_) { return null; }
+    }
+    function quarter(now) { return Math.floor(now / QUARTER) * QUARTER; }
+
+    // API schema/semantics checked against RaginValdr/Balans-energie-Home-assistant-app.
+    // Only bid_fallback contains a bid. confirmed is a trade quote, never a new bid.
+    function ingest(payload, now) {
+      if (!payload || !Array.isArray(payload.prices)) throw Error('Onbekend API-antwoord');
+      unavailable = payload.afrrAvailable === false;
+      if (unavailable) return;
+      const start = quarter(now);
+      const r = payload.prices.find(row => row.start === start && row.end === start + QUARTER);
+      if (!r) return;
+      const record = bids.get(start) || {start, end: start + QUARTER, states: {}};
+      for (const direction of directions) {
+        const state = r.afrrBidStatus?.[direction];
+        const value = r.values?.['afrr_' + direction];
+        record.states[direction] = state;
+        if (state === 'bid_fallback' && Number.isFinite(value)) {
+          record[direction] = {value, observedAt: now};
+        }
+        // A subsequent confirmed quote must not replace the captured bid.
+      }
+      bids.set(start, record);
+      for (const key of bids.keys()) if (key < start - 2 * 86400000) bids.delete(key);
+    }
+    function displayPrice(value, direction, tariff, settings) {
+      if (!tariff?.allin) return value;
+      if (!settings || !['btw', 'eb', 'opslag'].every(k => Number.isFinite(settings[k])) ||
+          typeof settings.saldeert !== 'boolean') return null;
+      return direction === 'import'
+        ? value * settings.btw + settings.opslag + settings.eb
+        : value * settings.btw - settings.opslag + (settings.saldeert ? settings.eb : 0);
+    }
+    function points(direction, tariff, settings) {
+      const out = [];
+      if (!enabled || !tariff?.aan) return out;
+      for (const r of [...bids.values()].sort((a,b) => a.start - b.start)) {
+        if (!r[direction]) continue;
+        const y = displayPrice(r[direction].value, direction, tariff, settings);
+        if (!Number.isFinite(y)) continue;
+        // Explicit gaps: no interpolation or carrying a bid into another quarter.
+        const extra = {bidStart: r.start, bidEnd: r.end, observedAt: r[direction].observedAt};
+        out.push({x: r.start, y: null}, {x: r.start, y, ...extra},
+          {x: r.end, y, ...extra}, {x: r.end, y: null});
+      }
+      return out;
+    }
+    const plugin = {
+      id: 'beAfrrBidOverlay01',
+      beforeUpdate(chart) {
+        if (chart.canvas?.id !== 'be-tarief-chart') return;
+        const tariff = read('be-tarief-data'), settings = read('be-actueel-allin-data');
+        for (const direction of directions) {
+          let dataset = chart.data.datasets.find(d => d.beBidDirection === direction);
+          if (!dataset) {
+            dataset = {
+              beBidDirection: direction,
+              label: 'BID ' + direction,
+              borderColor: colours[direction], backgroundColor: colours[direction],
+              borderDash: [3, 4], borderWidth: 2, pointRadius: 0,
+              pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
+              stepped: false, order: -5,
+              tooltip: {callbacks: {
+                label: context => 'BID ' + direction + ': ' + euro(context.parsed.y) + ' / kWh',
+                afterLabel: context => {
+                  const r = context.raw;
+                  return r?.bidStart == null ? '' : clock.format(r.bidStart) + '–' + clock.format(r.bidEnd) + ' · biedprijs';
+                }
+              }}
+            };
+            chart.data.datasets.push(dataset);
+          }
+          dataset.data = points(direction, tariff, settings);
+        }
+        const callbacks = chart.options.plugins?.tooltip?.callbacks;
+        if (callbacks && !callbacks.afterBody?.beBidWrapped) {
+          const original = callbacks.afterBody;
+          const wrapped = function (items) {
+            const regular = items.filter(i => !i.dataset.beBidDirection);
+            const result = regular.length && original ? original.call(this, regular) : [];
+            const lines = Array.isArray(result) ? result : result ? [result] : [];
+            return items.some(i => i.dataset.beBidDirection)
+              ? lines.concat('BID = bod; geen bevestigde handelsprijs.') : lines;
+          };
+          wrapped.beBidWrapped = true;
+          callbacks.afterBody = wrapped;
+        }
+      }
+    };
+    function ensureUI() {
+      const row = document.getElementById('be-tarief-row');
+      if (!row) return;
+      if (ui?.isConnected && ui.parentElement === row) return;
+      ui?.remove();
+      ui = document.createElement('div');
+      ui.id = 'be-afrr-bid-status';
+      ui.style.cssText = 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font:12px system-ui,sans-serif;margin:6px 0;color:inherit;line-height:1.5';
+      button = document.createElement('button');
+      button.type = 'button';
+      button.style.cssText = 'font:600 12px system-ui,sans-serif;padding:3px 8px;border:1px solid #9274bb;border-radius:7px;background:transparent;color:inherit;cursor:pointer';
+      button.onclick = () => {enabled = !enabled; refresh(); if (enabled) poll();};
+      status = document.createElement('span');
+      status.style.cssText = 'flex:1 1 220px;min-width:0;overflow-wrap:anywhere';
+      status.setAttribute('role', 'status');
+      ui.append(button, status); row.appendChild(ui);
+    }
+    function refresh() {
+      ensureUI();
+      const C = window.Chart;
+      if (C?.register && library !== C) { C.register(plugin); library = C; }
+      const chart = C?.getChart?.('be-tarief-chart');
+      if (chart) chart.update('none');
+      if (!status) return;
+      button.textContent = 'aFRR BID ' + (enabled ? 'aan' : 'uit');
+      button.setAttribute('aria-pressed', String(enabled));
+      const now = Date.now(), start = quarter(now), record = bids.get(start);
+      const tariff = read('be-tarief-data'), settings = read('be-actueel-allin-data');
+      if (!enabled) {status.textContent = 'Biedlijnen uitgeschakeld.'; return;}
+      const prefix = clock.format(start) + '–' + clock.format(start + QUARTER) + ' · ';
+      const labels = directions.map(direction => {
+        const bid = record?.[direction];
+        if (bid) {
+          const value = displayPrice(bid.value, direction, tariff, settings);
+          return direction + ' ' + (Number.isFinite(value) ? euro(value) + '/kWh' : 'all-in instellingen ontbreken');
+        }
+        if (record?.states[direction] === 'missing_bid') return direction + ' geen bod';
+        return direction + (now - start < 120000 ? ' wachten op bod' : ' bod niet waargenomen');
+      });
+      status.textContent = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
+        (error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
+      ui.title = 'Gestippeld: waargenomen biedprijzen, geen handelsprijzen. ' +
+        'Biedprijzen worden meestal alleen de eerste twee minuten van het kwartier aangeboden. ' +
+        'Laat deze pagina open om ze vast te leggen. Herladen wist de waarnemingen. ' +
+        (tariff?.allin ? 'All-in, volgens de instellingen van de hoofdplugin.' : 'Kale bedragen.');
+    }
+    function request(url) {
+      return new Promise((resolve, reject) => {
+        // Own same-origin read request, unaffected by the main plugin's fetch/cache wrappers.
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url); xhr.timeout = 12000;
+        xhr.onload = () => {
+          if (xhr.status !== 200) return reject(Error('API HTTP ' + xhr.status));
+          if (!/json/i.test(xhr.getResponseHeader('content-type') || '')) return reject(Error('API niet beschikbaar; controleer login'));
+          try { resolve(JSON.parse(xhr.responseText)); } catch (_) { reject(Error('Ongeldig API-antwoord')); }
+        };
+        xhr.onerror = () => reject(Error('API niet bereikbaar'));
+        xhr.ontimeout = () => reject(Error('API time-out'));
+        xhr.send();
+      });
+    }
+    async function poll() {
+      if (busy) return;
+      clearTimeout(timer);
+      busy = true;
+      try {
+        if (enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
+          const now = Date.now();
+          const payload = await request('/customer/current-prices/api/?start=' + quarter(now) + '&end=' + now);
+          ingest(payload, Date.now()); lastSuccess = Date.now(); error = '';
+        }
+      } catch (e) { error = e.message; }
+      finally {
+        busy = false;
+        refresh();
+        const pos = Date.now() % QUARTER;
+        const delay = pos < 120000 ? 15000 - pos % 15000 : Math.min(60000, QUARTER - pos);
+        timer = setTimeout(poll, Math.max(1000, delay));
+      }
+    }
+    document.addEventListener('be-tarief-update', refresh);
+    document.addEventListener('be-actueel-allin-update', refresh);
+    document.addEventListener('be-dark-change', refresh);
+    document.addEventListener('visibilitychange', () => {if (!document.hidden) poll();});
+    poll();
+  }
+  function inject() {
+    const script = document.createElement('script');
+    script.textContent = '(' + main.toString() + ')();';
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+  if (document.documentElement) inject();
+  else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();

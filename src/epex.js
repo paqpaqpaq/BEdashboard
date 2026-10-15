@@ -97,7 +97,8 @@
     button.setAttribute('role','switch');button.setAttribute('aria-label','EPEX day-ahead');
     button.innerHTML='<span>EPEX</span><span class="be-epex-track" aria-hidden="true"><span class="be-epex-thumb"></span></span><span class="be-epex-state" aria-hidden="true"></span>';
     button.addEventListener('click',()=>{enabled=!enabled;save(KEY,enabled?'aan':'uit');publish();refresh();});
-    status=document.createElement('span');status.id='be-epex-status';status.setAttribute('role','status');
+    status=document.createElement('span');status.id='be-epex-status';var voortgang=document.createElement('progress');voortgang.max=1;voortgang.value=0;voortgang.hidden=true;voortgang.style.cssText='width:100%;height:10px;accent-color:'+D.paars;voortgang.setAttribute('aria-label','Voortgang kwartierexport');box.appendChild(voortgang);
+    status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
     source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
     source.setAttribute('aria-label','Bron en toelichting EPEX');
