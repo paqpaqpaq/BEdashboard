@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in v6.0 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.0-beta.1
+// @version      6.0.0-beta.2
 // @description  BETA 6.0: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0-beta.1'
+    '6.0-beta.2'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -13544,7 +13544,8 @@
       clearTimeout(timer);
       busy = true;
       try {
-        if (archiveReady&&!document.hidden&&enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
+        // Keep collecting in hidden tabs too. Safari may still throttle or suspend timers.
+        if (archiveReady&&enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
           const now = Date.now();
           const payload = await request('/customer/current-prices/api/?start=' + quarter(now) + '&end=' + now);
           ingest(payload, Date.now()); lastSuccess = Date.now(); error = '';recover(false);
