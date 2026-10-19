@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.0 BETA
+// @name         Balansenergie All-in v6.0.1 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.0-beta.2
-// @description  BETA 6.0: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.0.1
+// @description  BETA 6.0.1: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0-beta.2'
+    '6.0.1'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11862,7 +11862,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.0 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.0.1 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12102,7 +12102,7 @@
     var HASH = '#be-energieoverzicht', root, shadow, navAnchor, fallback, state, latest, cache = new Map(), serial = 0, opened = false;
     var layoutTimer, monthNow = iso(new Date()).slice(0, 7), inertNodes = [], oldHash = '', previousFocus;
     var ownRefreshPromise=null, ownRefreshAt=0, expandedMonth=null, chartUnit='eur', chartPoints=[], tooltipPinned=false, tooltipIndex=-1;
-    var monthAnimation=null,monthToggleSerial=0,menuActiveBefore=[];
+    var monthAnimation=null,monthToggleSerial=0,menuActiveBefore=[],navLinks=[],menuSerial=0;
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     function fmt(v, decimals) { return Number(v).toLocaleString('nl-NL', {minimumFractionDigits: decimals || 0, maximumFractionDigits: decimals == null ? 1 : decimals}); }
     function money(v) { return v === null || !Number.isFinite(v) ? 'Nog onbekend' : new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR'}).format(Math.abs(v) < 0.005 ? 0 : v); }
@@ -12135,11 +12135,25 @@
         .month-statement{table-layout:fixed;min-width:900px;font-size:12px}.month-plot-col{width:auto}.amount-col{width:110px}.month-statement td,.month-statement th{padding-left:7px;padding-right:7px}.month-statement th{font-size:9px;letter-spacing:.15px;white-space:normal}.month-statement td:first-child{padding-right:18px}.month-statement .detail-row td{padding:0}.month-meter{border-radius:3px;background:repeating-linear-gradient(to right,var(--soft),var(--soft) calc(25% - 1px),var(--line) calc(25% - 1px),var(--line) 25%)}.month-meter>span{border-radius:2px}.month-cell{gap:12px}.month-meter>span:only-child{height:14px;margin-top:5px}.period-switch,.unit-switch{display:inline-flex;border:1px solid var(--line);padding:3px;border-radius:8px;gap:3px;background:var(--paper)}.period-switch button,.unit-switch button{border:0;background:transparent;white-space:nowrap;font-size:13px;padding:7px 14px}.period-switch button[aria-pressed=true],.unit-switch button[aria-pressed=true]{background:var(--purple);color:var(--paper);font-weight:600}.period-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.period-navigation{display:flex;align-items:end;gap:6px}.period-navigation label{min-width:160px}.period-navigation input,.period-navigation select{width:100%}.period-switch button:focus-visible,.unit-switch button:focus-visible{outline-offset:0}.chart-stage{position:relative;isolation:isolate}.chart-stage svg{width:100%;height:auto;min-height:210px;display:block}.chart-hit{fill:transparent;cursor:crosshair}.chart-hit:hover,.chart-hit:focus{fill:var(--purple);fill-opacity:.08;outline:none}.chart-hit:focus{stroke:var(--purple);stroke-width:1}.chart-tooltip{position:absolute;z-index:2;width:300px;max-width:calc(100% - 12px);padding:12px 14px;background:var(--paper);border:1px solid var(--line);box-shadow:0 5px 24px #0002;border-radius:8px;pointer-events:none;font-size:12px}.chart-tooltip h3{font-size:13px;margin-bottom:3px}.tip-state{color:var(--muted);font-size:11px;margin-bottom:8px}.tip-grid{display:grid;grid-template-columns:1fr auto auto;gap:5px 12px;align-items:baseline;font-variant-numeric:tabular-nums}.tip-grid strong{text-align:right;white-space:nowrap}.tip-grid small{text-align:right}.tip-foot{font-size:10px;color:var(--muted);border-top:1px solid var(--line);padding-top:7px;margin-top:8px}.chart-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;align-items:center;color:var(--muted);margin-top:6px}.legend-outline{display:inline-block;width:12px;height:9px;border:1.5px dashed currentColor;margin-right:4px}.legend-solid{display:inline-block;width:12px;height:9px;background:currentColor;opacity:.7;margin-right:4px}.chart-hint{margin-left:auto}.chart-stage [data-chart-hit]{touch-action:pan-y}.chart-stage svg{overflow:visible}.chart-title-note{font-size:11px;color:var(--muted)}
         .chart-tooltip{position:static;width:auto;max-width:none;padding:0;border:0;box-shadow:none;border-radius:0;background:transparent;pointer-events:none}.chart-readout{min-height:70px;margin-top:6px;padding:10px 12px;border-radius:6px;background:var(--soft);display:grid;align-content:center}.tip-values{display:flex;align-items:baseline;gap:10px 22px;flex-wrap:wrap;font-size:12px}.tip-values>strong{color:var(--purple);min-width:100px}.tip-values span{color:var(--muted);white-space:nowrap}.tip-values span strong{color:var(--ink);margin-left:4px;font-variant-numeric:tabular-nums}.chart-readout .tip-foot{border:0;margin-top:5px;padding:0}.chart-readout .help{margin:0}.month-name{width:132px}.month-meter{display:flex;align-items:stretch;height:12px;background:var(--soft);border-radius:4px;min-width:190px}.month-meter>span,.month-meter>span:only-child{height:100%;margin:0;flex-shrink:0;min-width:0;border-radius:0}.month-meter .forecast-tail{opacity:.35}.month-meter>span:first-child{border-radius:3px 0 0 3px}.month-dates{font-weight:400}.contract-edge{font-weight:600;color:var(--purple)}
         .month-summary{cursor:pointer}.month-summary:hover{background:var(--soft)}.month-summary:focus-visible{outline:2px solid var(--purple);outline-offset:-2px}.toggles select{font-size:12px;margin-left:4px}.ledger-dates{font-size:12px;color:var(--muted);margin-top:3px;margin-bottom:12px}
-        .chart-column{transition:opacity .14s ease}.chart-stage[data-active] .chart-column{opacity:.4}.chart-stage[data-active] .chart-column[data-selected]{opacity:1}.chart-backlight{opacity:0;pointer-events:none;transition:opacity .14s ease}.chart-column[data-selected] .chart-backlight{opacity:.85}.chart-column[data-selected] .chart-bar{fill-opacity:1;filter:drop-shadow(0 2px 2px #0002)}.chart-hit:hover,.chart-hit:focus{fill:transparent;stroke:none}.chart-hit:focus-visible{stroke:var(--purple);stroke-width:.8;stroke-dasharray:3 3}.chart-readout{border-left:3px solid var(--purple)}.tip-values span{display:inline-flex;align-items:center;gap:5px;background:var(--paper);border-radius:5px;padding:4px 7px}.tip-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--series-color);flex:none}.tip-values span strong{color:var(--series-color)}@media(prefers-reduced-motion:reduce){.chart-column,.chart-backlight{transition:none}}
+        .chart-column{transition:opacity .14s ease}.chart-stage[data-active] .chart-column{opacity:.4}.chart-stage[data-active] .chart-column[data-selected]{opacity:1}.chart-backlight{opacity:0;pointer-events:none;transition:opacity .14s ease}.chart-column[data-selected] .chart-backlight{opacity:.85}.chart-column[data-selected] .chart-bar{fill-opacity:1;filter:drop-shadow(0 2px 2px #0002)}.chart-hit:hover,.chart-hit:focus{fill:transparent;stroke:none}.chart-hit:focus-visible{stroke:var(--purple);stroke-width:.8;stroke-dasharray:3 3}.chart-readout{border-left:3px solid var(--purple)}.tip-values span{display:inline-flex;align-items:center;gap:5px;background:var(--paper);border-radius:5px;padding:4px 7px}.tip-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--series-color);flex:none}.tip-values span strong{color:var(--series-color)}.tip-values .has-rate{display:inline-grid;grid-template-columns:7px auto auto;column-gap:5px;row-gap:2px;align-items:center}.tip-values .tip-rate{grid-column:2/-1;font-size:10px;font-weight:400;line-height:1.15;color:var(--muted);white-space:nowrap}@media(prefers-reduced-motion:reduce){.chart-column,.chart-backlight{transition:none}}
         .detail-reveal{overflow:hidden}.cache-detail{margin-top:18px;padding:14px;background:var(--soft);border:1px solid var(--line);border-radius:8px}.cache-detail h3{margin:0 0 4px}.cache-table{width:100%;font-size:12px}.month-statement .cache-table td,.month-statement .cache-table th{padding:8px;white-space:nowrap}.cache-table td:first-child,.cache-table th:first-child{text-align:left;width:auto}.cache-table small{display:block;color:var(--muted);font-size:10px}.cache-table td:last-child{font-weight:700;font-size:14px}.tip-balance{display:flex;align-items:baseline;gap:10px 22px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}.tip-balance>strong{font-size:16px}.tip-balance>span{color:var(--muted);font-size:11px}.month-summary .month-link{transition:color .2s ease}
         .stream-result{display:flex;align-items:baseline;gap:8px 20px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}.stream-result>span:first-child{font-weight:650;font-size:13px}.stream-result>strong{font-size:24px;font-variant-numeric:tabular-nums}.stream-result strong small{font-size:13px;font-weight:600}.stream-result>span:last-child{font-size:11px;color:var(--muted)}.cache-table .net-stream{font-size:15px;font-weight:750;background:var(--paper)}.day-result-label{pointer-events:none}.month-progress{display:block;font-size:10px;font-weight:400;line-height:1.5;white-space:normal;margin-top:4px;color:var(--muted)}
+
+        @media(max-width:767px){
+          .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:hidden}
+          .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;width:100%}
+          button,select,input[type=date],input[type=month],input[type=number]{min-height:44px}.fields select,.fields input,.toggles select,.settings-grid input,.settings-grid select{font-size:16px;min-width:0;max-width:100%}
+          .period-switch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%}.period-switch button{font-size:12px;padding:6px 2px}
+          .period-navigation{display:grid;grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:4px;width:100%}.period-navigation label{min-width:0}.period-navigation:has(#from-field:not([hidden])){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+          .toggles{align-items:flex-start}.toggles label{display:grid;gap:4px;width:100%}.toggles select{width:100%;margin-left:0}.toggles small{margin-left:0;white-space:normal}
+          .purchase-summary{flex-wrap:wrap;gap:6px 16px}.summary{grid-template-columns:1fr}.summary>div+div{border-left:0;border-top:1px solid var(--line)}.summary strong{font-size:21px}
+          .table-wrap{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.month-statement{min-width:720px}.settings-grid{grid-template-columns:minmax(0,1fr)}
+          .chart-stage{max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.chart-stage svg{width:max(600px,100%);min-height:0}.chart-stage [data-chart-hit]{touch-action:pan-x pan-y}
+          .chart-readout{max-width:100%;padding:9px}.tip-values{gap:6px;align-items:center}.tip-values>strong{flex-basis:100%;min-width:0}.tip-values span{font-size:11px}.stream-result{gap:6px}.stream-result>strong{font-size:21px}.stream-result>span:first-child{flex-basis:100%}
+          .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
+        }
       </style><div class="page"><div class="wrap">
-        <header class="top"><h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top"><h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.1 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12323,17 +12337,19 @@
       var point=chartPoints[index],tip=$('chart-tooltip');if(!point||!tip||!point.known)return;
       var known=point.known,name=point.key.length===7?new Intl.DateTimeFormat('nl-NL',{month:'long',year:'numeric',timeZone:'UTC'}).format(beOvDate(point.key+'-01')):date(point.key);
       var amounts=chartAmounts(known),html='<div class="tip-values"><strong>'+esc(name)+'</strong>';
-      function item(label,value){var color=label==='Inkoop'||label==='Afname'?'var(--blue)':label==='Verkoop'||label==='Export'?'var(--green)':'var(--purple)';return '<span style="--series-color:'+color+'"><i class="tip-dot"></i>'+label+' <strong>'+value+'</strong></span>';}
-      html+=item('Afname',fmt(known.imp,2)+' kWh');
-      if(chartUnit==='eur')html+=item('Inkoop',money(amounts[0]));
-      html+=item('Export',fmt(known.exp,2)+' kWh');
-      if(chartUnit==='eur')html+=item('Verkoop',money(amounts[1]))+item('Resultaat',streamMoney(amounts[2]));
+      function averagePrice(amount,kwh){return Number.isFinite(amount)&&Number.isFinite(kwh)&&kwh>0?'€ '+(amount/kwh).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:3})+' / kWh':'—';}
+      function item(label,value,color,rate){color=color||(label==='Inkoop'||label==='Afname'?'var(--blue)':label==='Verkoop'||label==='Export'?'var(--green)':'var(--purple)');var rateLabel=label==='Inkoop'||label==='Afname'?'Gem. importprijs':'Gem. exportprijs';return '<span'+(rate!==undefined?' class="has-rate"':'')+' style="--series-color:'+color+'"><i class="tip-dot"></i>'+label+' <strong>'+value+'</strong>'+(rate!==undefined?'<small class="tip-rate" title="'+rateLabel+'">gem. '+rate+'</small>':'')+'</span>';}
+      html+=item('Afname',fmt(known.imp,2)+' kWh','var(--blue)',chartUnit==='kwh'?averagePrice(amounts[0],known.imp):undefined);
+      if(chartUnit==='eur')html+=item('Inkoop',money(amounts[0]),'var(--blue)',averagePrice(amounts[0],known.imp));
+      html+=item('Export',fmt(known.exp,2)+' kWh','var(--green)',chartUnit==='kwh'?averagePrice(amounts[1],known.exp):undefined);
+      if(chartUnit==='eur')html+=item('Verkoop',money(amounts[1]),'var(--green)',averagePrice(amounts[1],known.exp));
+      if(chartUnit==='eur')html+=item('Resultaat',streamMoney(amounts[2]));
       html+='</div>';
       if(chartUnit==='eur'){
         var result=amounts[2],daily=point.key.length===10,kind=result===null?'Nog onbekend':Math.abs(result)<.005?'Geen kosten of opbrengst':result<0?'Stroomkosten':'Stroomopbrengst';
         html+='<div class="stream-result"><span>Netto stroomresultaat '+(daily?'van deze dag':'van deze maand')+'</span><strong class="'+signedClass(result)+'">'+streamMoney(result)+' <small>'+kind.toLowerCase()+'</small></strong><span>Verkoop − inkoop</span></div>';
       }
-      html+='<p class="tip-foot">'+(known.provisional?'Inclusief eigen cache · voorlopig. ':'')+(chartUnit==='eur'?'2 cent opslag inbegrepen · '+(beOvSettings.tax?'met EB na saldering':'zonder EB')+' · '+(beOvSettings.vat?'incl. btw':'excl. btw')+' · ':'')+(tooltipPinned?'Vastgezet · klik opnieuw om los te maken.':'Klik om vast te zetten; ← → voor vorige/volgende.')+'</p>';
+      html+='<p class="tip-foot">'+(known.provisional?'Inclusief eigen cache · voorlopig. ':'')+'2 cent opslag inbegrepen · '+(beOvSettings.tax?'met EB na saldering':'zonder EB')+' · '+(beOvSettings.vat?'incl. btw':'excl. btw')+' · '+(tooltipPinned?'Vastgezet · klik opnieuw om los te maken.':'Klik om vast te zetten; ← → voor vorige/volgende.')+'</p>';
       tip.innerHTML=html;tip.hidden=false;tooltipIndex=index;var stage=$('chart-stage');if(stage){stage.setAttribute('data-active','true');stage.querySelectorAll('[data-chart-column]').forEach(function(g){g.toggleAttribute('data-selected',+g.dataset.chartColumn===index);});}var hint=$('chart-tip-hint');if(hint)hint.hidden=true;
     }
     function hideChartTip(){var stage=$('chart-stage');if(stage){stage.removeAttribute('data-active');stage.querySelectorAll('[data-chart-column]').forEach(function(g){g.removeAttribute('data-selected');});}var tip=$('chart-tooltip'),hint=$('chart-tip-hint');if(tip)tip.hidden=true;if(hint)hint.hidden=false;tooltipIndex=-1;}
@@ -12364,7 +12380,7 @@
         var desc=(p.key.length===7?p.key:p.key)+' · '+(p.known?'bekend':'prognose')+' · '+(chartUnit==='eur'?'inkoop '+money(chartAmounts(p.known)[0])+', verkoop '+money(chartAmounts(p.known)[1]):'afname '+(p.known?fmt(p.known.imp,2):'—')+' kWh');
         svg+='<rect id="chart-point-'+i+'" class="chart-hit" data-chart-hit="'+i+'" x="'+(left+slot*i)+'" y="'+top+'" width="'+slot+'" height="'+(bottom-top)+'" tabindex="0" role="button" aria-label="'+esc(desc)+'" aria-describedby="chart-tooltip"/></g>';
       });
-      return svg+'</svg><div class="chart-readout"><p class="help" id="chart-tip-hint">Beweeg over een dag of maand voor de bedragen. Klik om vast te zetten.</p><div class="chart-tooltip" id="chart-tooltip" role="tooltip" hidden></div></div></div>';
+      return svg+'</svg></div><div class="chart-readout"><p class="help" id="chart-tip-hint">Tik of beweeg over een dag of maand voor de bedragen.</p><div class="chart-tooltip" id="chart-tooltip" role="tooltip" hidden></div></div>';
     }
     function chartData(rows,r){
       var monthly=$('period').value!=='month'&&beOvDays(r.a,r.b)>62;
@@ -12467,7 +12483,7 @@
       var summary='<div class="summary"><div><small>'+esc(s.paymentMode==='actual'?'Betaalde voorschotten':'Voorschotten t/m nu')+'</small><strong>'+signedMoney(ledgerStatement.advance)+'</strong></div><div><small>Stroom + vaste kosten</small><strong class="'+signedClass(ledgerStatement.full)+'">'+signedMoney(ledgerStatement.full)+'</strong></div><div><small>'+esc(comparison?'Vergelijkingssaldo':ledgerStatement.saldo===null?'Saldo nog onbekend':missing||partial||latest.errors.length?'Voorlopig deelsaldo':ledgerStatement.saldo>=0?'Te ontvangen t/m nu':'Te betalen t/m nu')+'</small><strong class="'+signedClass(ledgerStatement.saldo)+'">'+signedMoney(ledgerStatement.saldo)+'</strong></div></div>';
       var chartRows=chartData(rows,r);
       var buy=t.ebGrossShown===null?null:t.buyShown+t.ebGrossShown,sell=t.ebCreditShown===null?null:t.sellShown+t.ebCreditShown;
-      var html='<section class="panel"><div class="section-head"><h2>Inkoop en verkoop</h2><div class="unit-switch" role="group" aria-label="Grafiekeenheid"><button type="button" data-chart-unit="eur" aria-pressed="'+(chartUnit==='eur')+'">Euro</button><button type="button" data-chart-unit="kwh" aria-pressed="'+(chartUnit==='kwh')+'">kWh</button></div><span class="badge">'+esc((s.tax?'Met EB':'Zonder EB')+' · '+(s.vat?'met btw':'zonder btw'))+'</span></div><div class="purchase-summary"><span>Inkoop <strong>'+money(buy)+'</strong></span><span>Verkoop <strong>'+money(sell)+'</strong></span><span>Stroom <strong class="'+signedClass(t.result)+'">'+signedMoney(rows.length?t.result:null)+'</strong></span></div><div class="chart">'+barChart(chartRows)+'</div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>'+(chartUnit==='eur'?'Inkoop':'Afname')+'</span><span><i class="dot" style="background:var(--green)"></i>'+(chartUnit==='eur'?'Verkoop':'Teruglevering')+'</span>'+(chartUnit==='eur'?'<span><i class="dot" style="background:var(--purple)"></i>Stroomresultaat</span>':'')+'</div><div class="chart-legend"><span class="chart-hint">Beweeg over een balk · klik voor vastzetten</span></div><p class="help">2 cent opslag incl. btw per kWh is inbegrepen bij inkoop én verkoop. '+(provisional.length?(chartRows.some(function(p){return p.key.length===10;})?'Arcering = eigen cache / voorlopig. ':'Inclusief voorlopige cachedagen. '):'')+'EB na saldering volgens de gekozen contractinstellingen.</p></section>';
+      var html='<section class="panel"><div class="section-head"><h2>Inkoop en verkoop</h2><div class="unit-switch" role="group" aria-label="Grafiekeenheid"><button type="button" data-chart-unit="eur" aria-pressed="'+(chartUnit==='eur')+'">Euro</button><button type="button" data-chart-unit="kwh" aria-pressed="'+(chartUnit==='kwh')+'">kWh</button></div><span class="badge">'+esc((s.tax?'Met EB':'Zonder EB')+' · '+(s.vat?'met btw':'zonder btw'))+'</span></div><div class="purchase-summary"><span>Inkoop <strong>'+money(buy)+'</strong></span><span>Verkoop <strong>'+money(sell)+'</strong></span><span>Stroom <strong class="'+signedClass(t.result)+'">'+signedMoney(rows.length?t.result:null)+'</strong></span></div><div class="chart">'+barChart(chartRows)+'</div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>'+(chartUnit==='eur'?'Inkoop':'Afname')+'</span><span><i class="dot" style="background:var(--green)"></i>'+(chartUnit==='eur'?'Verkoop':'Teruglevering')+'</span>'+(chartUnit==='eur'?'<span><i class="dot" style="background:var(--purple)"></i>Stroomresultaat</span>':'')+'</div><div class="chart-legend"><span class="chart-hint">Tik op een balk · klik voor vastzetten</span></div><p class="help">2 cent opslag incl. btw per kWh is inbegrepen bij inkoop én verkoop. '+(provisional.length?(chartRows.some(function(p){return p.key.length===10;})?'Arcering = eigen cache / voorlopig. ':'Inclusief voorlopige cachedagen. '):'')+'EB na saldering volgens de gekozen contractinstellingen.</p></section>';
       html+='<section class="panel"><h2>'+($('period').value==='month'?'Jouw contractmaandstaat':'Jouw maandstaat')+'</h2><p class="ledger-dates">'+date(ledgerRange.a)+' t/m '+date(ledgerRange.b)+'</p>'+summary+monthStatement(ledgerStatement,prediction,ledgerRange)+'<p class="help">Stroom = verkoop − inkoop (inclusief gekozen EB/btw). Vaste k. = belastingvermindering − levering − netbeheer. Saldo = opgeteld vanaf het begin van deze selectie. '+(s.paymentMode==='actual'?'Voorschotten zijn je ingevoerde betalingen.':'Voorschotten volgen je ingangsdatums, naar rato van dagen; geen bevestigde bankbetalingen.')+'</p>';
       if(prediction)html+='<p class="help">~ Seizoensraming met de maandfactoren uit 5.0 en '+forecast.base+' recente complete dagen.'+(forecast.history?' Beschikbare volledige maanden van vorig jaar wegen 60% mee.':' Geen volledige vergelijkbare maand van vorig jaar beschikbaar.')+' De eerste prognosemaand verwerkt ook de verwachte contractcorrectie voor saldering; het eindsaldo sluit daarop aan. Geen weers- of prijsvoorspelling.</p>';
       else if(forecast.reason!=='afgelopen')html+='<p class="help">'+(blocked?'Geen totaalprognose: ontbrekende of onvolledige historie. Een totaalprognose zou ontbrekende historie verbergen.':'Prognose beschikbaar vanaf 7 complete brondagen in de laatste 28 dagen.')+'</p>';
@@ -12538,19 +12554,22 @@
     }
     function layout() {
       if(!root||!opened)return;
-      var anchor=navAnchor&&navAnchor.isConnected?navAnchor:null, container=anchor&&anchor.closest('nav,aside,.sidebar,.sidenav,#sidebar,.offcanvas,.nav');
+      var anchor=navLinks.find(function(a){var r=a.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth;})||(navAnchor&&navAnchor.isConnected?navAnchor:null), container=anchor&&anchor.closest('nav,aside,.sidebar,.sidenav,#sidebar,.offcanvas,.nav');
       var left=0;
-      while(container&&container!==document.body){var rect=container.getBoundingClientRect();if(rect.width>80&&rect.width<440&&rect.height>180&&rect.left<120&&rect.right<innerWidth*.6){left=Math.max(left,rect.right);}container=container.parentElement;}
+      while(innerWidth>=768&&container&&container!==document.body){var rect=container.getBoundingClientRect();if(rect.width>80&&rect.width<440&&rect.height>180&&rect.left<120&&rect.right<innerWidth*.6){left=Math.max(left,rect.right);}container=container.parentElement;}
       root.style.left=Math.round(left)+'px';
       if(fallback)fallback.style.display=opened?'none':'';
     }
-    function open(push) {
+    function open(push,source) {
+      if(source)navAnchor=source;
       if(!root)mount();
-      if(opened)return;
+      var mobileToggle=document.querySelector('[data-bs-target="#mobileSidebar"][aria-expanded="true"]');
+      if(innerWidth<768&&mobileToggle)mobileToggle.click();
+      if(opened){layout();return;}
       previousFocus=document.activeElement;oldHash=location.hash===HASH?'':location.hash;
       if(push&&location.hash!==HASH)history.pushState({beEnergyOverview:true},'',location.pathname+location.search+HASH);
       root.hidden=false;opened=true;theme();layout();
-      document.querySelectorAll('main,[role="main"],.main-content,.content-wrapper').forEach(function(n){if(n!==root&&!n.contains(root)&&!n.contains(navAnchor)&&!n.contains(fallback)){inertNodes.push([n,n.inert]);n.inert=true;}});
+      document.querySelectorAll('main,[role="main"],.main-content,.content-wrapper'+(innerWidth<768?',header.navbar':'')).forEach(function(n){if(n!==root&&!n.contains(root)&&(innerWidth<768||!navLinks.some(function(a){return n.contains(a);}))&&!n.contains(fallback)){inertNodes.push([n,n.inert]);n.inert=true;}});
       var nativeCard=document.querySelector('.results-summary-card,.energy-chart-legend');
       if(nativeCard&&!nativeCard.contains(root)&&!nativeCard.contains(navAnchor)){
         var nativeContent=nativeCard;
@@ -12558,8 +12577,8 @@
         if(!inertNodes.some(function(pair){return pair[0]===nativeContent;})){inertNodes.push([nativeContent,nativeContent.inert]);nativeContent.inert=true;}
       }
       if(navAnchor){
-        menuActiveBefore=Array.from(document.querySelectorAll('a.active')).filter(function(a){return a!==navAnchor&&a.closest('nav,aside,.sidebar,.sidenav,#sidebar,.nav');}).map(function(a){var old=a.className;a.className=old.replace(/\bactive\b/g,'').trim();return [a,old];});
-        navAnchor.className=navAnchor.className.replace(/\bactive\b/g,'').trim()+' active';navAnchor.setAttribute('aria-current','page');
+        menuActiveBefore=Array.from(document.querySelectorAll('a.active')).filter(function(a){return !navLinks.includes(a)&&a.closest('nav,aside,.sidebar,.sidenav,#sidebar,.nav');}).map(function(a){var old=a.className;a.className=old.replace(/\bactive\b/g,'').trim();return [a,old];});
+        navLinks.forEach(function(a){a.className=a.className.replace(/\bactive\b/g,'').trim()+' active';a.setAttribute('aria-current','page');});
       }
       $('title').focus();load();
     }
@@ -12568,28 +12587,33 @@
       serial++;opened=false;root.hidden=true;
       inertNodes.forEach(function(pair){pair[0].inert=pair[1];});inertNodes=[];
       if(location.hash===HASH)history.replaceState(history.state,'',location.pathname+location.search+oldHash);
-      if(navAnchor){navAnchor.removeAttribute('aria-current');navAnchor.className=navAnchor.className.replace(/\bactive\b/g,'').trim();}
+      navLinks.forEach(function(a){a.removeAttribute('aria-current');a.className=a.className.replace(/\bactive\b/g,'').trim();});
       menuActiveBefore.forEach(function(pair){if(pair[0].isConnected)pair[0].className=pair[1];});menuActiveBefore=[];
       if(fallback)fallback.style.display='';
-      if(previousFocus&&previousFocus.isConnected)previousFocus.focus();
+      var mobileToggle=innerWidth<768&&document.querySelector('[data-bs-target="#mobileSidebar"]');
+      if(mobileToggle)mobileToggle.focus();else if(previousFocus&&previousFocus.isConnected)previousFocus.focus();
     }
     function addMenu() {
-      var candidates=Array.from(document.querySelectorAll('a[href*="/results"]')).filter(function(a){return a.id!=='be-energieoverzicht-link'&&!a.closest('#be-energieoverzicht');});
-      var anchor=candidates.find(function(a){return a.closest('nav,aside,.sidebar,.sidenav,#sidebar,.nav');})||candidates[0];
-      if(!anchor)return;
+      var candidates=Array.from(document.querySelectorAll('a[href*="/results"]')).filter(function(a){return !a.closest('#be-energieoverzicht');});
       if(!geldigeKlant(KLANT))verversKlantUitPad();
-      if(navAnchor&&navAnchor.isConnected)return;
-      var link=document.createElement('a');link.id='be-energieoverzicht-link';link.href=HASH;
-      link.className=anchor.className.replace(/\bactive\b/g,'').trim();
-      var icon=anchor.querySelector&&anchor.querySelector('svg');
-      link.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M17 6.5a6 6 0 1 0 0 11M4 10h9M4 14h8"/></svg><span>Financieel</span>';
-      if(icon){var ownIcon=link.querySelector('svg');ownIcon.setAttribute('class',icon.getAttribute('class')||'');ownIcon.setAttribute('width',icon.getAttribute('width')||'24');ownIcon.setAttribute('height',icon.getAttribute('height')||'24');} 
-      link.title='Inkoop, verkoop, saldering en prognose in begrijpelijke taal';link.style.cssText='display:flex;align-items:center;gap:12px;white-space:normal';
-      link.addEventListener('click',function(e){e.preventDefault();open(true);});
-      if(anchor.parentElement.tagName==='LI'){var li=document.createElement('li');li.className=anchor.parentElement.className.replace(/\bactive\b/g,'').trim();li.appendChild(link);anchor.parentElement.insertAdjacentElement('afterend',li);}
-      else anchor.insertAdjacentElement('afterend',link);
-      navAnchor=link;if(opened){link.setAttribute('aria-current','page');link.className+=' active';}
-      if(fallback){fallback.remove();fallback=null;}layout();
+      navLinks=navLinks.filter(function(a){return a.isConnected;});
+      candidates.forEach(function(anchor){
+        var list=anchor.closest('ul,ol,nav,aside,.sidebar,.sidenav,#sidebar,#mobileSidebar,.nav')||anchor.parentElement;
+        if(navLinks.some(function(a){return list.contains(a);}))return;
+        var link=document.createElement('a');link.id='be-energieoverzicht-link'+(menuSerial?'-'+menuSerial:'');menuSerial++;
+        link.href=HASH;link.setAttribute('data-be-financial-link','');
+        link.className=anchor.className.replace(/\bactive\b/g,'').trim();
+        var icon=anchor.querySelector&&anchor.querySelector('svg');
+        link.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M17 6.5a6 6 0 1 0 0 11M4 10h9M4 14h8"/></svg><span>Financieel</span>';
+        if(icon){var ownIcon=link.querySelector('svg');ownIcon.setAttribute('class',icon.getAttribute('class')||'');ownIcon.setAttribute('width',icon.getAttribute('width')||'24');ownIcon.setAttribute('height',icon.getAttribute('height')||'24');}
+        link.title='Inkoop, verkoop, saldering en prognose in begrijpelijke taal';link.style.cssText='display:flex;align-items:center;gap:12px;white-space:normal';
+        link.addEventListener('click',function(e){e.preventDefault();open(true,link);});
+        if(anchor.parentElement.tagName==='LI'){var li=document.createElement('li');li.className=anchor.parentElement.className.replace(/\bactive\b/g,'').trim();li.appendChild(link);anchor.parentElement.insertAdjacentElement('afterend',li);}
+        else anchor.insertAdjacentElement('afterend',link);
+        navLinks.push(link);if(!navAnchor||!navAnchor.isConnected)navAnchor=link;
+        if(opened){link.setAttribute('aria-current','page');link.className+=' active';}
+      });
+      if(navLinks.length&&fallback){fallback.remove();fallback=null;}layout();
     }
     function maintain() {
       addMenu();
@@ -12605,7 +12629,7 @@
     setTimeout(function(){
       addMenu();if(!navAnchor&&!fallback){fallback=document.createElement('a');fallback.href=HASH;fallback.textContent='€ Financieel';fallback.style.cssText='position:fixed;z-index:1041;left:12px;bottom:20px;padding:12px 16px;border-radius:10px;background:#65419d;color:#fff;font:600 14px system-ui;text-decoration:none;box-shadow:0 3px 12px #0003';fallback.onclick=function(e){e.preventDefault();open(true);};document.body.appendChild(fallback);}
     },1500);
-    document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(opened&&a&&a!==navAnchor&&a!==fallback&&!root.contains(a)&&a.getAttribute('href')!==HASH)close();},true);
+    document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(opened&&a&&!navLinks.includes(a)&&a!==fallback&&!root.contains(a)&&a.getAttribute('href')!==HASH)close();},true);
     document.addEventListener('keydown',function(e){if(opened&&e.key==='Escape'){e.preventDefault();close();}});
     document.addEventListener('wheel',function(e){
       if(!opened||!root||e.ctrlKey||!e.deltaY||e.clientX>=root.getBoundingClientRect().left)return;

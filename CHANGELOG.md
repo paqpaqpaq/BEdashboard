@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.0.1 BETA — 19 oktober 2026
+
+- Gemiddelde kWh-tarieven voor import en export toegevoegd aan het detailoverzicht.
+- Smartphoneweergave verbeterd, inclusief de knop Financieel in het mobiele menu.
+
 ## 5.0 — 15 oktober 2026
 
 - CSV-export van kwartierdata voor een gekozen periode via Instellingen → Downloads, met voortgang, wachttijd en gedeeltelijk opslaan bij stoppen.
