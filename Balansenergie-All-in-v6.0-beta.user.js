@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.0.1 BETA
+// @name         Balansenergie All-in v6.0.2 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.1
-// @description  BETA 6.0.1: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.0.2
+// @description  BETA 6.0.2: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0.1'
+    '6.0.2'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11862,7 +11862,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.0.1 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.0.2 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12140,7 +12140,8 @@
         .stream-result{display:flex;align-items:baseline;gap:8px 20px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}.stream-result>span:first-child{font-weight:650;font-size:13px}.stream-result>strong{font-size:24px;font-variant-numeric:tabular-nums}.stream-result strong small{font-size:13px;font-weight:600}.stream-result>span:last-child{font-size:11px;color:var(--muted)}.cache-table .net-stream{font-size:15px;font-weight:750;background:var(--paper)}.day-result-label{pointer-events:none}.month-progress{display:block;font-size:10px;font-weight:400;line-height:1.5;white-space:normal;margin-top:4px;color:var(--muted)}
 
         @media(max-width:767px){
-          .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:hidden}
+          .top{position:sticky;top:0;z-index:4;background:var(--bg);padding:8px 0 12px}.mobile-menu{font-weight:600}
+          .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:clip}
           .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;width:100%}
           button,select,input[type=date],input[type=month],input[type=number]{min-height:44px}.fields select,.fields input,.toggles select,.settings-grid input,.settings-grid select{font-size:16px;min-width:0;max-width:100%}
           .period-switch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%}.period-switch button{font-size:12px;padding:6px 2px}
@@ -12153,7 +12154,7 @@
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
       </style><div class="page"><div class="wrap">
-        <header class="top"><h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.1 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.2 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12188,6 +12189,11 @@
         '<p><a href="https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen" target="_blank" rel="noopener noreferrer">ACM: salderen</a> · <a href="https://download.belastingdienst.nl/belastingdienst/docs/handboek_milieubelast_2026_ml0301z61fd.pdf" target="_blank" rel="noopener noreferrer">Belastingdienst: Handboek 2026, 7.4.2 en 7.8.14</a></p>';
       $('refresh').onclick = function () { cache.clear(); load(); };
       $('close').onclick = close; $('csv').onclick = exportCSV;
+      $('mobile-menu').onclick=function(){
+        var toggle=document.querySelector('[data-bs-target="#mobileSidebar"]');
+        close();
+        if(toggle&&toggle.getAttribute('aria-expanded')!=='true')toggle.click();
+      };
       ['pointerover','pointermove','focusin'].forEach(function(event){$('content').addEventListener(event,function(e){
         var hit=e.target.closest('[data-chart-hit]');if(hit&&!tooltipPinned)showChartTip(+hit.dataset.chartHit,e);
       });});
@@ -12558,6 +12564,7 @@
       var left=0;
       while(innerWidth>=768&&container&&container!==document.body){var rect=container.getBoundingClientRect();if(rect.width>80&&rect.width<440&&rect.height>180&&rect.left<120&&rect.right<innerWidth*.6){left=Math.max(left,rect.right);}container=container.parentElement;}
       root.style.left=Math.round(left)+'px';
+      $('mobile-menu').hidden=innerWidth>=768||!document.querySelector('[data-bs-target="#mobileSidebar"]');
       if(fallback)fallback.style.display=opened?'none':'';
     }
     function open(push,source) {

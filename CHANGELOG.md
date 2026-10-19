@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.0.2 BETA — 19 oktober 2026
+
+- Dashboardmenu op smartphones weer bereikbaar vanuit Financieel, ook na scrollen.
+
 ## 6.0.1 BETA — 19 oktober 2026
 
 - Gemiddelde kWh-tarieven voor import en export toegevoegd aan het detailoverzicht.
