@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.0.3 BETA — 19 oktober 2026
+
+- Op smartphones blijft de oorspronkelijke menubalk beschikbaar in Financieel. Het menu opent zonder eerst naar Actueel terug te gaan.
+
 ## 6.0.2 BETA — 19 oktober 2026
 
 - Dashboardmenu op smartphones weer bereikbaar vanuit Financieel, ook na scrollen.

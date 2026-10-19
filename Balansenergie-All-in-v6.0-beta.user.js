@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.0.2 BETA
+// @name         Balansenergie All-in v6.0.3 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.2
-// @description  BETA 6.0.2: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.0.3
+// @description  BETA 6.0.3: Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0.2'
+    '6.0.3'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11862,7 +11862,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.0.2 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.0.3 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12103,6 +12103,7 @@
     var layoutTimer, monthNow = iso(new Date()).slice(0, 7), inertNodes = [], oldHash = '', previousFocus;
     var ownRefreshPromise=null, ownRefreshAt=0, expandedMonth=null, chartUnit='eur', chartPoints=[], tooltipPinned=false, tooltipIndex=-1;
     var monthAnimation=null,monthToggleSerial=0,menuActiveBefore=[],navLinks=[],menuSerial=0;
+    var mobileChrome=[],mobileHeader=null,mobileSidebar=null;
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     function fmt(v, decimals) { return Number(v).toLocaleString('nl-NL', {minimumFractionDigits: decimals || 0, maximumFractionDigits: decimals == null ? 1 : decimals}); }
     function money(v) { return v === null || !Number.isFinite(v) ? 'Nog onbekend' : new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR'}).format(Math.abs(v) < 0.005 ? 0 : v); }
@@ -12155,7 +12156,7 @@
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.2 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.3 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12559,13 +12560,42 @@
       rows.forEach(function(r){out.push({'Datum':r.key,'Afname kWh':r.imp,'Teruglevering kWh':r.exp,'Inkoop EUR':r.buyShown,'Verkoop EUR':r.sellShown,'EB model EUR':r.ebShown,'Variabel resultaat EUR':r.result,'Salderingscontract vanaf':r.contract,'Voorlopig':r.voorlopig?'ja':'nee','Eigen cache':r.eigenCache?'ja':'nee','Onvolledig dagdeel':r.deelresultaat?'ja':'nee','Prijzen onvolledig':r.prijsOnvolledig?'ja':'nee','Cache bijgewerkt':r.bijgewerkt?new Date(r.bijgewerkt).toISOString():'','Weergave':basis});});
       beCsvSlaOp('Balans-Energieoverzicht-'+latest.range.a+'-tot-'+latest.range.b+'.csv',out);
     }
+    function restoreMobileNavigation(){
+      mobileChrome.forEach(function(pair){var node=pair[0];pair[1].forEach(function(p){if(p[1])node.style.setProperty(p[0],p[1],p[2]);else node.style.removeProperty(p[0]);});});
+      mobileChrome=[];mobileHeader=null;mobileSidebar=null;
+    }
+    function preserveMobileNavigation(){
+      var toggle=innerWidth<768&&document.querySelector('[data-bs-target="#mobileSidebar"]');
+      var header=toggle&&toggle.closest('header,nav,.navbar'),menu=toggle&&document.querySelector('#mobileSidebar');
+      if(!header){restoreMobileNavigation();root.style.top='0px';return false;}
+      if(header!==mobileHeader||menu!==mobileSidebar){
+        restoreMobileNavigation();mobileHeader=header;mobileSidebar=menu;
+        [[header,['position','top','left','right','z-index']],[menu,['position','top','left','z-index','max-height','overflow-y']]].forEach(function(pair){
+          if(pair[0])mobileChrome.push([pair[0],pair[1].map(function(key){return [key,pair[0].style.getPropertyValue(key),pair[0].style.getPropertyPriority(key)];})]);
+        });
+      }
+      function set(node,key,value){if(node.style.getPropertyValue(key)!==value||node.style.getPropertyPriority(key)!=='important')node.style.setProperty(key,value,'important');}
+      set(header,'position','fixed');set(header,'top','0px');set(header,'left','0px');set(header,'right','0px');set(header,'z-index','1042');
+      var height=Math.ceil(header.getBoundingClientRect().height);
+      root.style.top=height+'px';
+      if(menu){set(menu,'position','fixed');set(menu,'top',height+'px');set(menu,'left','0px');set(menu,'z-index','1043');set(menu,'max-height','calc(100dvh - '+height+'px)');set(menu,'overflow-y','auto');}
+      return true;
+    }
+    function makeBackgroundInert(node){
+      var toggle=document.querySelector('[data-bs-target="#mobileSidebar"]');
+      var protectedNodes=[root,mobileHeader,mobileSidebar,fallback,document.querySelector('#mobileSidebar'),toggle&&toggle.closest('header,nav,.navbar')].concat(navLinks.map(function(a){return a.closest('nav,aside,.sidebar,.sidenav,#sidebar,#mobileSidebar,.nav')||a;})).filter(Boolean);
+      if(protectedNodes.includes(node)||inertNodes.some(function(pair){return pair[0]===node;}))return;
+      if(protectedNodes.some(function(p){return node.contains(p);}))Array.from(node.children).forEach(makeBackgroundInert);
+      else{inertNodes.push([node,node.inert]);node.inert=true;}
+    }
     function layout() {
       if(!root||!opened)return;
       var anchor=navLinks.find(function(a){var r=a.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth;})||(navAnchor&&navAnchor.isConnected?navAnchor:null), container=anchor&&anchor.closest('nav,aside,.sidebar,.sidenav,#sidebar,.offcanvas,.nav');
       var left=0;
       while(innerWidth>=768&&container&&container!==document.body){var rect=container.getBoundingClientRect();if(rect.width>80&&rect.width<440&&rect.height>180&&rect.left<120&&rect.right<innerWidth*.6){left=Math.max(left,rect.right);}container=container.parentElement;}
       root.style.left=Math.round(left)+'px';
-      $('mobile-menu').hidden=innerWidth>=768||!document.querySelector('[data-bs-target="#mobileSidebar"]');
+      var nativeMenu=preserveMobileNavigation();
+      $('mobile-menu').hidden=nativeMenu||innerWidth>=768||!document.querySelector('[data-bs-target="#mobileSidebar"]');
       if(fallback)fallback.style.display=opened?'none':'';
     }
     function open(push,source) {
@@ -12577,12 +12607,12 @@
       previousFocus=document.activeElement;oldHash=location.hash===HASH?'':location.hash;
       if(push&&location.hash!==HASH)history.pushState({beEnergyOverview:true},'',location.pathname+location.search+HASH);
       root.hidden=false;opened=true;theme();layout();
-      document.querySelectorAll('main,[role="main"],.main-content,.content-wrapper'+(innerWidth<768?',header.navbar':'')).forEach(function(n){if(n!==root&&!n.contains(root)&&(innerWidth<768||!navLinks.some(function(a){return n.contains(a);}))&&!n.contains(fallback)){inertNodes.push([n,n.inert]);n.inert=true;}});
+      document.querySelectorAll('main,[role="main"],.main-content,.content-wrapper').forEach(makeBackgroundInert);
       var nativeCard=document.querySelector('.results-summary-card,.energy-chart-legend');
       if(nativeCard&&!nativeCard.contains(root)&&!nativeCard.contains(navAnchor)){
         var nativeContent=nativeCard;
         while(nativeContent.parentElement&&nativeContent.parentElement!==document.body&&!nativeContent.parentElement.contains(root)&&!nativeContent.parentElement.contains(navAnchor))nativeContent=nativeContent.parentElement;
-        if(!inertNodes.some(function(pair){return pair[0]===nativeContent;})){inertNodes.push([nativeContent,nativeContent.inert]);nativeContent.inert=true;}
+        makeBackgroundInert(nativeContent);
       }
       if(navAnchor){
         menuActiveBefore=Array.from(document.querySelectorAll('a.active')).filter(function(a){return !navLinks.includes(a)&&a.closest('nav,aside,.sidebar,.sidenav,#sidebar,.nav');}).map(function(a){var old=a.className;a.className=old.replace(/\bactive\b/g,'').trim();return [a,old];});
@@ -12593,6 +12623,7 @@
     function close() {
       if(!opened)return;
       serial++;opened=false;root.hidden=true;
+      restoreMobileNavigation();
       inertNodes.forEach(function(pair){pair[0].inert=pair[1];});inertNodes=[];
       if(location.hash===HASH)history.replaceState(history.state,'',location.pathname+location.search+oldHash);
       navLinks.forEach(function(a){a.removeAttribute('aria-current');a.className=a.className.replace(/\bactive\b/g,'').trim();});
