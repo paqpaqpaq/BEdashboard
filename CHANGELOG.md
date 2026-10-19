@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.0.5 BETA — 19 oktober 2026
+
+- Coulombtelling: laatste geldige waarde blijft zichtbaar tijdens verversen en herladen. Verouderde metingen en bronfouten worden met het bijbehorende tijdstip vermeld.
+
 ## 6.0.4 BETA — 19 oktober 2026
 
 - Coulombtelling in/uit toegevoegd aan Actueel en Forecast, met aan/uitknop en waarden bij de muisaanwijzer.
