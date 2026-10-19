@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.0.4 BETA — 19 oktober 2026
+
+- Coulombtelling in/uit toegevoegd aan Actueel en Forecast, met aan/uitknop en waarden bij de muisaanwijzer.
+- Automatisch herijken bij 10% en 95% van de originele SOC; handmatig herijken blijft mogelijk.
+
 ## 6.0.3 BETA — 19 oktober 2026
 
 - Op smartphones blijft de oorspronkelijke menubalk beschikbaar in Financieel. Het menu opent zonder eerst naar Actueel terug te gaan.

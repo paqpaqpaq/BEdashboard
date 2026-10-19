@@ -1,0 +1,400 @@
+/* BE-only energy balance. bo: W out of battery; negative means charging.
+   Only BE measurements and locally stored observations are used. */
+(function(root){
+  'use strict';
+  const defaults={capacity:48.2,chargeEfficiency:1,dischargeEfficiency:1,maxGapMs:360000,auto:true};
+  const rawValid=v=>Number.isFinite(v)&&v>=0&&v<=100;
+  function valid(r){return Array.isArray(r)&&Number.isFinite(r[0])&&r[0]>0&&(Number.isFinite(r[2])||r[2]===null);}
+  function energy(p0,p1,ms){
+    if(p0*p1<0){const f=Math.abs(p0)/(Math.abs(p0)+Math.abs(p1)),a=energy(p0,0,ms*f),b=energy(0,p1,ms*(1-f));return {input:a.input+b.input,output:a.output+b.output};}
+    const e=(p0+p1)/2*ms/3600000000;return {input:Math.max(0,-e),output:Math.max(0,e)};
+  }
+  function calculate(rows,settings={},manual=[]){
+    const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
+    rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
+    const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lastRaw=null;
+    const points=[],events=[];
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false;
+      if(prev){
+        const dt=r[0]-prev[0];
+        if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
+          // Integrate EVERY available power interval, including sparse history.
+          const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;
+          if(stored!==null)stored+=e.input-e.output;
+          if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
+        }else{gap=true;gaps++;uncertain=true;}
+      }
+      let anchor=anchors.get(r[0]);
+      if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
+      // Every arrival at 10/95 or crossing of either threshold reanchors to BE SOC.
+      // Independent of power direction, missing power, or saved auto preferences.
+      if(raw!==null){
+        const crossed=lastRaw!==null&&[10,95].some(v=>(lastRaw<v&&raw>v)||(lastRaw>v&&raw<v));
+        if(raw===10||raw===95||crossed){
+          const threshold=raw===10?10:raw===95?95:raw>lastRaw?(lastRaw<95&&raw>95?95:10):(lastRaw>10&&raw<10?10:95);
+          anchor={t:r[0],soc:raw,kind:'Automatisch '+threshold+'% · BE-SOC'};
+        }
+        lastRaw=raw;
+      }
+      if(anchor){
+        const before=stored===null?null:stored/c.capacity*100;
+        stored=c.capacity*anchor.soc/100;uncertain=false;
+        lastAnchor={...anchor,correction:before===null?null:anchor.soc-before};events.push(lastAnchor);
+      }
+      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null});
+    }
+    return {points,input,output,gaps,lastAnchor,events,uncertain};
+  }
+  function at(points,t,maxGapMs=defaults.maxGapMs){
+    let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
+    if(points[lo]?.t===t)return points[lo].soc;
+    const a=points[lo-1],b=points[lo];if(!a||!b||a.soc===null||b.soc===null||b.gap||b.anchor||b.t-a.t>maxGapMs)return null;
+    return a.soc+(b.soc-a.soc)*(t-a.t)/(b.t-a.t);
+  }
+  root.BEEnergySOC={defaults,valid,energy,calculate,at};
+})(typeof window!=='undefined'?window:globalThis);
+
+(function(root){
+  'use strict';
+  const clamp=v=>Math.max(5,Math.min(100,v));
+  function project(slots,r,c,power=Infinity,now=Date.now()){
+    const out=slots.map(()=>null);
+    if(!r||!Number.isFinite(r.soc)||!Number.isFinite(r.t)||now-r.t>120000||r.t>now+10000||!(c.capacity>0))return out;
+    let e=clamp(r.soc)/100*c.capacity,last=r.t;
+    for(let k=0;k<slots.length;k++){
+      const q=slots[k],end=q.t+q.dt;
+      if(end<=r.t)continue;
+      if(q.t>last+1||!Number.isFinite(q.load)||!Number.isFinite(q.pv)||!(q.dt>0))break;
+      if(q.t>=r.t)out[k]=clamp(e/c.capacity*100);
+      const fraction=(end-Math.max(q.t,r.t))/q.dt,limit=power*q.dt/3600000;
+      const change=Math.max(-limit,Math.min(limit,q.pv-q.load))*fraction;
+      e=Math.max(.05*c.capacity,Math.min(c.capacity,e+(change>=0?change*c.chargeEfficiency:change/c.dischargeEfficiency)));
+      last=end;
+    }
+    return out;
+  }
+  root.BESOCExtras={clamp,project};
+})(window);
+
+(function(root){
+  'use strict';
+  const bindings=new Map(),configs=new WeakMap(),finite=Number.isFinite;
+  const supported=c=>['soc-chart','soc-forecast-chart'].includes(c.canvas?.id);
+  function parsed(meta,i){return meta.controller?.getParsed?meta.controller.getParsed(i):meta._parsed?.[i];}
+  function bracket(meta,x){
+    let lo=0,hi=(meta.data?.length||0)-1;
+    while(lo<=hi){const m=(lo+hi)>>1,p=parsed(meta,m);if(!finite(p?.x))return null;if(p.x<x)lo=m+1;else hi=m-1;}
+    return {left:lo-1,right:lo};
+  }
+  function validPoint(meta,i){const p=parsed(meta,i),e=meta.data?.[i];return finite(p?.x)&&finite(p?.y)&&e&&!e.skip;}
+  function valueAt(meta,x,stepped){
+    const b=bracket(meta,x);if(!b)return {value:null};
+    if(parsed(meta,b.right)?.x===x)return {value:validPoint(meta,b.right)?parsed(meta,b.right).y:null};
+    if(!validPoint(meta,b.left)||!validPoint(meta,b.right)||meta.data[b.right].stop)return {value:null};
+    const a=parsed(meta,b.left),z=parsed(meta,b.right);if(!(z.x>a.x))return {value:null};
+    const f=(x-a.x)/(z.x-a.x);
+    return {value:stepped?(stepped==='after'?z.y:stepped==='middle'&&f>=.5?z.y:a.y):a.y+(z.y-a.y)*f,approx:true};
+  }
+  function pick(chart,pointer){
+    const scale=chart.scales?.x;if(!scale)return null;
+    let x=scale.getValueForPixel(pointer.x);if(!finite(x))return null;
+    if(scale.type==='category')x=Math.round(x);
+    else{
+      // Snap all rows to one visible native time, not to different array indices.
+      const i=chart.data.datasets.findIndex((d,i)=>!d.beOwnSOC&&chart.isDatasetVisible(i)&&chart.getDatasetMeta(i).type!=='bar');
+      if(i>=0){
+        const meta=chart.getDatasetMeta(i),b=bracket(meta,x);
+        if(b){const candidates=[b.left,b.right].map(k=>parsed(meta,k)?.x).filter(finite);if(candidates.length)x=candidates.reduce((a,b)=>Math.abs(a-x)<=Math.abs(b-x)?a:b);}
+      }
+    }
+    const px=scale.getPixelForValue(x);return finite(px)?{x,px}:null;
+  }
+  function info(chart,pointer){
+    const selected=pick(chart,pointer);if(!selected)return null;
+    const rows=[],groups=new Map();
+    chart.data.datasets.forEach((d,i)=>{
+      if(!chart.isDatasetVisible(i))return;
+      const meta=chart.getDatasetMeta(i);if(meta.type&&meta.type!=='line')return;
+      if(d.borderWidth===0||meta.dataset?.options?.borderWidth===0)return;
+      const own=d.beOwnSOC,group=own?'be':'native:'+i;
+      const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
+      const baseColor=own?'#0891b2':meta.dataset?.options?.borderColor||d.borderColor;
+      const color=typeof baseColor==='string'?baseColor:'#6b7280';
+      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled};
+      if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
+      else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
+    });
+    const xScale=chart.scales.x,times=configs.get(chart)?.times;
+    const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
+    const time=xScale.type==='time'||xScale.type==='timeseries'?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
+    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    return {...selected,title,rows};
+  }
+  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:2})+'%';}
+  function hide(state){
+    state.tip.style.display='none';state.cursor.style.display='none';state.pointer=null;
+    try{if(state.tooltip){state.tooltip.options.enabled=state.enabled;state.tooltip=null;}}catch{}
+  }
+  function show(state,event){
+    const chart=state.chart,touch=event.touches?.[0]||event;
+    if(!finite(touch.clientX)||!finite(touch.clientY)){hide(state);return;}
+    const rect=chart.canvas.getBoundingClientRect(),a=chart.chartArea;
+    if(!a||!rect.width||!rect.height||!chart.width||!chart.height){hide(state);return;}
+    const pointer={x:(touch.clientX-rect.left)*chart.width/rect.width,y:(touch.clientY-rect.top)*chart.height/rect.height};
+    if(pointer.x<a.left||pointer.x>a.right||pointer.y<a.top||pointer.y>a.bottom){hide(state);return;}
+    const data=info(chart,pointer);if(!data?.rows.length){hide(state);return;}
+    state.pointer={clientX:touch.clientX,clientY:touch.clientY};
+    try{if(chart.tooltip&&state.tooltip!==chart.tooltip){state.tooltip=chart.tooltip;state.enabled=chart.tooltip.options.enabled;}if(state.tooltip)state.tooltip.options.enabled=false;}catch{}
+    const title=document.createElement('div');title.textContent=data.title;title.style.cssText='font-weight:650;margin-bottom:7px';
+    const children=[title];
+    for(const row of data.rows){
+      const line=document.createElement('div');line.style.cssText='display:flex;align-items:center;gap:8px;min-height:22px';
+      const swatch=document.createElement('span');swatch.style.cssText='display:inline-block;width:14px;height:3px;flex:0 0 14px';swatch.style.background=row.color;
+      const label=document.createElement('span');label.textContent=row.label;label.style.cssText='flex:1;white-space:nowrap';
+      const value=document.createElement('span');value.textContent=format(row);value.style.cssText='font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:12px';
+      line.append(swatch,label,value);children.push(line);
+    }
+    state.tip.replaceChildren(...children);state.tip.style.display='block';
+    const box=state.tip.getBoundingClientRect(),vw=window.innerWidth||document.documentElement.clientWidth,vh=window.innerHeight||document.documentElement.clientHeight;
+    const left=Math.max(8,Math.min(touch.clientX+16+box.width<vw-8?touch.clientX+16:touch.clientX-box.width-16,vw-box.width-8));
+    const top=Math.max(8,Math.min(touch.clientY+16,vh-box.height-8));state.tip.style.left=left+'px';state.tip.style.top=top+'px';
+    state.cursor.style.cssText='position:fixed;pointer-events:none;z-index:2147483645;border-left:1px dashed rgba(100,116,139,.65);display:block;left:'+(rect.left+data.px*rect.width/chart.width)+'px;top:'+(rect.top+a.top*rect.height/chart.height)+'px;height:'+((a.bottom-a.top)*rect.height/chart.height)+'px';
+  }
+  function detach(canvas,state){
+    for(const type of ['mousemove','touchstart','touchmove'])canvas.removeEventListener(type,state.move,true);
+    for(const type of ['mouseleave','touchend','touchcancel'])canvas.removeEventListener(type,state.leave,true);
+    window.removeEventListener('scroll',state.leave,true);window.removeEventListener('blur',state.leave);hide(state);state.tip.remove();state.cursor.remove();bindings.delete(canvas);
+  }
+  function attach(chart,config={}){
+    if(!supported(chart))return;
+    // Never enter Chart.js' render/plugin lifecycle: tooltip errors stay local.
+    try{
+      configs.set(chart,config);
+      for(const [canvas,state] of bindings)if(canvas.isConnected===false)detach(canvas,state);
+      let state=bindings.get(chart.canvas);
+      if(state){state.chart=chart;if(state.pointer)Promise.resolve().then(()=>state.move(state.pointer));return;}
+      const tip=document.createElement('div'),cursor=document.createElement('div');
+      tip.setAttribute('role','tooltip');tip.style.cssText='position:fixed;display:none;pointer-events:none;z-index:2147483646;background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:7px;padding:10px 12px;box-shadow:0 3px 12px rgba(0,0,0,.2);font:12px/1.4 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 16px);box-sizing:border-box';
+      cursor.style.display='none';(document.body||document.documentElement).append(tip,cursor);
+      state={chart,tip,cursor,tooltip:null,pointer:null};
+      state.move=e=>{try{show(state,e);}catch(error){hide(state);if(!state.warned){state.warned=true;console.warn('[SOC hover]',error);}}};state.leave=()=>hide(state);
+      for(const type of ['mousemove','touchstart','touchmove'])chart.canvas.addEventListener(type,state.move,{capture:true,passive:true});
+      for(const type of ['mouseleave','touchend','touchcancel'])chart.canvas.addEventListener(type,state.leave,{capture:true,passive:true});
+      window.addEventListener('scroll',state.leave,{capture:true,passive:true});window.addEventListener('blur',state.leave);bindings.set(chart.canvas,state);
+    }catch(error){console.warn('[SOC hover] Koppelen mislukt:',error);}
+  }
+  root.BESocHover={attach,info,valueAt};
+})(typeof window!=='undefined'?window:globalThis);
+
+(async function () {
+  'use strict';
+  if(window.__beCoulombInOut6)return;window.__beCoulombInOut6=true;
+  const id=location.pathname.match(/^\/customer\/([^/]+)\//)?.[1];
+  if(!id||['account','current-history','current-prices'].includes(id))return;
+  const ext=window.BESOCExtras;
+  const pastColorsPlugin={id:'beOwnSocPastColors',afterDraw(chart){
+    const area=chart.chartArea,x=chart.scales.x;if(!area||!x)return;
+    const slots=(payload?.items||[]).flatMap(i=>(i.hours||[]).map(t=>Date.parse(t)));
+    if(slots.length!==chart.data.labels?.length)return;
+    const ctx=chart.ctx,now=Date.now();ctx.save();ctx.beginPath();
+    ctx.rect(area.left,area.top,area.right-area.left,area.bottom-area.top);ctx.clip();
+    chart.data.datasets.forEach((d,i)=>{
+      if(!d.beOwnSOC||!chart.isDatasetVisible(i))return;
+      const meta=chart.getDatasetMeta(i);
+      const color='#0891b2';
+      ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.setLineDash([]);ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();
+      let started=false;
+      for(let k=0;k<slots.length;k++){
+        const point=meta.data[k],raw=d.data[k];
+        if(slots[k]>now||raw==null||point?.skip||!Number.isFinite(point?.x)||!Number.isFinite(point?.y)){started=false;continue;}
+        if(started)ctx.lineTo(point.x,point.y);else{ctx.moveTo(point.x,point.y);started=true;}
+      }
+      ctx.stroke();
+    });ctx.restore();
+  }};
+
+  const core=window.BEEnergySOC, key='be-own-soc-settings:'+id, DAY=86400000;
+  let cfg={},record={rows:[],manual:[]},result=null,payload=null,db=null,busy=false,error='',storageError='',lastFetch=0,forecastFetch=0;
+  try{cfg=JSON.parse(localStorage.getItem(key)||'{}');}catch{}
+  const settings=()=>({...core.defaults,...cfg,chargeEfficiency:1,dischargeEfficiency:1,auto:true});
+  const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
+  const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  const latest=()=>result?.points.at(-1);
+  function openDB(){return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('be-own-energy-soc-v1',1);
+    req.onupgradeneeded=()=>req.result.createObjectStore('installations');
+    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error("Lokale historie geblokkeerd"));
+  });}
+  // Merge in one read/write transaction: simultaneous dashboard tabs cannot overwrite observations.
+  function persist(incoming=[],anchor=null){return new Promise((resolve,reject)=>{
+    if(!db){record.rows=[...new Map([...record.rows,...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);if(anchor)record.manual=[...record.manual.filter(a=>a.t!==anchor.t),anchor];resolve();return;}
+    const tx=db.transaction('installations','readwrite'),store=tx.objectStore('installations'),req=store.get(id);
+    req.onsuccess=()=>{
+      try {
+        const old=req.result||{rows:[],manual:[]};
+        let rows=[...new Map([...old.rows,...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
+        let manual=old.manual||[];
+        if(anchor)manual=[...manual.filter(a=>a.t!==anchor.t),anchor];
+        // Preserve the integrated state when old observations are removed.
+        const cutoff=Date.now()-30*DAY,index=rows.findIndex(r=>r[0]>=cutoff);
+        if(index>0){
+          const prior=core.calculate(rows.slice(0,index+1),settings(),manual).points.at(-1);
+          // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
+          if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
+            rows=rows.slice(index);manual=manual.filter(a=>a.t>=rows[0][0]);
+            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt'});
+          }
+        }
+        record={...old,rows,manual};store.put(record,id);
+      }catch(e){reject(e);tx.abort();}
+    };
+    tx.oncomplete=()=>resolve();tx.onerror=tx.onabort=()=>reject(tx.error||Error('Transactie afgebroken'));
+  });}
+  async function request(url){
+    const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),12000);
+    try{const r=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:ctl.signal});
+      if(!r.ok)throw Error('Bron geeft HTTP '+r.status);return await r.json();
+    }finally{clearTimeout(timer);}
+  }
+  function compute(){result=core.calculate(record.rows,settings(),record.manual);}
+  async function poll(){
+    if(busy)return;busy=true;
+    try {
+      const now=Date.now(),last=record.rows.at(-1)?.[0];
+      const u=new URL('/customer/current-history/api/',location.origin);
+      u.searchParams.set('installation',id);u.searchParams.set('start',String(Math.max(now-DAY,last?last-300000:0)));u.searchParams.set('end',String(now));
+      const j=await request(u.href);
+      if(!Array.isArray(j.rows))throw Error('Onbekend historieformaat');
+      const rows=[...j.rows,...(j.latest?[j.latest]:[])].filter(r=>Number.isFinite(r.t)&&r.t<=now).map(r=>[r.t,Number.isFinite(r.s)?r.s:null,Number.isFinite(r.bo)?r.bo:null]);
+      await persist(rows);compute();lastFetch=now;error='';
+      if(!payload||now-forecastFetch>300000){
+        try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=now;
+          if(Number.isFinite(payload.battery_capacity_kwh)&&!cfg.capacity)cfg.capacity=payload.battery_capacity_kwh;
+          compute();
+        }catch(e){if(!cfg.capacity)error='Capaciteitbron niet beschikbaar';}
+      }
+    }catch(e){error=e.message||String(e);}
+    finally{busy=false;render();}
+  }
+  const style=document.createElement('style');
+  style.textContent=`.be-own-soc{margin:12px 0;padding:14px 16px;border:1px solid #c4dde1;border-radius:12px;background:rgba(8,145,178,.045);font:13px system-ui;color:inherit}.be-own-soc header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.be-own-soc strong{font-size:21px;color:#0891b2}.be-own-soc small{opacity:.75}.be-own-soc details{margin-top:10px}.be-own-soc summary{cursor:pointer}.be-own-soc form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px}.be-own-soc label{display:flex;flex-direction:column;gap:4px}.be-own-soc input[type=number]{width:90px;padding:6px;border:1px solid #aaa;border-radius:6px;background:inherit;color:inherit}.be-own-soc button{padding:7px 10px;border:1px solid #7cb9c5;border-radius:7px;background:transparent;color:inherit;cursor:pointer}.be-own-soc p{margin:8px 0}.be-own-soc output{display:block;margin-top:7px}.be-own-soc .be-soc-line{color:#0891b2;font-weight:650}.be-own-soc ul{padding-left:20px;max-height:150px;overflow:auto}`;
+  style.textContent+=`[data-be-soc-compact]{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;align-items:center!important;gap:6px!important}[data-be-soc-legend]{display:inline-flex!important;flex-direction:row!important;flex-wrap:nowrap!important;width:max-content!important;max-width:100%;gap:6px!important;align-items:center!important;margin:6px 0!important}[data-be-soc-compact]>[data-be-soc-legend]{display:contents!important}[data-be-soc-compact] button,[data-be-soc-legend] button{display:inline-flex!important;flex:0 0 auto!important;width:auto!important;min-width:0!important;max-width:none!important;min-height:0!important;height:28px!important;white-space:nowrap!important;padding:4px 9px!important;font-size:12px!important;line-height:18px!important}`;
+  document.head.append(style);
+  function panel(canvas){
+    let p=document.getElementById('be-own-soc-panel');if(p)return p;
+    p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij 10% of 95% van de originele SOC wordt de telling altijd automatisch herijkt, ook bij een passage tussen meetpunten. Daarbij wordt de gemelde BE-SOC overgenomen. De kWh-tellers blijven doorlopen. Handmatig herijken kan hierboven.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
+    canvas.parentElement.insertAdjacentElement('afterend',p);
+    const c=settings(),f=p.querySelector('[data-settings]');
+    f.elements.capacity.value=c.capacity;
+    f.onsubmit=async e=>{
+      e.preventDefault();if(!f.reportValidity())return;
+      cfg={...cfg,capacity:+f.elements.capacity.value,auto:true};
+      try{localStorage.setItem(key,JSON.stringify(cfg));compute();render();}catch(e){error='Opslaan mislukt: '+e.message;render();}
+    };
+    p.querySelector('[data-manual]').onsubmit=async e=>{
+      e.preventDefault();const form=e.currentTarget,r=latest();if(!r||!form.reportValidity())return;
+      if(Date.now()-r.t>120000){error='Laatste meetpunt is te oud om nu te herijken';render();return;}
+      try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
+    };
+    p.querySelector('[data-export]').onclick=()=>{
+      const blob=new Blob([JSON.stringify({version:'6.0.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    };return p;
+  }
+  function dataset(chart,tag,label,points,extra={}){
+    let d=chart.data.datasets.find(d=>d.beOwnSOC===tag);
+    if(!d){d={beOwnSOC:tag,label,type:'line',borderColor:'#0891b2',backgroundColor:'#0891b2',borderWidth:1.6,pointRadius:0,pointHitRadius:8,fill:false,tension:0,spanGaps:false,...extra};chart.data.datasets.push(d);}
+    Object.assign(d,extra);d.data=points;
+    d.borderDash=[];
+    d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
+  }
+  function forecastValues(chart){
+    const items=payload?.items;if(!items?.length)return null;
+    const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
+      load:i.usage_kwh?.[k],pv:i.pv_production_kwh?.[k]})));
+    if(slots.length!==chart.data.labels?.length)return null;
+    const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
+    return {actual:slots.map(q=>core.at(result?.points||[],q.t,c.maxGapMs)),
+      future:ext.project(slots,latest(),c,power)};
+  }
+  function applyVisibility(chart){
+    chart.data.datasets.forEach((d,i)=>{
+      if(!d.beOwnSOC)return;
+      const visible=cfg.show_kwh!==false;
+      d.hidden=!visible;
+      if(chart.setDatasetVisibility)chart.setDatasetVisibility(i,visible);
+    });
+  }
+  function legend(chart){
+    const canvas=chart.canvas;
+    let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
+    if(!row){
+      // Prefer the existing SOC legend. Never append to the power/energy legend.
+      let host=canvas.parentElement,existing=null;
+      for(let depth=0;host&&depth<3;depth++,host=host.parentElement){
+        const candidate=host.querySelector('[class*="legend-soc"], [id*="soc-legend"], [aria-label="SOC reeksen"]');
+        if(candidate){existing=candidate;break;}
+      }
+      row=document.createElement('span');row.dataset.beSocLegend=canvas.id;
+      row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center';
+      if(existing){existing.dataset.beSocCompact='';existing.append(row);}else canvas.parentElement.insertAdjacentElement('afterend',row);
+      for(const [group,label,color] of [['kwh','Coulombtelling in/uit','#0891b2']]){
+        const button=document.createElement('button');button.type='button';button.className='forecast-series-toggle';
+        button.dataset.beSocGroup=group;button.style.setProperty('--series-color',color);
+        button.innerHTML='<span class="forecast-series-swatch" style="display:inline-block;width:18px;height:3px;background:'+color+'"></span> <span class="forecast-series-name">'+label+'</span>';
+        button.style.cssText+=';display:inline-flex;gap:7px;align-items:center;padding:6px 10px;border:1px solid '+color+';border-radius:7px;background:transparent;color:inherit;cursor:pointer';
+        button.onclick=()=>{cfg['show_'+group]=cfg['show_'+group]===false;localStorage.setItem(key,JSON.stringify(cfg));render();};
+        row.append(button);
+      }
+    }
+    for(const button of row.querySelectorAll('button')){
+      const visible=cfg['show_'+button.dataset.beSocGroup]!==false;
+      button.setAttribute('aria-pressed',String(visible));button.classList.toggle('is-muted',!visible);button.style.opacity=visible?'1':'.45';
+    }
+  }
+  function render(){
+    const C=window.Chart;if(!C?.getChart)return;
+    const cv=document.getElementById('soc-chart')||document.getElementById('soc-forecast-chart');if(!cv)return;
+    const chart=C.getChart(cv);if(!chart)return;
+    const p=panel(cv),r=latest(),stale=r&&Date.now()-r.t>120000;
+    p.querySelector('[data-soc]').textContent=r?.soc!=null?number(r.soc)+'%'+(stale?' · oud':''):'SOC onbekend';
+    p.querySelector('[data-energy]').textContent=result?.points.length?'Gemeten in '+number(result.input,2)+' kWh · uit '+number(result.output,2)+' kWh sinds '+date(record.rows[0][0])+(result.gaps?' · '+result.gaps+' onzekere intervallen':''):'';
+    const state=error?'Fout: '+error:r?('Berekend t/m '+date(r.t)+' · gemeld '+number(r.raw,0)+'%'+(r.soc!==null?' · verschil '+number(r.soc-r.raw)+' procentpunt':' · start-SOC ontbreekt')+(r.uncertain?' · geschatte SOC door onzekere intervallen':'')+(stale?' · metingen verouderd':'')):'Metingen laden…';
+    p.querySelector('[data-state]').textContent=[state,storageError].filter(Boolean).join(' · ');
+    p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
+    const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
+    for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}
+  }
+  function decorate(chart){
+
+    if(chart.canvas.id==='soc-chart'){
+      const a=chart.scales.x?.min??0,b=chart.scales.x?.max??Infinity;
+      const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
+      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a-120000&&p.t<=b+120000).map(p=>({x:p.t,y:p.gap&&!p.anchor?null:p.soc})),{yAxisID:axis,parsing:false});
+    }else if(chart.canvas.id==='soc-forecast-chart'){
+      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,borderColor:'rgba(8,145,178,.55)',backgroundColor:'rgba(8,145,178,.55)'});}
+    }
+    if(chart.canvas.id==='soc-forecast-chart')attachPastColors(chart);
+    applyVisibility(chart);
+    try{window.BESocHover?.attach(chart,{times:(payload?.items||[]).flatMap(i=>i.hours||[])});}catch(e){console.warn("[SOC hover]",e);}
+  }
+  function attachPastColors(chart){
+    const raw=chart.config._config||chart.config;const plugins=chart.config.plugins||(raw.plugins=[]);
+    if(!plugins.some(p=>p?.id===pastColorsPlugin.id))plugins.push(pastColorsPlugin);
+  }
+  // The dashboard refreshes and sometimes replaces its datasets. Restore only our own series.
+  let library;
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register({id:'beOwnEnergySoc',beforeUpdate:decorate});library=C;}}
+  register();compute();render();
+  setInterval(()=>{register();render();},5000);
+  let storageTimer;
+  try{db=await Promise.race([openDB(),new Promise((_,reject)=>{storageTimer=setTimeout(()=>reject(Error('Opslag reageert niet')),3000);})]);await persist();}
+  catch(e){storageError='Lokale opslag niet beschikbaar: '+e.message;}
+  finally{clearTimeout(storageTimer);compute();await poll();}
+  setInterval(()=>{if(Date.now()-lastFetch>14000)poll();},15000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
+  window.addEventListener('storage',e=>{if(e.key===key){try{cfg=JSON.parse(e.newValue||'{}');compute();render();}catch{}}});
+})();
