@@ -3,6 +3,7 @@
 ## 6.0.2 BETA — 19 oktober 2026
 
 - Dashboardmenu op smartphones weer bereikbaar vanuit Financieel, ook na scrollen.
+- Blauwe focusrand rond de titel Financieel verwijderd.
 
 ## 6.0.1 BETA — 19 oktober 2026
 
