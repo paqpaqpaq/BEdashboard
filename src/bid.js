@@ -3,10 +3,13 @@
     window.__beAfrrBid01 = true;
     const QUARTER = 900000;
     const directions = ['import', 'export'];
-    const colours = {import: '#c96f22', export: '#7851ae'};
+    const colours = {import: '#dc3545', export: '#28a745'};
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
-    let lastSuccess = 0, ui, button, status;
+    let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
+    const customer=(location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)||[])[1];
+    if(!customer||/^(account|current-prices|current-history|results)$/.test(customer))return;
+    const cachePrefix=customer+':';
     const clock = new Intl.DateTimeFormat('nl-NL', {
       timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit'
     });
@@ -19,25 +22,70 @@
 
     // API schema/semantics checked against RaginValdr/Balans-energie-Home-assistant-app.
     // Only bid_fallback contains a bid. confirmed is a trade quote, never a new bid.
-    function ingest(payload, now) {
+    function mergeRecord(old, incoming){
+      const r={start:incoming.start,end:incoming.end,states:Object.assign({},old?.states,incoming.states)};
+      for(const d of directions){
+        const a=old?.[d],b=incoming[d];
+        if(!a&&!b)continue;
+        const newest=!a?b:!b?a:b.observedAt>=a.observedAt?b:a;
+        const observations=[...(a?.observations|| (a?[{value:a.value,observedAt:a.observedAt}]:[])),...(b?.observations|| (b?[{value:b.value,observedAt:b.observedAt}]:[]))];
+        const seen=new Map();observations.forEach(o=>{if(Number.isFinite(o.value)&&Number.isFinite(o.observedAt))seen.set(o.observedAt+':'+o.value,{value:o.value,observedAt:o.observedAt});});
+        r[d]=Object.assign({},newest,{observations:[...seen.values()].sort((x,y)=>x.observedAt-y.observedAt)});
+      }
+      return r;
+    }
+    function database(){
+      if(!dbPromise)dbPromise=new Promise((resolve,reject)=>{const req=indexedDB.open('balansenergie-bids-v1',1);req.onupgradeneeded=()=>req.result.createObjectStore('kwartieren',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error('BID-archief geblokkeerd'));});
+      return dbPromise;
+    }
+    async function persist(record){
+      if(!directions.some(d=>record[d]))return;
+      try{
+        const db=await database();await new Promise((resolve,reject)=>{
+          const tx=db.transaction('kwartieren','readwrite'),store=tx.objectStore('kwartieren'),id=cachePrefix+record.start,req=store.get(id);
+          req.onsuccess=()=>store.put(Object.assign(mergeRecord(req.result,record),{id,customer}));
+          tx.oncomplete=resolve;tx.onerror=tx.onabort=()=>reject(tx.error||Error('BID opslaan mislukt'));
+        });storageError='';
+      }catch(e){storageError='BID-cache niet opgeslagen: '+e.message;}
+    }
+    async function hydrate(){
+      try{
+        const db=await database();const rows=await new Promise((resolve,reject)=>{const tx=db.transaction('kwartieren','readonly'),req=tx.objectStore('kwartieren').getAll(IDBKeyRange.bound(cachePrefix+(quarter(Date.now())-7*86400000),cachePrefix+'9999999999999'));req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+        rows.forEach(r=>{if(r.customer===customer&&Number.isFinite(r.start)&&r.end===r.start+QUARTER)bids.set(r.start,mergeRecord(r,bids.get(r.start)||r));});
+      }catch(e){storageError='BID-cache niet leesbaar: '+e.message;}
+      // Oude bronresponsen kunnen nog expliciet gemarkeerde biedprijzen bevatten.
+      try{
+        const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('balansenergie-bronnen-v1',1);req.onupgradeneeded=()=>req.result.createObjectStore('dagen');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+        const saved=await new Promise((resolve,reject)=>{const req=db.transaction('dagen','readonly').objectStore('dagen').get(customer+':prijzen');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();
+        if(saved?.rows)ingest({prices:saved.rows},Date.now(),true);
+      }catch(_){}
+      archiveReady=true;refresh();poll();
+    }
+    function ingest(payload, now, historical=false) {
       if (!payload || !Array.isArray(payload.prices)) throw Error('Onbekend API-antwoord');
-      unavailable = payload.afrrAvailable === false;
-      if (unavailable) return;
-      const start = quarter(now);
-      const r = payload.prices.find(row => row.start === start && row.end === start + QUARTER);
-      if (!r) return;
-      const record = bids.get(start) || {start, end: start + QUARTER, states: {}};
+      if(!historical)unavailable = payload.afrrAvailable === false;
+      let added=0;
+      for(const r of payload.prices){
+      const start=r.start;
+      if(!Number.isFinite(start)||start%QUARTER!==0||r.end!==start+QUARTER||start>now||r.carried)continue;
+      const old=bids.get(start),record={start,end:r.end,states:{}};
       for (const direction of directions) {
         const state = r.afrrBidStatus?.[direction];
         const value = r.values?.['afrr_' + direction];
         record.states[direction] = state;
         if (state === 'bid_fallback' && Number.isFinite(value)) {
-          record[direction] = {value, observedAt: now};
+          const previous=old?.[direction];
+          record[direction] = previous&&previous.value===value?previous:{value, observedAt: now,source:historical?'historische bron':'live'};
+          if(!previous)added++;
         }
         // A subsequent confirmed quote must not replace the captured bid.
       }
-      bids.set(start, record);
-      for (const key of bids.keys()) if (key < start - 2 * 86400000) bids.delete(key);
+      const merged=mergeRecord(old,record);bids.set(start,merged);
+      if(JSON.stringify(old)!==JSON.stringify(merged))persist(merged);
+      }
+      // Alleen de werkset in geheugen begrenzen; opgeslagen BIDs worden niet verwijderd.
+      for (const key of bids.keys()) if (key < quarter(now) - 7 * 86400000) bids.delete(key);
+      return added;
     }
     function displayPrice(value, direction, tariff, settings) {
       if (!tariff?.allin) return value;
@@ -73,7 +121,7 @@
               beBidDirection: direction,
               label: 'BID ' + direction,
               borderColor: colours[direction], backgroundColor: colours[direction],
-              borderDash: [3, 4], borderWidth: 2, pointRadius: 0,
+              borderDash: [], borderWidth: 1, pointRadius: 0,
               pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
               stepped: false, order: -5,
               tooltip: {callbacks: {
@@ -87,6 +135,7 @@
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
+          dataset.borderColor=colours[direction];
         }
         const callbacks = chart.options.plugins?.tooltip?.callbacks;
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
@@ -118,7 +167,7 @@
       status = document.createElement('span');
       status.style.cssText = 'flex:1 1 220px;min-width:0;overflow-wrap:anywhere';
       status.setAttribute('role', 'status');
-      ui.append(button, status); row.appendChild(ui);
+      ui.append(button,status); row.appendChild(ui);
     }
     function refresh() {
       ensureUI();
@@ -143,10 +192,12 @@
         return direction + (now - start < 120000 ? ' wachten op bod' : ' bod niet waargenomen');
       });
       status.textContent = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
-        (error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
-      ui.title = 'Gestippeld: waargenomen biedprijzen, geen handelsprijzen. ' +
+        ' · '+[...bids.values()].filter(r=>directions.some(d=>r[d])).length+' kwartieren in cache (laatste 7 dagen)' +
+        (recovery?' · '+recovery:'')+(storageError?' · '+storageError:'')+(error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
+      ui.title = 'Dunne biedlijnen: waargenomen biedprijzen, geen handelsprijzen. ' +
         'Biedprijzen worden meestal alleen de eerste twee minuten van het kwartier aangeboden. ' +
-        'Laat deze pagina open om ze vast te leggen. Herladen wist de waarnemingen. ' +
+        'Waarnemingen blijven lokaal bewaard na herladen, zonder automatische verwijdering. De grafiek laadt de laatste 7 dagen. ' +
+        'Beschikbare biedhistorie wordt automatisch gecontroleerd; uitsluitend expliciete BID-bronprijzen tellen mee. ' +
         (tariff?.allin ? 'All-in, volgens de instellingen van de hoofdplugin.' : 'Kale bedragen.');
     }
     function request(url) {
@@ -169,10 +220,11 @@
       clearTimeout(timer);
       busy = true;
       try {
-        if (enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
+        // Keep collecting in hidden tabs too. Safari may still throttle or suspend timers.
+        if (archiveReady&&enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
           const now = Date.now();
           const payload = await request('/customer/current-prices/api/?start=' + quarter(now) + '&end=' + now);
-          ingest(payload, Date.now()); lastSuccess = Date.now(); error = '';
+          ingest(payload, Date.now()); lastSuccess = Date.now(); error = '';recover(false);
         }
       } catch (e) { error = e.message; }
       finally {
@@ -183,9 +235,18 @@
         timer = setTimeout(poll, Math.max(1000, delay));
       }
     }
+    let lastRecovery=0;
+    async function recover(manual){
+      if(recovering||!archiveReady||(!manual&&Date.now()-lastRecovery<3600000))return;
+      recovering=true;lastRecovery=Date.now();recovery='';refresh();
+      try{const payload=await request('/customer/current-prices/api/'),count=ingest(payload,Date.now(),true);recovery=count?count+' gemiste biedrichtingen teruggevonden':'Geen extra BIDs in beschikbare prijshistorie';}
+      catch(e){recovery='Terugzoeken mislukt: '+e.message;}
+      finally{recovering=false;refresh();}
+    }
+    document.addEventListener('be-afrr-source',e=>{try{ingest(e.detail,Date.now());refresh();}catch(_){}});
     document.addEventListener('be-tarief-update', refresh);
     document.addEventListener('be-actueel-allin-update', refresh);
     document.addEventListener('be-dark-change', refresh);
     document.addEventListener('visibilitychange', () => {if (!document.hidden) poll();});
-    poll();
+    hydrate();
 })();

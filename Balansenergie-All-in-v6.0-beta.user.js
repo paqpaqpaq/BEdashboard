@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.2 BETA
+// @name         Balansenergie All-in v6.1.3 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.1.2
-// @description  BETA 6.1.2: Coulombtelling in/uit met handmatige kWh- of FCC-capaciteit, lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.1.3
+// @description  BETA 6.1.3: Coulombtelling in/uit met handmatige kWh- of FCC-capaciteit, lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.2'
+    '6.1.3'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11869,7 +11869,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.1.2 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.3 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12162,13 +12162,22 @@
           .chart-readout{max-width:100%;padding:9px}.tip-values{gap:6px;align-items:center}.tip-values>strong{flex-basis:100%;min-width:0}.tip-values span{font-size:11px}.stream-result{gap:6px}.stream-result>strong{font-size:21px}.stream-result>span:first-child{flex-basis:100%}
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
+.filters label,.settings-grid label{min-width:0;gap:6px;font-size:12px;font-weight:550;line-height:1.4}
+.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input{min-width:0;max-width:100%;height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;font-variant-numeric:tabular-nums}
+.fields input,.fields select,.settings-grid input,.settings-grid select{width:100%}
+.fields input:focus-visible,.fields select:focus-visible,.toggles select:focus-visible,.settings-grid input:focus-visible,.settings-grid select:focus-visible{outline:2px solid var(--purple);outline-offset:2px}
+.toggles label{display:grid;align-items:start;gap:6px}.toggles{align-items:end;gap:12px}
+.appearance-settings{display:flex;align-items:center;justify-content:space-between;gap:16px}.appearance-settings h2{margin:0 0 4px}.appearance-settings .help{margin:0}
+.appearance-settings label{display:grid;gap:6px;min-width:150px;font-size:12px;font-weight:550}.appearance-settings select{height:40px;border-radius:8px;font-size:14px}
+@media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
+
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.2 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.3 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
         <div id="content"></div>
-        <div id="settings" hidden><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
+        <div id="settings" hidden><section class="panel appearance-settings"><div><h2>Weergave</h2><p class="help">Donkere modus voor het hele dashboard.</p></div><label for="cfg-dark">Donkere modus<select id="cfg-dark"><option value="uit">Uit</option><option value="aan">Aan</option></select></label></section><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
       </div></div>`;
       document.body.appendChild(root);
       var year = +monthNow.slice(0, 4), startYear = cfg.start.getFullYear();
@@ -12178,6 +12187,8 @@
       var allin=beOvSettings.tax&&beOvSettings.vat;beOvSettings.tax=beOvSettings.vat=allin;$('price-mode').value=allin?'allin':'bare';
       state = {type:'contract'}; $('period').value='contract';
       ['period','month','year','contract','from','to'].forEach(function (id) { $(id).addEventListener('change', function () { updateFilters(); load(); }); });
+      $('cfg-dark').value=beDarkOn?'aan':'uit';
+      $('cfg-dark').onchange=function(){beDarkApply($('cfg-dark').value==='aan');};
       $('price-mode').addEventListener('change',function(){var allin=$('price-mode').value==='allin';beOvSettings.tax=beOvSettings.vat=allin;save();updateFilters();if(latest)render();});
       shadow.querySelectorAll('[data-preset]').forEach(function(b){b.onclick=function(){
         $('period').value=b.dataset.preset;updateFilters();load();
@@ -12241,7 +12252,7 @@
       var today=iso(new Date()),anchor=today>=r.a&&today<=r.b?today:r.a,c=beOvContract(anchor);
       return {a:c.begin,b:c.end};
     }
-    function theme() { if (root) { root.toggleAttribute('data-dark', document.documentElement.getAttribute('data-be-dark') === 'aan'); root.style.background = root.hasAttribute('data-dark') ? '#282723' : '#f6f7fb'; } }
+    function theme() { if (root) { var dark=document.documentElement.getAttribute('data-be-dark') === 'aan';root.toggleAttribute('data-dark',dark);root.style.background=dark?'#282723':'#f6f7fb';if($('cfg-dark'))$('cfg-dark').value=dark?'aan':'uit'; } }
     function shift(n) {
       var type = $('period').value;
       if (type === 'month') { var d = beOvDate($('month').value + '-01'); d.setUTCMonth(d.getUTCMonth() + n); $('month').value = beOvISO(d).slice(0, 7); }
@@ -12745,7 +12756,7 @@
 })();
 
 
-/* Rustâââgh: stabiele live cijfers op Actueel. */
+/* Stabiele live cijfers op Actueel, altijd actief. */
 (function () {
   'use strict';
 
@@ -12757,10 +12768,7 @@
 
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
-  var TOGGLE_ID = 'be-stabiele-cijfers-toggle';
-  var OPSLAG = 'be_stabiele_cijfers_aan_v2';
   var scanGepland = false;
-  var ingeschakeld = localStorage.getItem(OPSLAG) !== '0';
 
   function voegStijlToe() {
     if (document.getElementById(STYLE_ID)) return;
@@ -12787,37 +12795,7 @@
       '.' + MARKER + '[data-be-eenheid="eur"]{width:9ch!important;}' +
       '.' + MARKER + '[data-be-uitlijning="midden"]{text-align:center!important;}' +
       '.' + MARKER + '[data-be-uitlijning="rechts"]{text-align:right!important;}' +
-      '.' + MARKER + '[data-be-uitlijning="links"]{text-align:left!important;}' +
-      '.be-stabiele-cijfers-kop{position:relative!important;}' +
-      '#' + TOGGLE_ID + '{' +
-        'appearance:none;-webkit-appearance:none;' +
-        'display:flex;align-items:center;gap:8px;' +
-        'width:auto;height:auto;cursor:pointer;' +
-        'border:0;background:transparent;' +
-        'position:absolute;right:24px;top:50%;z-index:2;' +
-        'transform:translateY(-50%);' +
-        'padding:3px 2px;flex:0 0 auto;' +
-        'white-space:nowrap;color:#342f3a;' +
-        'font-family:inherit;font-size:12px;font-weight:500;line-height:1.2;' +
-        'box-shadow:none;' +
-      '}' +
-      '#' + TOGGLE_ID + ' [data-be-stabiel-track]{' +
-        'position:relative;display:inline-block;' +
-        'width:34px;height:18px;border-radius:999px;flex-shrink:0;' +
-        'transition:background .18s ease;' +
-      '}' +
-      '#' + TOGGLE_ID + ' [data-be-stabiel-thumb]{' +
-        'position:absolute;left:2px;top:2px;' +
-        'width:14px;height:14px;border-radius:50%;background:#fff;' +
-        'box-shadow:0 1px 3px rgba(0,0,0,.35);' +
-        'transition:transform .18s ease;' +
-      '}' +
-      '#' + TOGGLE_ID + ' [data-be-stabiel-status]{' +
-        'min-width:24px;font-size:10px;font-weight:700;line-height:1;' +
-      '}' +
-      '@media(max-width:700px) and (orientation:portrait){' +
-        '#' + TOGGLE_ID + '{right:12px!important;gap:6px!important;font-size:11px!important;}' +
-      '}';
+      '.' + MARKER + '[data-be-uitlijning="links"]{text-align:left!important;}';
 
     (document.head || document.documentElement).appendChild(stijl);
   }
@@ -12892,24 +12870,6 @@
     return null;
   }
 
-  function vindKopbalk(titel) {
-    var bestaandeKop = document.querySelector('.be-stabiele-cijfers-kop');
-    if (bestaandeKop) return bestaandeKop;
-
-    var titelElement = vindTitelElement(titel);
-    var paneel = vindPaneel(titel);
-    if (!titelElement || !paneel) return null;
-
-    var kop = titelElement;
-
-    while (kop.parentElement && kop.parentElement !== paneel) {
-      if (aantalMeetwaarden(kop.parentElement) > 0) break;
-      kop = kop.parentElement;
-    }
-
-    return kop;
-  }
-
   function actueelPaneelNummer(el, panelen) {
     var rect = el.getBoundingClientRect();
     if (!rect.width || !rect.height || rect.top < 0) return -1;
@@ -12935,81 +12895,9 @@
     return huidig;
   }
 
-  function verwijderMarkeringen() {
-    var gemarkeerd = document.querySelectorAll('.' + MARKER);
-
-    for (var i = 0; i < gemarkeerd.length; i++) {
-      gemarkeerd[i].classList.remove(MARKER);
-      gemarkeerd[i].removeAttribute('data-be-eenheid');
-      gemarkeerd[i].removeAttribute('data-be-uitlijning');
-    }
-  }
-
-  function tekenSchakelaar(knop) {
-    if (!knop) return;
-
-    var track = knop.querySelector('[data-be-stabiel-track]');
-    var duim = knop.querySelector('[data-be-stabiel-thumb]');
-    var status = knop.querySelector('[data-be-stabiel-status]');
-
-    knop.setAttribute('aria-pressed', ingeschakeld ? 'true' : 'false');
-    knop.title = ingeschakeld
-      ? 'Vaste cijferbreedtes uitschakelen'
-      : 'Vaste cijferbreedtes inschakelen';
-    track.style.background = ingeschakeld ? '#7040a3' : '#aab4c2';
-    duim.style.transform = ingeschakeld ? 'translateX(16px)' : 'translateX(0)';
-    var statusTekst = ingeschakeld ? 'AAN' : 'UIT';
-    if (status.textContent !== statusTekst) status.textContent = statusTekst;
-  }
-
-  function voegSchakelaarToe() {
-    var kop = vindKopbalk('Live Status');
-    if (!kop) return;
-
-    kop.classList.add('be-stabiele-cijfers-kop');
-
-    var knop = document.getElementById(TOGGLE_ID);
-
-    if (!knop) {
-      knop = document.createElement('button');
-      knop.id = TOGGLE_ID;
-      knop.type = 'button';
-      knop.innerHTML =
-        '<span>Rustâââgh</span>' +
-        '<span data-be-stabiel-track>' +
-          '<span data-be-stabiel-thumb></span>' +
-        '</span>' +
-        '<span data-be-stabiel-status></span>';
-
-      knop.addEventListener('click', function () {
-        ingeschakeld = !ingeschakeld;
-        localStorage.setItem(OPSLAG, ingeschakeld ? '1' : '0');
-        tekenSchakelaar(knop);
-
-        if (ingeschakeld) {
-          planScan();
-        } else {
-          verwijderMarkeringen();
-        }
-      });
-    }
-
-    if (knop.parentElement !== kop) {
-      kop.appendChild(knop);
-    }
-
-    tekenSchakelaar(knop);
-  }
-
   function markeerActueleCijfers() {
     scanGepland = false;
     voegStijlToe();
-    voegSchakelaarToe();
-
-    if (!ingeschakeld) {
-      verwijderMarkeringen();
-      return;
-    }
 
     var elementen = document.body ? document.body.querySelectorAll('*') : [];
     var panelen = [vindPaneel('Live Status'), vindPaneel('Laatste meting')];
@@ -13392,14 +13280,15 @@
 (function () {
   'use strict';
   function main() {
+(function () {
     if (window.__beAfrrBid01) return;
     window.__beAfrrBid01 = true;
     const QUARTER = 900000;
     const directions = ['import', 'export'];
-    const colours = {import: '#c96f22', export: '#7851ae'};
+    const colours = {import: '#dc3545', export: '#28a745'};
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
-    let lastSuccess = 0, ui, button, status, recoverButton, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
+    let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
     const customer=(location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)||[])[1];
     if(!customer||/^(account|current-prices|current-history|results)$/.test(customer))return;
     const cachePrefix=customer+':';
@@ -13528,7 +13417,7 @@
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
-          dataset.borderColor=colours[direction]+'99';
+          dataset.borderColor=colours[direction];
         }
         const callbacks = chart.options.plugins?.tooltip?.callbacks;
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
@@ -13560,8 +13449,7 @@
       status = document.createElement('span');
       status.style.cssText = 'flex:1 1 220px;min-width:0;overflow-wrap:anywhere';
       status.setAttribute('role', 'status');
-      recoverButton=document.createElement('button');recoverButton.type='button';recoverButton.textContent='Gemiste BIDs zoeken';recoverButton.style.cssText=button.style.cssText;recoverButton.onclick=()=>recover(true);
-      ui.append(button, recoverButton, status); row.appendChild(ui);
+      ui.append(button,status); row.appendChild(ui);
     }
     function refresh() {
       ensureUI();
@@ -13588,11 +13476,10 @@
       status.textContent = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
         ' · '+[...bids.values()].filter(r=>directions.some(d=>r[d])).length+' kwartieren in cache (laatste 7 dagen)' +
         (recovery?' · '+recovery:'')+(storageError?' · '+storageError:'')+(error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
-      recoverButton.disabled=recovering;recoverButton.textContent=recovering?'BIDs zoeken…':'Gemiste BIDs zoeken';
       ui.title = 'Dunne biedlijnen: waargenomen biedprijzen, geen handelsprijzen. ' +
         'Biedprijzen worden meestal alleen de eerste twee minuten van het kwartier aangeboden. ' +
         'Waarnemingen blijven lokaal bewaard na herladen, zonder automatische verwijdering. De grafiek laadt de laatste 7 dagen. ' +
-        'Gemiste BIDs zoeken controleert de beschikbare prijshistorie; uitsluitend expliciete BID-bronprijzen tellen mee. ' +
+        'Beschikbare biedhistorie wordt automatisch gecontroleerd; uitsluitend expliciete BID-bronprijzen tellen mee. ' +
         (tariff?.allin ? 'All-in, volgens de instellingen van de hoofdplugin.' : 'Kale bedragen.');
     }
     function request(url) {
@@ -13644,6 +13531,8 @@
     document.addEventListener('be-dark-change', refresh);
     document.addEventListener('visibilitychange', () => {if (!document.hidden) poll();});
     hydrate();
+})();
+
   }
   function inject() {
     const script = document.createElement('script');
@@ -13655,11 +13544,11 @@
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — beta 6.1.2. BE data only. */
+/* Coulombtelling in/uit — beta 6.1.3. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage612)return;window.__beCoulombPage612=true;
+    if(window.__beCoulombPage613)return;window.__beCoulombPage613=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -13833,14 +13722,8 @@
     const scale=chart.scales?.x;if(!scale)return null;
     let x=scale.getValueForPixel(pointer.x);if(!finite(x))return null;
     if(scale.type==='category')x=Math.round(x);
-    else{
-      // Snap all rows to one visible native time, not to different array indices.
-      const i=chart.data.datasets.findIndex((d,i)=>!d.beOwnSOC&&chart.isDatasetVisible(i)&&chart.getDatasetMeta(i).type!=='bar');
-      if(i>=0){
-        const meta=chart.getDatasetMeta(i),b=bracket(meta,x);
-        if(b){const candidates=[b.left,b.right].map(k=>parsed(meta,k)?.x).filter(finite);if(candidates.length)x=candidates.reduce((a,b)=>Math.abs(a-x)<=Math.abs(b-x)?a:b);}
-      }
-    }
+    // Real-time axes follow the pointer continuously. A sparse native series
+    // must not pull the cursor hours away from the position being inspected.
     const px=scale.getPixelForValue(x);return finite(px)?{x,px}:null;
   }
   function info(chart,pointer){
@@ -13854,19 +13737,22 @@
       const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
       const baseColor=own?'#0891b2':meta.dataset?.options?.borderColor||d.borderColor;
       const color=typeof baseColor==='string'?baseColor:'#6b7280';
-      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled};
+      const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
+      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
+        py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
     });
     const xScale=chart.scales.x,times=configs.get(chart)?.times;
     const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
-    const time=xScale.type==='time'||xScale.type==='timeseries'?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
-    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    const time=['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
+    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
     return {...selected,title,rows};
   }
-  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:2})+'%';}
+  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'%';}
   function hide(state){
     state.tip.style.display='none';state.cursor.style.display='none';state.pointer=null;
+    state.markers.style.display='none';
     try{if(state.tooltip){state.tooltip.options.enabled=state.enabled;state.tooltip=null;}}catch{}
   }
   function show(state,event){
@@ -13877,6 +13763,9 @@
     const pointer={x:(touch.clientX-rect.left)*chart.width/rect.width,y:(touch.clientY-rect.top)*chart.height/rect.height};
     if(pointer.x<a.left||pointer.x>a.right||pointer.y<a.top||pointer.y>a.bottom){hide(state);return;}
     const data=info(chart,pointer);if(!data?.rows.length){hide(state);return;}
+    // Native index-mode hover joins unrelated sample indices. Our marker layer
+    // samples every visible line at data.x instead and leaves the datasets intact.
+    if(chart.getActiveElements?.().length){chart.setActiveElements([]);chart.draw();}
     state.pointer={clientX:touch.clientX,clientY:touch.clientY};
     try{if(chart.tooltip&&state.tooltip!==chart.tooltip){state.tooltip=chart.tooltip;state.enabled=chart.tooltip.options.enabled;}if(state.tooltip)state.tooltip.options.enabled=false;}catch{}
     const title=document.createElement('div');title.textContent=data.title;title.style.cssText='font-weight:650;margin-bottom:7px';
@@ -13889,6 +13778,11 @@
       line.append(swatch,label,value);children.push(line);
     }
     state.tip.replaceChildren(...children);state.tip.style.display='block';
+    state.markers.replaceChildren(...data.rows.filter(row=>finite(row.py)&&row.py>=a.top&&row.py<=a.bottom).map(row=>{
+      const dot=document.createElement('span');
+      dot.style.cssText='position:fixed;display:block;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;transform:translate(-50%,-50%);background:'+row.color+';left:'+(rect.left+data.px*rect.width/chart.width)+'px;top:'+(rect.top+row.py*rect.height/chart.height)+'px';
+      return dot;
+    }));state.markers.style.display='block';
     const box=state.tip.getBoundingClientRect(),vw=window.innerWidth||document.documentElement.clientWidth,vh=window.innerHeight||document.documentElement.clientHeight;
     const left=Math.max(8,Math.min(touch.clientX+16+box.width<vw-8?touch.clientX+16:touch.clientX-box.width-16,vw-box.width-8));
     const top=Math.max(8,Math.min(touch.clientY+16,vh-box.height-8));state.tip.style.left=left+'px';state.tip.style.top=top+'px';
@@ -13897,7 +13791,7 @@
   function detach(canvas,state){
     for(const type of ['mousemove','touchstart','touchmove'])canvas.removeEventListener(type,state.move,true);
     for(const type of ['mouseleave','touchend','touchcancel'])canvas.removeEventListener(type,state.leave,true);
-    window.removeEventListener('scroll',state.leave,true);window.removeEventListener('blur',state.leave);hide(state);state.tip.remove();state.cursor.remove();bindings.delete(canvas);
+    window.removeEventListener('scroll',state.leave,true);window.removeEventListener('blur',state.leave);hide(state);state.tip.remove();state.cursor.remove();state.markers.remove();bindings.delete(canvas);
   }
   function attach(chart,config={}){
     if(!supported(chart))return;
@@ -13907,17 +13801,21 @@
       for(const [canvas,state] of bindings)if(canvas.isConnected===false)detach(canvas,state);
       let state=bindings.get(chart.canvas);
       if(state){state.chart=chart;if(state.pointer)Promise.resolve().then(()=>state.move(state.pointer));return;}
-      const tip=document.createElement('div'),cursor=document.createElement('div');
+      const tip=document.createElement('div'),cursor=document.createElement('div'),markers=document.createElement('div');
       tip.setAttribute('role','tooltip');tip.style.cssText='position:fixed;display:none;pointer-events:none;z-index:2147483646;background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:7px;padding:10px 12px;box-shadow:0 3px 12px rgba(0,0,0,.2);font:12px/1.4 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 16px);box-sizing:border-box';
-      cursor.style.display='none';(document.body||document.documentElement).append(tip,cursor);
-      state={chart,tip,cursor,tooltip:null,pointer:null};
+      cursor.style.display='none';markers.style.cssText='display:none;pointer-events:none;position:fixed;inset:0;z-index:2147483645';
+      (document.body||document.documentElement).append(tip,cursor,markers);
+      state={chart,tip,cursor,markers,tooltip:null,pointer:null};
       state.move=e=>{try{show(state,e);}catch(error){hide(state);if(!state.warned){state.warned=true;console.warn('[SOC hover]',error);}}};state.leave=()=>hide(state);
       for(const type of ['mousemove','touchstart','touchmove'])chart.canvas.addEventListener(type,state.move,{capture:true,passive:true});
       for(const type of ['mouseleave','touchend','touchcancel'])chart.canvas.addEventListener(type,state.leave,{capture:true,passive:true});
       window.addEventListener('scroll',state.leave,{capture:true,passive:true});window.addEventListener('blur',state.leave);bindings.set(chart.canvas,state);
     }catch(error){console.warn('[SOC hover] Koppelen mislukt:',error);}
   }
-  root.BESocHover={attach,info,valueAt};
+  const plugin={id:'beSocSynchronizedHover',beforeEvent(chart,args){
+    if(bindings.has(chart.canvas)&&/^(mousemove|mouseout|touchstart|touchmove|touchend|touchcancel)$/.test(args.event.type))return false;
+  },afterDestroy(chart){const state=bindings.get(chart.canvas);if(state)detach(chart.canvas,state);}};
+  root.BESocHover={attach,info,valueAt,plugin};
 })(typeof window!=='undefined'?window:globalThis);
 
 (function(root){
@@ -13943,6 +13841,46 @@
   }
   root.BECapacity={numeric,resolve,readForm};
 })(typeof window!=='undefined'?window:globalThis);
+
+(function(root){
+  'use strict';
+  const id='be-coulomb-native-readout',own='.be-own-soc,[data-be-coulomb-readout]';
+  const text=e=>(e.textContent||'').replace(/\s+/g,' ').trim();
+  const percent=e=>/^\d+(?:[.,]\d+)?\s*%$/.test(text(e));
+  function metric(label){
+    for(let e=label,depth=0;e&&depth<4;e=e.parentElement,depth++){
+      if(e.matches?.('body,main,section,aside,form')||e.querySelector?.('canvas'))break;
+      const leaves=[...e.querySelectorAll('span,div,p,strong,b')].filter(n=>!n.children.length&&!n.closest(own));
+      if(leaves.some(percent)&&!/\d\s*(?:kWh|kW|W|€)\b/.test(text(e)))return e;
+    }
+    return null;
+  }
+  function target(){
+    const labels=[...document.querySelectorAll('span,div,p,dt,label')].filter(e=>!e.children.length&&!e.closest(own)&&/^(?:SOC|SOC\s*\(%\)|Laadtoestand(?:\s*\(SOC\))?|State of charge(?:\s*\(SOC\))?)$/i.test(text(e)));
+    for(const label of labels){const row=metric(label);if(row)return row;}
+    for(const selector of ['#current-soc','#battery-soc','#soc-value','[data-metric="soc"]','[data-soc-value]']){
+      const value=document.querySelector(selector);
+      if(value&&!value.closest(own)&&percent(value))return value.closest('.summary-compact-metric')||value.parentElement;
+    }
+    return null;
+  }
+  function render(view){
+    const row=target();let el=document.getElementById(id);
+    if(!row){el?.remove();return;}
+    if(!el){
+      el=document.createElement('div');el.id=id;el.setAttribute('data-be-coulomb-readout','');
+      el.style.cssText='display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:5px;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
+      const label=document.createElement('span'),value=document.createElement('strong');
+      label.textContent='Coulombtelling in/uit';label.style.cssText='font-size:11px;line-height:1.4';
+      value.style.cssText='color:#0891b2;font-size:inherit;font-weight:650;white-space:nowrap';
+      el.append(label,value);
+    }
+    if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
+    const value=el.querySelector('strong');if(value.textContent!==view.soc)value.textContent=view.soc;
+    if(el.title!==view.state)el.title=view.state;
+  }
+  root.BESocNativeReadout={render,target};
+})(window);
 
 (async function () {
   'use strict';
@@ -13994,7 +13932,7 @@
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
-    const soc=shown?number(visualSoc(shown))+'%':'—';
+    const soc=shown?number(visualSoc(shown),0)+'%':'—';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -14151,7 +14089,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14216,6 +14154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     textIfChanged(p.querySelector('[data-energy]'),view.energy);
     textIfChanged(p.querySelector('[data-state]'),view.state);
     textIfChanged(p.querySelector('[data-history]'),view.history);
+    try{window.BESocNativeReadout?.render(view);}catch(e){console.warn('[SOC waarde]',e);}
     p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
     const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
     for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}
@@ -14241,7 +14180,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   let renderPending=false,started=false;
   function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;register();render();},0);}
   let library;
-  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register({id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
   new MutationObserver(records=>{
     const added=records.flatMap(r=>Array.from(r.addedNodes));
     if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();

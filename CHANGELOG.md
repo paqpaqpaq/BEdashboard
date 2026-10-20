@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.1.3 BETA — proefversie, niet gepubliceerd
+
+- Financiële selectors en invoervelden gelijkgetrokken met de capaciteitsinstellingen; bestaande dashboard-darkmode bereikbaar vanuit Financieel.
+- Rustige live cijfers standaard actief, zonder schakelaar.
+- BID-import rood en BID-export groen. De zoekknop is verwijderd; automatisch terugzoeken blijft actief.
+- SOC-aanwijzer en stippen gebruiken één gedeeld tijdstip bij verschillende meetreeksen.
+- Blauwe coulomb-SOC onder de originele SOC toegevoegd, afgerond op hele procenten.
+
 ## 6.1.2 BETA — 20 oktober 2026
 
 - Keuze tussen handmatige kWh-capaciteit en gemiddelde FCC in Ah × aantal accu’s × nominale spanning, met directe voorvertoning van de rekencapaciteit.

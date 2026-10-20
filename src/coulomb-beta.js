@@ -134,14 +134,8 @@
     const scale=chart.scales?.x;if(!scale)return null;
     let x=scale.getValueForPixel(pointer.x);if(!finite(x))return null;
     if(scale.type==='category')x=Math.round(x);
-    else{
-      // Snap all rows to one visible native time, not to different array indices.
-      const i=chart.data.datasets.findIndex((d,i)=>!d.beOwnSOC&&chart.isDatasetVisible(i)&&chart.getDatasetMeta(i).type!=='bar');
-      if(i>=0){
-        const meta=chart.getDatasetMeta(i),b=bracket(meta,x);
-        if(b){const candidates=[b.left,b.right].map(k=>parsed(meta,k)?.x).filter(finite);if(candidates.length)x=candidates.reduce((a,b)=>Math.abs(a-x)<=Math.abs(b-x)?a:b);}
-      }
-    }
+    // Real-time axes follow the pointer continuously. A sparse native series
+    // must not pull the cursor hours away from the position being inspected.
     const px=scale.getPixelForValue(x);return finite(px)?{x,px}:null;
   }
   function info(chart,pointer){
@@ -155,19 +149,22 @@
       const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
       const baseColor=own?'#0891b2':meta.dataset?.options?.borderColor||d.borderColor;
       const color=typeof baseColor==='string'?baseColor:'#6b7280';
-      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled};
+      const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
+      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
+        py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
     });
     const xScale=chart.scales.x,times=configs.get(chart)?.times;
     const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
-    const time=xScale.type==='time'||xScale.type==='timeseries'?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
-    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    const time=['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
+    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
     return {...selected,title,rows};
   }
-  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:2})+'%';}
+  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'%';}
   function hide(state){
     state.tip.style.display='none';state.cursor.style.display='none';state.pointer=null;
+    state.markers.style.display='none';
     try{if(state.tooltip){state.tooltip.options.enabled=state.enabled;state.tooltip=null;}}catch{}
   }
   function show(state,event){
@@ -178,6 +175,9 @@
     const pointer={x:(touch.clientX-rect.left)*chart.width/rect.width,y:(touch.clientY-rect.top)*chart.height/rect.height};
     if(pointer.x<a.left||pointer.x>a.right||pointer.y<a.top||pointer.y>a.bottom){hide(state);return;}
     const data=info(chart,pointer);if(!data?.rows.length){hide(state);return;}
+    // Native index-mode hover joins unrelated sample indices. Our marker layer
+    // samples every visible line at data.x instead and leaves the datasets intact.
+    if(chart.getActiveElements?.().length){chart.setActiveElements([]);chart.draw();}
     state.pointer={clientX:touch.clientX,clientY:touch.clientY};
     try{if(chart.tooltip&&state.tooltip!==chart.tooltip){state.tooltip=chart.tooltip;state.enabled=chart.tooltip.options.enabled;}if(state.tooltip)state.tooltip.options.enabled=false;}catch{}
     const title=document.createElement('div');title.textContent=data.title;title.style.cssText='font-weight:650;margin-bottom:7px';
@@ -190,6 +190,11 @@
       line.append(swatch,label,value);children.push(line);
     }
     state.tip.replaceChildren(...children);state.tip.style.display='block';
+    state.markers.replaceChildren(...data.rows.filter(row=>finite(row.py)&&row.py>=a.top&&row.py<=a.bottom).map(row=>{
+      const dot=document.createElement('span');
+      dot.style.cssText='position:fixed;display:block;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;transform:translate(-50%,-50%);background:'+row.color+';left:'+(rect.left+data.px*rect.width/chart.width)+'px;top:'+(rect.top+row.py*rect.height/chart.height)+'px';
+      return dot;
+    }));state.markers.style.display='block';
     const box=state.tip.getBoundingClientRect(),vw=window.innerWidth||document.documentElement.clientWidth,vh=window.innerHeight||document.documentElement.clientHeight;
     const left=Math.max(8,Math.min(touch.clientX+16+box.width<vw-8?touch.clientX+16:touch.clientX-box.width-16,vw-box.width-8));
     const top=Math.max(8,Math.min(touch.clientY+16,vh-box.height-8));state.tip.style.left=left+'px';state.tip.style.top=top+'px';
@@ -198,7 +203,7 @@
   function detach(canvas,state){
     for(const type of ['mousemove','touchstart','touchmove'])canvas.removeEventListener(type,state.move,true);
     for(const type of ['mouseleave','touchend','touchcancel'])canvas.removeEventListener(type,state.leave,true);
-    window.removeEventListener('scroll',state.leave,true);window.removeEventListener('blur',state.leave);hide(state);state.tip.remove();state.cursor.remove();bindings.delete(canvas);
+    window.removeEventListener('scroll',state.leave,true);window.removeEventListener('blur',state.leave);hide(state);state.tip.remove();state.cursor.remove();state.markers.remove();bindings.delete(canvas);
   }
   function attach(chart,config={}){
     if(!supported(chart))return;
@@ -208,17 +213,21 @@
       for(const [canvas,state] of bindings)if(canvas.isConnected===false)detach(canvas,state);
       let state=bindings.get(chart.canvas);
       if(state){state.chart=chart;if(state.pointer)Promise.resolve().then(()=>state.move(state.pointer));return;}
-      const tip=document.createElement('div'),cursor=document.createElement('div');
+      const tip=document.createElement('div'),cursor=document.createElement('div'),markers=document.createElement('div');
       tip.setAttribute('role','tooltip');tip.style.cssText='position:fixed;display:none;pointer-events:none;z-index:2147483646;background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:7px;padding:10px 12px;box-shadow:0 3px 12px rgba(0,0,0,.2);font:12px/1.4 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 16px);box-sizing:border-box';
-      cursor.style.display='none';(document.body||document.documentElement).append(tip,cursor);
-      state={chart,tip,cursor,tooltip:null,pointer:null};
+      cursor.style.display='none';markers.style.cssText='display:none;pointer-events:none;position:fixed;inset:0;z-index:2147483645';
+      (document.body||document.documentElement).append(tip,cursor,markers);
+      state={chart,tip,cursor,markers,tooltip:null,pointer:null};
       state.move=e=>{try{show(state,e);}catch(error){hide(state);if(!state.warned){state.warned=true;console.warn('[SOC hover]',error);}}};state.leave=()=>hide(state);
       for(const type of ['mousemove','touchstart','touchmove'])chart.canvas.addEventListener(type,state.move,{capture:true,passive:true});
       for(const type of ['mouseleave','touchend','touchcancel'])chart.canvas.addEventListener(type,state.leave,{capture:true,passive:true});
       window.addEventListener('scroll',state.leave,{capture:true,passive:true});window.addEventListener('blur',state.leave);bindings.set(chart.canvas,state);
     }catch(error){console.warn('[SOC hover] Koppelen mislukt:',error);}
   }
-  root.BESocHover={attach,info,valueAt};
+  const plugin={id:'beSocSynchronizedHover',beforeEvent(chart,args){
+    if(bindings.has(chart.canvas)&&/^(mousemove|mouseout|touchstart|touchmove|touchend|touchcancel)$/.test(args.event.type))return false;
+  },afterDestroy(chart){const state=bindings.get(chart.canvas);if(state)detach(chart.canvas,state);}};
+  root.BESocHover={attach,info,valueAt,plugin};
 })(typeof window!=='undefined'?window:globalThis);
 
 (function(root){
@@ -244,6 +253,46 @@
   }
   root.BECapacity={numeric,resolve,readForm};
 })(typeof window!=='undefined'?window:globalThis);
+
+(function(root){
+  'use strict';
+  const id='be-coulomb-native-readout',own='.be-own-soc,[data-be-coulomb-readout]';
+  const text=e=>(e.textContent||'').replace(/\s+/g,' ').trim();
+  const percent=e=>/^\d+(?:[.,]\d+)?\s*%$/.test(text(e));
+  function metric(label){
+    for(let e=label,depth=0;e&&depth<4;e=e.parentElement,depth++){
+      if(e.matches?.('body,main,section,aside,form')||e.querySelector?.('canvas'))break;
+      const leaves=[...e.querySelectorAll('span,div,p,strong,b')].filter(n=>!n.children.length&&!n.closest(own));
+      if(leaves.some(percent)&&!/\d\s*(?:kWh|kW|W|€)\b/.test(text(e)))return e;
+    }
+    return null;
+  }
+  function target(){
+    const labels=[...document.querySelectorAll('span,div,p,dt,label')].filter(e=>!e.children.length&&!e.closest(own)&&/^(?:SOC|SOC\s*\(%\)|Laadtoestand(?:\s*\(SOC\))?|State of charge(?:\s*\(SOC\))?)$/i.test(text(e)));
+    for(const label of labels){const row=metric(label);if(row)return row;}
+    for(const selector of ['#current-soc','#battery-soc','#soc-value','[data-metric="soc"]','[data-soc-value]']){
+      const value=document.querySelector(selector);
+      if(value&&!value.closest(own)&&percent(value))return value.closest('.summary-compact-metric')||value.parentElement;
+    }
+    return null;
+  }
+  function render(view){
+    const row=target();let el=document.getElementById(id);
+    if(!row){el?.remove();return;}
+    if(!el){
+      el=document.createElement('div');el.id=id;el.setAttribute('data-be-coulomb-readout','');
+      el.style.cssText='display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:5px;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
+      const label=document.createElement('span'),value=document.createElement('strong');
+      label.textContent='Coulombtelling in/uit';label.style.cssText='font-size:11px;line-height:1.4';
+      value.style.cssText='color:#0891b2;font-size:inherit;font-weight:650;white-space:nowrap';
+      el.append(label,value);
+    }
+    if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
+    const value=el.querySelector('strong');if(value.textContent!==view.soc)value.textContent=view.soc;
+    if(el.title!==view.state)el.title=view.state;
+  }
+  root.BESocNativeReadout={render,target};
+})(window);
 
 (async function () {
   'use strict';
@@ -295,7 +344,7 @@
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
-    const soc=shown?number(visualSoc(shown))+'%':'—';
+    const soc=shown?number(visualSoc(shown),0)+'%':'—';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -452,7 +501,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -517,6 +566,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     textIfChanged(p.querySelector('[data-energy]'),view.energy);
     textIfChanged(p.querySelector('[data-state]'),view.state);
     textIfChanged(p.querySelector('[data-history]'),view.history);
+    try{window.BESocNativeReadout?.render(view);}catch(e){console.warn('[SOC waarde]',e);}
     p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
     const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
     for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}
@@ -542,7 +592,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   let renderPending=false,started=false;
   function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;register();render();},0);}
   let library;
-  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register({id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
   new MutationObserver(records=>{
     const added=records.flatMap(r=>Array.from(r.addedNodes));
     if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();
