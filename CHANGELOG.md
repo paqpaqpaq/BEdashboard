@@ -1,9 +1,10 @@
 # Changelog
 
-## 6.1.2 BETA — proefversie, niet gepubliceerd
+## 6.1.2 BETA — 20 oktober 2026
 
 - Keuze tussen handmatige kWh-capaciteit en gemiddelde FCC in Ah × aantal accu’s × nominale spanning, met directe voorvertoning van de rekencapaciteit.
 - Geen automatische overname van Account-/forecastcapaciteit; bestaande handmatige instellingen blijven behouden.
+- Capaciteitsvelden overzichtelijk uitgelijnd, met eenheden naast de waarden en een aangepaste indeling op smartphones.
 
 ## 6.1.1 BETA — 20 oktober 2026
 

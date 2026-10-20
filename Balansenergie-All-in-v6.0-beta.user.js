@@ -2,7 +2,7 @@
 // @name         Balansenergie All-in v6.1.2 BETA
 // @namespace    paq.balansenergie.beta
 // @version      6.1.2
-// @description  BETA 6.1.2: Coulombtelling in/uit met lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @description  BETA 6.1.2: Coulombtelling in/uit met handmatige kWh- of FCC-capaciteit, lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -14068,12 +14068,60 @@
   const style=document.createElement('style');
   style.textContent=`.be-own-soc{margin:12px 0;padding:14px 16px;border:1px solid #c4dde1;border-radius:12px;background:rgba(8,145,178,.045);font:13px system-ui;color:inherit}.be-own-soc header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.be-own-soc strong{font-size:21px;color:#0891b2}.be-own-soc small{opacity:.75}.be-own-soc details{margin-top:10px}.be-own-soc summary{cursor:pointer}.be-own-soc form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px}.be-own-soc label{display:flex;flex-direction:column;gap:4px}.be-own-soc input[type=number]{width:90px;padding:6px;border:1px solid #aaa;border-radius:6px;background:inherit;color:inherit}.be-own-soc button{padding:7px 10px;border:1px solid #7cb9c5;border-radius:7px;background:transparent;color:inherit;cursor:pointer}.be-own-soc p{margin:8px 0}.be-own-soc output{display:block;margin-top:7px;min-height:1.4em}.be-own-soc [data-energy]{min-height:1.4em}.be-own-soc .be-soc-line{color:#0891b2;font-weight:650}.be-own-soc ul{padding-left:20px;max-height:150px;overflow:auto}`;
   style.textContent+=`[data-be-soc-compact]{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;align-items:center!important;gap:6px!important}[data-be-soc-legend]{display:inline-flex!important;flex-direction:row!important;flex-wrap:nowrap!important;width:max-content!important;max-width:100%;gap:6px!important;align-items:center!important;margin:6px 0!important}[data-be-soc-compact]>[data-be-soc-legend]{display:contents!important}[data-be-soc-compact] button,[data-be-soc-legend] button{display:inline-flex!important;flex:0 0 auto!important;width:auto!important;min-width:0!important;max-width:none!important;min-height:0!important;height:28px!important;white-space:nowrap!important;padding:4px 9px!important;font-size:12px!important;line-height:18px!important}`;
-  style.textContent+=`.be-own-soc [data-cap-fcc]{display:flex;align-items:end;gap:10px;flex-wrap:wrap}.be-own-soc [data-cap-fcc][hidden],.be-own-soc [data-cap-kwh][hidden]{display:none!important}.be-own-soc select{max-width:100%;padding:6px;border:1px solid #aaa;border-radius:6px;background:inherit;color:inherit}.be-own-soc [data-capacity-preview],.be-own-soc [data-capacity-help]{flex-basis:100%}.be-own-soc [data-capacity-preview]{font-weight:600}`;
+  style.textContent+=`.be-own-soc{--be-cap-border:#d4d9e1;--be-cap-surface:rgba(255,255,255,.7);--be-cap-control:#fff;--be-cap-muted:#687280;--be-cap-accent:#6b3f8d}
+.be-own-soc form[data-settings]{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start;max-width:760px;box-sizing:border-box;margin:16px 0 0;padding:16px;border:1px solid var(--be-cap-border);border-radius:12px;background:var(--be-cap-surface)}
+.be-own-soc [data-settings] .be-capacity-title{font-size:14px;font-weight:650;line-height:1.3}
+.be-own-soc [data-settings] label{display:flex;flex-direction:column;min-width:0;gap:6px;font-size:12px;font-weight:550;line-height:1.4}
+.be-own-soc [data-settings] .be-capacity-method{max-width:280px}
+.be-own-soc [data-cap-kwh]{max-width:260px}
+.be-own-soc [data-cap-fcc]{display:grid;grid-template-columns:1fr .8fr 1.25fr;gap:12px;align-items:end;min-width:0}
+.be-own-soc [data-cap-fcc][hidden],.be-own-soc [data-cap-kwh][hidden]{display:none!important}
+.be-own-soc [data-settings] .be-cap-input{display:flex;align-items:center;min-width:0;width:100%;height:40px;box-sizing:border-box;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);overflow:hidden}
+.be-own-soc [data-settings] input[type=number]{flex:1 1 0;min-width:0;width:100%;height:100%;box-sizing:border-box;margin:0;padding:8px 10px;border:0;border-radius:0;outline:none;box-shadow:none;background:transparent;color:inherit;font:inherit;font-size:14px;font-variant-numeric:tabular-nums}
+.be-own-soc [data-settings] .be-cap-unit{flex:none;padding:0 10px 0 4px;color:var(--be-cap-muted);font-size:12px;font-weight:400}
+.be-own-soc [data-settings] select{min-width:0;width:100%;height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);color:inherit;font:inherit;font-size:14px}
+.be-own-soc [data-settings] .be-cap-input:focus-within,.be-own-soc [data-settings] select:focus-visible{outline:2px solid var(--be-cap-accent);outline-offset:2px}
+.be-own-soc [data-settings] .be-capacity-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding-top:2px}
+.be-own-soc [data-settings] [data-capacity-preview]{flex:1 1 auto;min-width:0;margin:0;min-height:0;font-size:14px;font-weight:650;line-height:1.4}
+.be-own-soc [data-settings] button{flex:none;min-height:40px;padding:8px 14px;border:1px solid var(--be-cap-accent);border-radius:8px;background:var(--be-cap-accent);color:#fff;font:inherit;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer}
+.be-own-soc [data-settings] button:hover{filter:brightness(1.08)}
+.be-own-soc [data-settings] [data-capacity-help]{margin:0;color:var(--be-cap-muted);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+.be-own-soc form[data-manual]{max-width:760px;display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-top:14px}
+.be-own-soc [data-manual] label{min-width:0;gap:6px;font-size:12px;font-weight:550}
+.be-own-soc [data-manual] input[type=number]{height:40px;width:116px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);color:inherit;font-size:14px;font-variant-numeric:tabular-nums}
+.be-own-soc [data-manual] button{min-height:40px;box-sizing:border-box;padding:8px 14px;border:1px solid var(--be-cap-border);border-radius:8px;font-size:12px;line-height:1.4}
+html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rgba(0,0,0,.12);--be-cap-control:#28252e;--be-cap-muted:#beb7c6;--be-cap-accent:#8253a5}
+@media(max-width:560px){.be-own-soc form[data-settings]{gap:13px;padding:14px}.be-own-soc [data-cap-fcc]{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.be-own-soc [data-cap-fcc]>label:last-child{grid-column:1 / -1}.be-own-soc [data-settings] .be-capacity-method,.be-own-soc [data-cap-kwh]{max-width:none}.be-own-soc [data-settings] .be-capacity-footer{flex-direction:column;align-items:stretch;gap:12px;padding-top:3px}.be-own-soc [data-settings] button{width:100%}.be-own-soc [data-settings] .be-cap-input,.be-own-soc [data-settings] select,.be-own-soc [data-settings] button{min-height:44px;height:44px}}
+@media(max-width:560px){.be-own-soc [data-settings] input[type=number],.be-own-soc [data-settings] select,.be-own-soc [data-manual] input[type=number]{font-size:16px}.be-own-soc [data-manual] input[type=number],.be-own-soc [data-manual] button{min-height:44px}}
+`;
   document.head.append(style);
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit invoeren<select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select></label><label data-cap-kwh>Totale capaciteit (kWh)<input name="capacity" type="number" min="0.01" max="1000" step="0.01" required></label><span data-cap-fcc hidden><label>Gemiddelde FCC (Ah)<input name="fccAh" type="number" min="0.01" max="100000" step="0.01"></label><label>Aantal accu’s<input name="packCount" type="number" min="1" max="100" step="1"></label><label>Nominale spanning per accu (V)<input name="nominalVoltage" type="number" min="1" max="1000" step="0.1"></label></span><button>Capaciteit opslaan</button><output data-capacity-preview></output><small data-capacity-help></small></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
+  <div class="be-capacity-title">Accucapaciteit</div>
+  <label class="be-capacity-method">Invoermethode
+    <select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select>
+  </label>
+  <div data-cap-kwh>
+    <label>Totale capaciteit
+      <span class="be-cap-input"><input name="capacity" type="number" inputmode="decimal" min="0.01" max="1000" step="0.01" required><span class="be-cap-unit">kWh</span></span>
+    </label>
+  </div>
+  <div data-cap-fcc hidden>
+    <label>Gemiddelde FCC
+      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="100000" step="0.01"><span class="be-cap-unit">Ah</span></span>
+    </label>
+    <label>Aantal accu’s
+      <span class="be-cap-input"><input name="packCount" type="number" inputmode="numeric" min="1" max="100" step="1"><span class="be-cap-unit">stuks</span></span>
+    </label>
+    <label>Nominale spanning per accu
+      <span class="be-cap-input"><input name="nominalVoltage" type="number" inputmode="decimal" min="1" max="1000" step="0.1"><span class="be-cap-unit">V</span></span>
+    </label>
+  </div>
+  <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
+  <small data-capacity-help></small>
+</form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';

@@ -1,6 +1,54 @@
 <!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BE — capaciteit instellen (proef)</title>
-<style>body{margin:0;padding:clamp(16px,5vw,56px);background:#f7f4fa;color:#26212b;font:14px system-ui}section{max-width:850px;margin:auto;background:white;border:1px solid #ded5e7;border-radius:14px;padding:24px}h1{font-size:21px;color:#673681;margin:0 0 8px}p{line-height:1.5}.notice{color:#67596e;margin-bottom:24px}form{display:flex;gap:14px;flex-wrap:wrap;align-items:end}label{display:flex;flex-direction:column;gap:6px;font-size:13px}input,select,button{box-sizing:border-box;border:1px solid #aaa;border-radius:6px;padding:9px;background:white;color:inherit;font:inherit}input{width:120px}button{cursor:pointer;border-color:#0891b2}span[data-cap-fcc]{display:flex;gap:14px;flex-wrap:wrap;align-items:end}[hidden]{display:none!important}output,small{flex-basis:100%;display:block}output{color:#087f9c;font-size:18px;font-weight:650;margin-top:12px}small{font-size:12px;line-height:1.5;color:#65596b}#status{margin-top:24px;min-height:1.5em;color:#67596e}</style>
-<section><h1>Capaciteit voor Coulombtelling</h1><p class="notice">Voorbeeld met 3 accu’s van gemiddeld 328 Ah. Dit is een losse voorvertoning; je dashboard wordt niet aangepast.</p><form data-settings><label>Capaciteit invoeren<select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select></label><label data-cap-kwh>Totale capaciteit (kWh)<input name="capacity" type="number" min="0.01" max="1000" step="0.01" required></label><span data-cap-fcc hidden><label>Gemiddelde FCC (Ah)<input name="fccAh" type="number" min="0.01" max="100000" step="0.01"></label><label>Aantal accu’s<input name="packCount" type="number" min="1" max="100" step="1"></label><label>Nominale spanning per accu (V)<input name="nominalVoltage" type="number" min="1" max="1000" step="0.1"></label></span><button>Capaciteit opslaan</button><output data-capacity-preview></output><small data-capacity-help></small></form><p id="status">Kies een methode en probeer de invoer.</p></section><script>
+<style>body{margin:0;padding:clamp(16px,5vw,56px);background:#f7f4fa;color:#26212b;font:14px system-ui}section{max-width:850px;margin:auto;background:white;border:1px solid #ded5e7;border-radius:14px;padding:24px}h1{font-size:21px;color:#673681;margin:0 0 8px}p{line-height:1.5}.notice{color:#67596e;margin-bottom:24px}form{display:flex;gap:14px;flex-wrap:wrap;align-items:end}label{display:flex;flex-direction:column;gap:6px;font-size:13px}input,select,button{box-sizing:border-box;border:1px solid #aaa;border-radius:6px;padding:9px;background:white;color:inherit;font:inherit}input{width:120px}button{cursor:pointer;border-color:#0891b2}span[data-cap-fcc]{display:flex;gap:14px;flex-wrap:wrap;align-items:end}[hidden]{display:none!important}output,small{flex-basis:100%;display:block}output{color:#087f9c;font-size:18px;font-weight:650;margin-top:12px}small{font-size:12px;line-height:1.5;color:#65596b}#status{margin-top:24px;min-height:1.5em;color:#67596e}.be-own-soc{--be-cap-border:#d4d9e1;--be-cap-surface:rgba(255,255,255,.7);--be-cap-control:#fff;--be-cap-muted:#687280;--be-cap-accent:#6b3f8d}
+.be-own-soc form[data-settings]{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start;max-width:760px;box-sizing:border-box;margin:16px 0 0;padding:16px;border:1px solid var(--be-cap-border);border-radius:12px;background:var(--be-cap-surface)}
+.be-own-soc [data-settings] .be-capacity-title{font-size:14px;font-weight:650;line-height:1.3}
+.be-own-soc [data-settings] label{display:flex;flex-direction:column;min-width:0;gap:6px;font-size:12px;font-weight:550;line-height:1.4}
+.be-own-soc [data-settings] .be-capacity-method{max-width:280px}
+.be-own-soc [data-cap-kwh]{max-width:260px}
+.be-own-soc [data-cap-fcc]{display:grid;grid-template-columns:1fr .8fr 1.25fr;gap:12px;align-items:end;min-width:0}
+.be-own-soc [data-cap-fcc][hidden],.be-own-soc [data-cap-kwh][hidden]{display:none!important}
+.be-own-soc [data-settings] .be-cap-input{display:flex;align-items:center;min-width:0;width:100%;height:40px;box-sizing:border-box;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);overflow:hidden}
+.be-own-soc [data-settings] input[type=number]{flex:1 1 0;min-width:0;width:100%;height:100%;box-sizing:border-box;margin:0;padding:8px 10px;border:0;border-radius:0;outline:none;box-shadow:none;background:transparent;color:inherit;font:inherit;font-size:14px;font-variant-numeric:tabular-nums}
+.be-own-soc [data-settings] .be-cap-unit{flex:none;padding:0 10px 0 4px;color:var(--be-cap-muted);font-size:12px;font-weight:400}
+.be-own-soc [data-settings] select{min-width:0;width:100%;height:40px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);color:inherit;font:inherit;font-size:14px}
+.be-own-soc [data-settings] .be-cap-input:focus-within,.be-own-soc [data-settings] select:focus-visible{outline:2px solid var(--be-cap-accent);outline-offset:2px}
+.be-own-soc [data-settings] .be-capacity-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding-top:2px}
+.be-own-soc [data-settings] [data-capacity-preview]{flex:1 1 auto;min-width:0;margin:0;min-height:0;font-size:14px;font-weight:650;line-height:1.4}
+.be-own-soc [data-settings] button{flex:none;min-height:40px;padding:8px 14px;border:1px solid var(--be-cap-accent);border-radius:8px;background:var(--be-cap-accent);color:#fff;font:inherit;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer}
+.be-own-soc [data-settings] button:hover{filter:brightness(1.08)}
+.be-own-soc [data-settings] [data-capacity-help]{margin:0;color:var(--be-cap-muted);font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+.be-own-soc form[data-manual]{max-width:760px;display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-top:14px}
+.be-own-soc [data-manual] label{min-width:0;gap:6px;font-size:12px;font-weight:550}
+.be-own-soc [data-manual] input[type=number]{height:40px;width:116px;box-sizing:border-box;padding:8px 10px;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);color:inherit;font-size:14px;font-variant-numeric:tabular-nums}
+.be-own-soc [data-manual] button{min-height:40px;box-sizing:border-box;padding:8px 14px;border:1px solid var(--be-cap-border);border-radius:8px;font-size:12px;line-height:1.4}
+html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rgba(0,0,0,.12);--be-cap-control:#28252e;--be-cap-muted:#beb7c6;--be-cap-accent:#8253a5}
+@media(max-width:560px){.be-own-soc form[data-settings]{gap:13px;padding:14px}.be-own-soc [data-cap-fcc]{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.be-own-soc [data-cap-fcc]>label:last-child{grid-column:1 / -1}.be-own-soc [data-settings] .be-capacity-method,.be-own-soc [data-cap-kwh]{max-width:none}.be-own-soc [data-settings] .be-capacity-footer{flex-direction:column;align-items:stretch;gap:12px;padding-top:3px}.be-own-soc [data-settings] button{width:100%}.be-own-soc [data-settings] .be-cap-input,.be-own-soc [data-settings] select,.be-own-soc [data-settings] button{min-height:44px;height:44px}}
+@media(max-width:560px){.be-own-soc [data-settings] input[type=number],.be-own-soc [data-settings] select,.be-own-soc [data-manual] input[type=number]{font-size:16px}.be-own-soc [data-manual] input[type=number],.be-own-soc [data-manual] button{min-height:44px}}
+</style>
+<section class="be-own-soc"><h1>Capaciteit voor Coulombtelling</h1><p class="notice">Voorbeeld met 3 accu’s van gemiddeld 328 Ah. Dit is een losse voorvertoning; je dashboard wordt niet aangepast.</p><form data-settings class="be-capacity-card">
+  <div class="be-capacity-title">Accucapaciteit</div>
+  <label class="be-capacity-method">Invoermethode
+    <select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select>
+  </label>
+  <div data-cap-kwh>
+    <label>Totale capaciteit
+      <span class="be-cap-input"><input name="capacity" type="number" inputmode="decimal" min="0.01" max="1000" step="0.01" required><span class="be-cap-unit">kWh</span></span>
+    </label>
+  </div>
+  <div data-cap-fcc hidden>
+    <label>Gemiddelde FCC
+      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="100000" step="0.01"><span class="be-cap-unit">Ah</span></span>
+    </label>
+    <label>Aantal accu’s
+      <span class="be-cap-input"><input name="packCount" type="number" inputmode="numeric" min="1" max="100" step="1"><span class="be-cap-unit">stuks</span></span>
+    </label>
+    <label>Nominale spanning per accu
+      <span class="be-cap-input"><input name="nominalVoltage" type="number" inputmode="decimal" min="1" max="1000" step="0.1"><span class="be-cap-unit">V</span></span>
+    </label>
+  </div>
+  <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
+  <small data-capacity-help></small>
+</form><p id="status">Kies een methode en probeer de invoer.</p></section><script>
 (function(root){
   'use strict';
   const numeric=v=>typeof v==='number'?v:typeof v==='string'&&/^\d+(?:[.,]\d+)?$/.test(v.trim())?Number(v.trim().replace(',','.')):NaN;
