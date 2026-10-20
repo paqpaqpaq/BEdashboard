@@ -523,7 +523,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -551,6 +551,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       d.hidden=!visible;
       if(chart.setDatasetVisibility)chart.setDatasetVisibility(i,visible);
     });
+  }
+  function filterNativeLegend(chart){
+    const native=chart.options?.plugins?.legend;
+    if(!native)return;
+    const labels=native.labels||(native.labels={});
+    if(labels.filter?.beOwnSocLegendFilter)return;
+    const previous=labels.filter;
+    function filter(item,data){
+      return !data.datasets[item.datasetIndex]?.beOwnSOC&&(!previous||previous.call(this,item,data));
+    }
+    filter.beOwnSocLegendFilter=true;
+    labels.filter=filter;
   }
   function legend(chart){
     const canvas=chart.canvas;
@@ -606,6 +618,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }
     if(chart.canvas.id==='soc-forecast-chart')attachPastColors(chart);
     applyVisibility(chart);
+    filterNativeLegend(chart);
     try{window.BESocHover?.attach(chart,{times:(payload?.items||[]).flatMap(i=>i.hours||[])});}catch(e){console.warn("[SOC hover]",e);}
   }
   function attachPastColors(chart){

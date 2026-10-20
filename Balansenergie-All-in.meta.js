@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.3
+// @name         Balansenergie All-in v6.1.4
 // @namespace    paq.balansenergie
-// @version      6.1.3
+// @version      6.1.4
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js

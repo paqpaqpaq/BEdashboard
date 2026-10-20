@@ -1,3 +1,15 @@
+  function filterNativeLegend(chart){
+    const native=chart.options?.plugins?.legend;
+    if(!native)return;
+    const labels=native.labels||(native.labels={});
+    if(labels.filter?.beOwnSocLegendFilter)return;
+    const previous=labels.filter;
+    function filter(item,data){
+      return !data.datasets[item.datasetIndex]?.beOwnSOC&&(!previous||previous.call(this,item,data));
+    }
+    filter.beOwnSocLegendFilter=true;
+    labels.filter=filter;
+  }
   function legend(chart){
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
