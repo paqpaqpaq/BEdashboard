@@ -306,8 +306,9 @@
 (async function () {
   'use strict';
   if(window.__beCoulombInOut6)return;
-  const id=location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)?.[1];
-  if(!id||['account','current-history','current-prices'].includes(id))return;
+  let id=location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)?.[1];
+  if(!id||['account','current-history','current-prices','results'].includes(id))id=await window.BEInstallation?.wait();
+  if(!id||window.__beCoulombInOut6)return;
   window.__beCoulombInOut6=true;
   const ext=window.BESOCExtras;
   const pastColorsPlugin={id:'beOwnSocPastColors',afterDraw(chart){

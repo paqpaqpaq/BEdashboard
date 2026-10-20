@@ -1,12 +1,14 @@
 # Changelog
 
-## 6.1.3 BETA — proefversie, niet gepubliceerd
+## 6.1.3 — 20 oktober 2026 — versie 6 stabiel
 
-- Financiële selectors en invoervelden gelijkgetrokken met de capaciteitsinstellingen; bestaande dashboard-darkmode bereikbaar vanuit Financieel.
-- Rustige live cijfers standaard actief, zonder schakelaar.
-- BID-import oudroze en BID-export lichtgroen, met eigen tinten naast de rode import en groene export. De zoekknop is verwijderd; automatisch terugzoeken blijft actief.
-- SOC-aanwijzer en stippen gebruiken één gedeeld tijdstip bij verschillende meetreeksen.
-- Blauwe coulomb-SOC direct onder het originele SOC-percentage bij de grafiek toegevoegd, afgerond op hele procenten. Het blauwe detailvenster toont één decimaal.
+- Versie 6 vervangt versie 5 als stabiele hoofdversie; versie 5 blijft als vorige versie beschikbaar.
+- Een eigen Financieel-scherm met maandstaat, contract- en perioderesultaten, gemiddelde kWh-tarieven, voorschotten, kosten en prognose.
+- Onafhankelijke Coulombtelling in/uit op basis van BE-accuvermogen, zichtbaar in Actueel en Forecast, met bewaarde historie en handmatige of automatische herijking rond 10% en 95%.
+- Handmatige accucapaciteit via kWh of gemiddelde FCC × aantal accu’s × nominale spanning.
+- Lokaal bewaarde BID-historie en automatisch terugzoeken van beschikbare gemiste biedingen.
+- Verbeterd mobiel gebruik, grafiekherstel en gezamenlijke SOC-tijdaanwijzing.
+- Userscript, vaste update-URL en Chrome/Edge-ZIP gezamenlijk uitgebracht als stabiele versie 6.1.3.
 
 ## 6.1.2 BETA — 20 oktober 2026
 

@@ -1,6 +1,5 @@
-(function () {
+(async function () {
     if (window.__beAfrrBid01) return;
-    window.__beAfrrBid01 = true;
     const QUARTER = 900000;
     const directions = ['import', 'export'];
     const colours = {import: '#b65c72', export: '#73b9a1'};
@@ -12,8 +11,10 @@
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
     let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
-    const customer=(location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)||[])[1];
-    if(!customer||/^(account|current-prices|current-history|results)$/.test(customer))return;
+    let customer=(location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)||[])[1];
+    if(!customer||/^(account|current-prices|current-history|results)$/.test(customer))customer=await window.BEInstallation?.wait();
+    if(!customer||window.__beAfrrBid01)return;
+    window.__beAfrrBid01 = true;
     const cachePrefix=customer+':';
     const clock = new Intl.DateTimeFormat('nl-NL', {
       timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit'
