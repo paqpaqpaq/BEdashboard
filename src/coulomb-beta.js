@@ -13,44 +13,57 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lastRaw=null;
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lastRaw=null,lowMode='ready',lowMinimum=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
-      const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false;
+      const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
       if(prev){
         const dt=r[0]-prev[0];
         if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
           // Integrate EVERY available power interval, including sparse history.
-          const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;
+          const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;change=e.input-e.output;
           if(stored!==null)stored+=e.input-e.output;
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
       let anchor=anchors.get(r[0]);
       if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
-      // Every arrival at 10/95 or crossing of either threshold reanchors to BE SOC.
-      // Independent of power direction, missing power, or saved auto preferences.
-      if(raw!==null){
-        const crossed=lastRaw!==null&&[10,95].some(v=>(lastRaw<v&&raw>v)||(lastRaw>v&&raw<v));
-        if(raw===10||raw===95||crossed){
-          const threshold=raw===10?10:raw===95?95:raw>lastRaw?(lastRaw<95&&raw>95?95:10):(lastRaw>10&&raw<10?10:95);
-          anchor={t:r[0],soc:raw,kind:'Automatisch '+threshold+'% · BE-SOC'};
+      // Follow the low-water mark during discharge; release on net energy in.
+      // Crossing 10% upwards never creates an anchor.
+      const charging=change!==null?change>0:!prev&&!anchor?.lowState&&Number.isFinite(r[2])&&r[2]<0;
+      if(anchor?.lowState){lowMode=anchor.lowState.mode;lowMinimum=anchor.lowState.minimum;}
+      else if(anchors.has(r[0])){lowMode='released';lowMinimum=null;}
+      if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
+      if(lowMode==='ready'&&raw!==null&&raw<=10){
+        if(charging)lowMode='released';
+        else{lowMode='tracking';lowMinimum=raw;anchor={t:r[0],soc:raw,kind:'Laagste BE-SOC · volgen'};}
+      }
+      if(lowMode==='tracking'){
+        if(charging)lowMode='released';
+        else if(raw!==null){
+          const lower=lowMinimum===null||raw<lowMinimum;
+          if(lower)lowMinimum=raw;
+          anchor={t:r[0],soc:lowMinimum,kind:'Laagste BE-SOC · volgen',silent:!lower&&anchor?.kind!=='Laagste BE-SOC · volgen'};
         }
+      }
+      if(raw!==null){
+        const crossedHigh=lastRaw!==null&&((lastRaw<95&&raw>95)||(lastRaw>95&&raw<95));
+        if(raw===95||crossedHigh){anchor={t:r[0],soc:raw,kind:'Automatisch 95% · BE-SOC'};lowMode='ready';lowMinimum=null;}
         lastRaw=raw;
       }
       if(anchor){
         const before=stored===null?null:stored/c.capacity*100;
-        stored=c.capacity*anchor.soc/100;uncertain=false;
-        lastAnchor={...anchor,correction:before===null?null:anchor.soc-before};events.push(lastAnchor);
+        stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
+        if(!anchor.silent){lastAnchor={...anchor,correction:before===null?null:anchor.soc-before};events.push(lastAnchor);}
       }
-      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null});
+      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,lowState:{mode:lowMode,minimum:lowMinimum}});
     }
     return {points,input,output,gaps,lastAnchor,events,uncertain};
   }
   function at(points,t,maxGapMs=defaults.maxGapMs){
     let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
     if(points[lo]?.t===t)return points[lo].soc;
-    const a=points[lo-1],b=points[lo];if(!a||!b||a.soc===null||b.soc===null||b.gap||b.anchor||b.t-a.t>maxGapMs)return null;
+    const a=points[lo-1],b=points[lo];if(!a||!b||a.soc===null||b.soc===null||b.gap||(b.anchor&&!(a.lowState?.mode==='tracking'&&b.lowState?.mode==='tracking'))||b.t-a.t>maxGapMs)return null;
     return a.soc+(b.soc-a.soc)*(t-a.t)/(b.t-a.t);
   }
   root.BEEnergySOC={defaults,valid,energy,calculate,at};
@@ -223,10 +236,10 @@
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
   const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   const latest=()=>result?.points.at(-1);
-  const followsOriginal=p=>Number.isFinite(p?.raw)&&p.raw>=0&&p.raw<10;
-  const visualSoc=p=>followsOriginal(p)?p.raw:p?.soc??null;
+  const followsOriginal=p=>p?.lowState?.mode==='tracking';
+  const visualSoc=p=>p?.soc??null;
 
-  const displayKey=key+':last-display:v1';
+  const displayKey=key+':last-display:v2';
   let lastDisplay=null,displaySaved='';
   try{const saved=JSON.parse(localStorage.getItem(displayKey)||'null');if(validDisplay(saved))lastDisplay=saved;}catch{}
   function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&(!cfg.capacity||v.capacity===settings().capacity);}
@@ -242,7 +255,7 @@
     const energy=shown?'Gemeten in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
     if(shown&&Number.isFinite(shown.raw))state+=' · gemeld '+number(shown.raw,0)+'% · verschil '+number(visualSoc(shown)-shown.raw)+' procentpunt';
-    if(shown&&followsOriginal(shown))state+=' · onder 10%: volgt originele SOC';
+    if(shown&&followsOriginal(shown))state+=' · volgt laagste originele SOC';
     if(shown?.uncertain)state+=' · onzekere meetintervallen';
     if(stale)state+=' · metingen verouderd';
     if(!current&&shown)state+=' · wacht op nieuwe metingen';
@@ -273,7 +286,7 @@
           // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
           if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
             rows=rows.slice(index);manual=manual.filter(a=>a.t>=rows[0][0]);
-            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt'});
+            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState});
           }
         }
         record={...old,rows,manual};store.put(record,id);
@@ -314,7 +327,7 @@
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij 10% of 95% van de originele SOC wordt de telling altijd automatisch herijkt, ook bij een passage tussen meetpunten. Daarbij wordt de gemelde BE-SOC overgenomen. De kWh-tellers blijven doorlopen. Handmatig herijken kan hierboven. Onder 10% volgt de blauwe lijn de originele SOC; vanaf 10% omhoog volgt hij weer de eigen telling. De kWh-tellers blijven doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Tijdens de daling naar 10% en lager volgt blauw de laagste originele SOC. Zodra de telling door laden stijgt, gaat blauw vanaf dat ijkpunt zelfstandig verder, ook onder 10%. De stijging langs 10% herijkt niet opnieuw. Herijken op 95% en handmatig herijken blijven mogelijk. De kWh-tellers blijven doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const c=settings(),f=p.querySelector('[data-settings]');
     f.elements.capacity.value=c.capacity;
@@ -329,7 +342,7 @@
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.0.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.1 BETA — 20 oktober 2026
+
+- Blauw volgt bij ontladen de laagste originele SOC rond en onder 10%, en telt vanaf dat ijkpunt zelfstandig verder zodra de coulombtelling stijgt. De stijging langs 10% herijkt niet opnieuw.
+- Herijken op 95% en de doorlopende kWh-tellers blijven behouden.
+
 ## 6.0.7 BETA — 20 oktober 2026
 
 - Onder 10% volgt de blauwe SOC-weergave de originele SOC; vanaf 10% omhoog hervat de eigen telling. De kWh-tellers blijven doorlopen.
