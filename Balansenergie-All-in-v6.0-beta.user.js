@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.1 BETA
+// @name         Balansenergie All-in v6.1.2 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.1.1
-// @description  BETA 6.1.1: Coulombtelling in/uit met lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.1.2
+// @description  BETA 6.1.2: Coulombtelling in/uit met lage en hoge ijkpunten en kWh sinds het laatste ijkpunt. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.1'
+    '6.1.2'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11869,7 +11869,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.1.1 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.2 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12163,7 +12163,7 @@
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.1 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.2 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13655,11 +13655,11 @@
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — beta 6.1.1. BE data only. */
+/* Coulombtelling in/uit — beta 6.1.2. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage611)return;window.__beCoulombPage611=true;
+    if(window.__beCoulombPage612)return;window.__beCoulombPage612=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -13920,6 +13920,30 @@
   root.BESocHover={attach,info,valueAt};
 })(typeof window!=='undefined'?window:globalThis);
 
+(function(root){
+  'use strict';
+  const numeric=v=>typeof v==='number'?v:typeof v==='string'&&/^\d+(?:[.,]\d+)?$/.test(v.trim())?Number(v.trim().replace(',','.')):NaN;
+  function resolve(value){
+    const c=value&&typeof value==='object'?value:{};
+    if(c.capacityMode==='fcc'){
+      const fccAh=numeric(c.fccAh),packCount=numeric(c.packCount),nominalVoltage=numeric(c.nominalVoltage);
+      if(!(fccAh>0&&Number.isInteger(packCount)&&packCount>=1&&packCount<=100&&nominalVoltage>=1&&nominalVoltage<=1000))return null;
+      const capacity=fccAh*packCount*nominalVoltage/1000;
+      return capacity>=.01&&capacity<=1000?{mode:'fcc',capacity,fccAh,packCount,nominalVoltage}:null;
+    }
+    if(c.capacityMode&&c.capacityMode!=='kwh')return null;
+    const capacity=numeric(c.capacityKwh??c.capacity);
+    return capacity>=.01&&capacity<=1000?{mode:'kwh',capacity}:null;
+  }
+  function readForm(form,previous={}){
+    const next={...previous,capacityMode:form.elements.capacityMode.value,
+      capacityKwh:numeric(form.elements.capacity.value),fccAh:numeric(form.elements.fccAh.value),
+      packCount:numeric(form.elements.packCount.value),nominalVoltage:numeric(form.elements.nominalVoltage.value)};
+    const resolved=resolve(next);return resolved?{...next,capacity:resolved.capacity}:null;
+  }
+  root.BECapacity={numeric,resolve,readForm};
+})(typeof window!=='undefined'?window:globalThis);
+
 (async function () {
   'use strict';
   if(window.__beCoulombInOut6)return;
@@ -13951,7 +13975,7 @@
   const core=window.BEEnergySOC, key='be-own-soc-settings:'+id, DAY=86400000;
   let cfg={},record={rows:[],manual:[]},result=null,payload=null,db=null,busy=false,error='',storageError='',lastFetch=0,forecastFetch=0;
   try{cfg=JSON.parse(localStorage.getItem(key)||'{}');}catch{}
-  const settings=()=>({...core.defaults,...cfg,chargeEfficiency:1,dischargeEfficiency:1,auto:true});
+  const settings=()=>({...core.defaults,...cfg,capacity:window.BECapacity.resolve(cfg)?.capacity??NaN,chargeEfficiency:1,dischargeEfficiency:1,auto:true});
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
   const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   const latest=()=>result?.points.at(-1);
@@ -13961,7 +13985,7 @@
   const displayKey=key+':last-display:v3';
   let lastDisplay=null,displaySaved='';
   try{const saved=JSON.parse(localStorage.getItem(displayKey)||'null');if(validDisplay(saved))lastDisplay=saved;}catch{}
-  function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&(!cfg.capacity||v.capacity===settings().capacity);}
+  function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&v.capacity===settings().capacity;}
   function display(){
     const r=latest(),c=settings(),current=r&&Number.isFinite(r.soc);
     if(current){
@@ -13980,6 +14004,7 @@
     if(shown?.uncertain)state+=' · onzekere meetintervallen';
     if(stale)state+=' · metingen verouderd';
     if(!current&&shown)state+=' · wacht op nieuwe metingen';
+    if(!(c.capacity>0))state='Kies de rekencapaciteit bij Herijken en instellingen';
     if(error)state+=' · bronmelding: '+error;
     if(storageError)state+=' · '+storageError;
     return {soc,energy,history,state};
@@ -14002,7 +14027,7 @@
         if(anchor)manual=[...manual.filter(a=>a.t!==anchor.t),anchor];
         // Preserve the integrated state when old observations are removed.
         const cutoff=Date.now()-30*DAY,index=rows.findIndex(r=>r[0]>=cutoff);
-        if(index>0){
+        if(index>0&&settings().capacity>0){
           const prior=core.calculate(rows.slice(0,index+1),settings(),manual).points.at(-1);
           // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
           if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
@@ -14021,7 +14046,7 @@
       if(!r.ok)throw Error('Bron geeft HTTP '+r.status);return await r.json();
     }finally{clearTimeout(timer);}
   }
-  function compute(){result=core.calculate(record.rows,settings(),record.manual);}
+  function compute(){result=settings().capacity>0?core.calculate(record.rows,settings(),record.manual):null;}
   async function poll(){
     if(busy)return;busy=true;
     try {
@@ -14034,9 +14059,8 @@
       await persist(rows);compute();lastFetch=now;error='';
       if(!payload||now-forecastFetch>300000){
         try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=now;
-          if(Number.isFinite(payload.battery_capacity_kwh)&&!cfg.capacity)cfg.capacity=payload.battery_capacity_kwh;
           compute();
-        }catch(e){if(!cfg.capacity)error='Capaciteitbron niet beschikbaar';}
+        }catch(e){error='Forecast tijdelijk niet beschikbaar';}
       }
     }catch(e){error=e.message||String(e);}
     finally{busy=false;render();}
@@ -14044,18 +14068,34 @@
   const style=document.createElement('style');
   style.textContent=`.be-own-soc{margin:12px 0;padding:14px 16px;border:1px solid #c4dde1;border-radius:12px;background:rgba(8,145,178,.045);font:13px system-ui;color:inherit}.be-own-soc header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.be-own-soc strong{font-size:21px;color:#0891b2}.be-own-soc small{opacity:.75}.be-own-soc details{margin-top:10px}.be-own-soc summary{cursor:pointer}.be-own-soc form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px}.be-own-soc label{display:flex;flex-direction:column;gap:4px}.be-own-soc input[type=number]{width:90px;padding:6px;border:1px solid #aaa;border-radius:6px;background:inherit;color:inherit}.be-own-soc button{padding:7px 10px;border:1px solid #7cb9c5;border-radius:7px;background:transparent;color:inherit;cursor:pointer}.be-own-soc p{margin:8px 0}.be-own-soc output{display:block;margin-top:7px;min-height:1.4em}.be-own-soc [data-energy]{min-height:1.4em}.be-own-soc .be-soc-line{color:#0891b2;font-weight:650}.be-own-soc ul{padding-left:20px;max-height:150px;overflow:auto}`;
   style.textContent+=`[data-be-soc-compact]{display:flex!important;flex-direction:row!important;flex-wrap:wrap!important;align-items:center!important;gap:6px!important}[data-be-soc-legend]{display:inline-flex!important;flex-direction:row!important;flex-wrap:nowrap!important;width:max-content!important;max-width:100%;gap:6px!important;align-items:center!important;margin:6px 0!important}[data-be-soc-compact]>[data-be-soc-legend]{display:contents!important}[data-be-soc-compact] button,[data-be-soc-legend] button{display:inline-flex!important;flex:0 0 auto!important;width:auto!important;min-width:0!important;max-width:none!important;min-height:0!important;height:28px!important;white-space:nowrap!important;padding:4px 9px!important;font-size:12px!important;line-height:18px!important}`;
+  style.textContent+=`.be-own-soc [data-cap-fcc]{display:flex;align-items:end;gap:10px;flex-wrap:wrap}.be-own-soc [data-cap-fcc][hidden],.be-own-soc [data-cap-kwh][hidden]{display:none!important}.be-own-soc select{max-width:100%;padding:6px;border:1px solid #aaa;border-radius:6px;background:inherit;color:inherit}.be-own-soc [data-capacity-preview],.be-own-soc [data-capacity-help]{flex-basis:100%}.be-own-soc [data-capacity-preview]{font-weight:600}`;
   document.head.append(style);
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit invoeren<select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select></label><label data-cap-kwh>Totale capaciteit (kWh)<input name="capacity" type="number" min="0.01" max="1000" step="0.01" required></label><span data-cap-fcc hidden><label>Gemiddelde FCC (Ah)<input name="fccAh" type="number" min="0.01" max="100000" step="0.01"></label><label>Aantal accu’s<input name="packCount" type="number" min="1" max="100" step="1"></label><label>Nominale spanning per accu (V)<input name="nominalVoltage" type="number" min="1" max="1000" step="0.1"></label></span><button>Capaciteit opslaan</button><output data-capacity-preview></output><small data-capacity-help></small></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
-    const c=settings(),f=p.querySelector('[data-settings]');
-    f.elements.capacity.value=c.capacity;
+    const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
+    f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
+    f.elements.capacity.value=cfg.capacityKwh??(resolved?.mode==='kwh'?resolved.capacity:'');
+    f.elements.fccAh.value=cfg.fccAh??'';
+    f.elements.packCount.value=cfg.packCount??'';
+    f.elements.nominalVoltage.value=cfg.nominalVoltage??51.2;
+    function preview(){
+      const fcc=f.elements.capacityMode.value==='fcc';
+      f.querySelector('[data-cap-kwh]').hidden=fcc;f.querySelector('[data-cap-fcc]').hidden=!fcc;
+      f.elements.capacity.disabled=fcc;f.elements.capacity.required=!fcc;
+      for(const name of ['fccAh','packCount','nominalVoltage']){f.elements[name].disabled=!fcc;f.elements[name].required=fcc;}
+      const next=window.BECapacity.readForm(f,cfg),cap=next&&window.BECapacity.resolve(next);
+      textIfChanged(f.querySelector('[data-capacity-preview]'),cap?'Rekencapaciteit: '+number(cap.capacity,2)+' kWh':'Vul de capaciteit in');
+      textIfChanged(f.querySelector('[data-capacity-help]'),fcc?'Gemiddelde FCC × aantal accu’s × nominale spanning ÷ 1000. Gebruik de FCC in Ah uit je BMS.':'Je eigen rekencapaciteit voor het hele systeem. Account wordt niet automatisch overgenomen.');
+    }
+    f.oninput=preview;f.onchange=preview;preview();
     f.onsubmit=async e=>{
       e.preventDefault();if(!f.reportValidity())return;
-      cfg={...cfg,capacity:+f.elements.capacity.value,auto:true};
-      try{localStorage.setItem(key,JSON.stringify(cfg));compute();render();}catch(e){error='Opslaan mislukt: '+e.message;render();}
+      const next=window.BECapacity.readForm(f,cfg);
+      if(!next){error='Vul een geldige rekencapaciteit in';render();return;}
+      try{localStorage.setItem(key,JSON.stringify(next));cfg=next;error='';compute();render();}catch(e){error='Opslaan mislukt: '+e.message;render();}
     };
     p.querySelector('[data-manual]').onsubmit=async e=>{
       e.preventDefault();const form=e.currentTarget,r=latest();if(!r||!form.reportValidity())return;
@@ -14063,7 +14103,7 @@
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
