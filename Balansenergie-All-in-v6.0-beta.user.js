@@ -13285,7 +13285,12 @@
     window.__beAfrrBid01 = true;
     const QUARTER = 900000;
     const directions = ['import', 'export'];
-    const colours = {import: '#dc3545', export: '#28a745'};
+    const colours = {import: '#b65c72', export: '#73b9a1'};
+    function bidColour(direction) {
+      return document.documentElement.getAttribute('data-be-dark') === 'aan'
+        ? (direction === 'import' ? 'rgba(242,79,91,0.55)' : 'rgba(51,192,113,0.55)')
+        : colours[direction];
+    }
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
     let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
@@ -13402,7 +13407,7 @@
             dataset = {
               beBidDirection: direction,
               label: 'BID ' + direction,
-              borderColor: colours[direction], backgroundColor: colours[direction],
+              borderColor: bidColour(direction), backgroundColor: bidColour(direction),
               borderDash: [], borderWidth: 1, pointRadius: 0,
               pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
               stepped: false, order: -5,
@@ -13417,7 +13422,8 @@
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
-          dataset.borderColor=colours[direction];
+          dataset.borderColor=bidColour(direction);
+          dataset.backgroundColor=dataset.borderColor;
         }
         const callbacks = chart.options.plugins?.tooltip?.callbacks;
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
@@ -13856,6 +13862,8 @@
     return null;
   }
   function target(){
+    const header=document.querySelector('#power-chart-content .energy-chart-soc-header');
+    if(header?.querySelector('.energy-chart-soc-value'))return header;
     const labels=[...document.querySelectorAll('span,div,p,dt,label')].filter(e=>!e.children.length&&!e.closest(own)&&/^(?:SOC|SOC\s*\(%\)|Laadtoestand(?:\s*\(SOC\))?|State of charge(?:\s*\(SOC\))?)$/i.test(text(e)));
     for(const label of labels){const row=metric(label);if(row)return row;}
     for(const selector of ['#current-soc','#battery-soc','#soc-value','[data-metric="soc"]','[data-soc-value]']){
@@ -13876,7 +13884,8 @@
       el.append(label,value);
     }
     if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
-    const value=el.querySelector('strong');if(value.textContent!==view.soc)value.textContent=view.soc;
+    const shown=view.compactSoc??view.soc;
+    const value=el.querySelector('strong');if(value.textContent!==shown)value.textContent=shown;
     if(el.title!==view.state)el.title=view.state;
   }
   root.BESocNativeReadout={render,target};
@@ -13932,7 +13941,8 @@
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
-    const soc=shown?number(visualSoc(shown),0)+'%':'—';
+    const soc=shown?number(visualSoc(shown),1)+'%':'—';
+    const compactSoc=shown?number(visualSoc(shown),0)+'%':'—';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -13945,7 +13955,7 @@
     if(!(c.capacity>0))state='Kies de rekencapaciteit bij Herijken en instellingen';
     if(error)state+=' · bronmelding: '+error;
     if(storageError)state+=' · '+storageError;
-    return {soc,energy,history,state};
+    return {soc,compactSoc,energy,history,state};
   }
   function textIfChanged(el,value){if(el.textContent!==value)el.textContent=value;}
   function openDB(){return new Promise((resolve,reject)=>{

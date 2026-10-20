@@ -268,6 +268,8 @@
     return null;
   }
   function target(){
+    const header=document.querySelector('#power-chart-content .energy-chart-soc-header');
+    if(header?.querySelector('.energy-chart-soc-value'))return header;
     const labels=[...document.querySelectorAll('span,div,p,dt,label')].filter(e=>!e.children.length&&!e.closest(own)&&/^(?:SOC|SOC\s*\(%\)|Laadtoestand(?:\s*\(SOC\))?|State of charge(?:\s*\(SOC\))?)$/i.test(text(e)));
     for(const label of labels){const row=metric(label);if(row)return row;}
     for(const selector of ['#current-soc','#battery-soc','#soc-value','[data-metric="soc"]','[data-soc-value]']){
@@ -288,7 +290,8 @@
       el.append(label,value);
     }
     if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
-    const value=el.querySelector('strong');if(value.textContent!==view.soc)value.textContent=view.soc;
+    const shown=view.compactSoc??view.soc;
+    const value=el.querySelector('strong');if(value.textContent!==shown)value.textContent=shown;
     if(el.title!==view.state)el.title=view.state;
   }
   root.BESocNativeReadout={render,target};
@@ -344,7 +347,8 @@
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
-    const soc=shown?number(visualSoc(shown),0)+'%':'—';
+    const soc=shown?number(visualSoc(shown),1)+'%':'—';
+    const compactSoc=shown?number(visualSoc(shown),0)+'%':'—';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -357,7 +361,7 @@
     if(!(c.capacity>0))state='Kies de rekencapaciteit bij Herijken en instellingen';
     if(error)state+=' · bronmelding: '+error;
     if(storageError)state+=' · '+storageError;
-    return {soc,energy,history,state};
+    return {soc,compactSoc,energy,history,state};
   }
   function textIfChanged(el,value){if(el.textContent!==value)el.textContent=value;}
   function openDB(){return new Promise((resolve,reject)=>{

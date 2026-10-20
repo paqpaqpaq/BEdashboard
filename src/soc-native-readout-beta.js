@@ -12,6 +12,8 @@
     return null;
   }
   function target(){
+    const header=document.querySelector('#power-chart-content .energy-chart-soc-header');
+    if(header?.querySelector('.energy-chart-soc-value'))return header;
     const labels=[...document.querySelectorAll('span,div,p,dt,label')].filter(e=>!e.children.length&&!e.closest(own)&&/^(?:SOC|SOC\s*\(%\)|Laadtoestand(?:\s*\(SOC\))?|State of charge(?:\s*\(SOC\))?)$/i.test(text(e)));
     for(const label of labels){const row=metric(label);if(row)return row;}
     for(const selector of ['#current-soc','#battery-soc','#soc-value','[data-metric="soc"]','[data-soc-value]']){
@@ -32,7 +34,8 @@
       el.append(label,value);
     }
     if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
-    const value=el.querySelector('strong');if(value.textContent!==view.soc)value.textContent=view.soc;
+    const shown=view.compactSoc??view.soc;
+    const value=el.querySelector('strong');if(value.textContent!==shown)value.textContent=shown;
     if(el.title!==view.state)el.title=view.state;
   }
   root.BESocNativeReadout={render,target};

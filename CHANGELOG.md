@@ -4,9 +4,9 @@
 
 - Financiële selectors en invoervelden gelijkgetrokken met de capaciteitsinstellingen; bestaande dashboard-darkmode bereikbaar vanuit Financieel.
 - Rustige live cijfers standaard actief, zonder schakelaar.
-- BID-import rood en BID-export groen. De zoekknop is verwijderd; automatisch terugzoeken blijft actief.
+- BID-import oudroze en BID-export lichtgroen, met eigen tinten naast de rode import en groene export. De zoekknop is verwijderd; automatisch terugzoeken blijft actief.
 - SOC-aanwijzer en stippen gebruiken één gedeeld tijdstip bij verschillende meetreeksen.
-- Blauwe coulomb-SOC onder de originele SOC toegevoegd, afgerond op hele procenten.
+- Blauwe coulomb-SOC direct onder het originele SOC-percentage bij de grafiek toegevoegd, afgerond op hele procenten. Het blauwe detailvenster toont één decimaal.
 
 ## 6.1.2 BETA — 20 oktober 2026
 

@@ -3,7 +3,12 @@
     window.__beAfrrBid01 = true;
     const QUARTER = 900000;
     const directions = ['import', 'export'];
-    const colours = {import: '#dc3545', export: '#28a745'};
+    const colours = {import: '#b65c72', export: '#73b9a1'};
+    function bidColour(direction) {
+      return document.documentElement.getAttribute('data-be-dark') === 'aan'
+        ? (direction === 'import' ? 'rgba(242,79,91,0.55)' : 'rgba(51,192,113,0.55)')
+        : colours[direction];
+    }
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
     let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
@@ -120,7 +125,7 @@
             dataset = {
               beBidDirection: direction,
               label: 'BID ' + direction,
-              borderColor: colours[direction], backgroundColor: colours[direction],
+              borderColor: bidColour(direction), backgroundColor: bidColour(direction),
               borderDash: [], borderWidth: 1, pointRadius: 0,
               pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
               stepped: false, order: -5,
@@ -135,7 +140,8 @@
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
-          dataset.borderColor=colours[direction];
+          dataset.borderColor=bidColour(direction);
+          dataset.backgroundColor=dataset.borderColor;
         }
         const callbacks = chart.options.plugins?.tooltip?.callbacks;
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
