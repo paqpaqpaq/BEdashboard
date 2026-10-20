@@ -27,13 +27,19 @@
     if(!row){el?.remove();return;}
     if(!el){
       el=document.createElement('div');el.id=id;el.setAttribute('data-be-coulomb-readout','');
-      el.style.cssText='display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:5px;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
+      el.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:0;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
       const label=document.createElement('span'),value=document.createElement('strong');
-      label.textContent='Coulombtelling in/uit';label.style.cssText='font-size:11px;line-height:1.4';
-      value.style.cssText='color:#0891b2;font-size:inherit;font-weight:650;white-space:nowrap';
+      label.className='energy-chart-soc-label be-own-soc-label';label.textContent='Coulombtelling in/uit';label.style.color='#0891b2';
+      value.className='energy-chart-soc-value';value.style.cssText='color:#0891b2;white-space:nowrap';
       el.append(label,value);
     }
-    if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
+    if(el.parentElement!==row){row.style.flexWrap='wrap';row.style.rowGap='4px';row.append(el);}
+    if(typeof getComputedStyle==='function'){
+      const label=row.querySelector('.energy-chart-soc-label'),value=row.querySelector('.energy-chart-soc-value');
+      for(const [original,copy] of [[label,el.querySelector('span')],[value,el.querySelector('strong')]]){
+        if(original&&original!==copy){const font=getComputedStyle(original).font;if(font&&copy.style.font!==font)copy.style.font=font;}
+      }
+    }
     const shown=view.compactSoc??view.soc;
     const value=el.querySelector('strong');if(value.textContent!==shown)value.textContent=shown;
     if(el.title!==view.state)el.title=view.state;

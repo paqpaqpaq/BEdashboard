@@ -283,13 +283,19 @@
     if(!row){el?.remove();return;}
     if(!el){
       el=document.createElement('div');el.id=id;el.setAttribute('data-be-coulomb-readout','');
-      el.style.cssText='display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:5px;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
+      el.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 100%;grid-column:1 / -1;min-width:0;margin-top:0;color:#0891b2;font:inherit;font-variant-numeric:tabular-nums';
       const label=document.createElement('span'),value=document.createElement('strong');
-      label.textContent='Coulombtelling in/uit';label.style.cssText='font-size:11px;line-height:1.4';
-      value.style.cssText='color:#0891b2;font-size:inherit;font-weight:650;white-space:nowrap';
+      label.className='energy-chart-soc-label be-own-soc-label';label.textContent='Coulombtelling in/uit';label.style.color='#0891b2';
+      value.className='energy-chart-soc-value';value.style.cssText='color:#0891b2;white-space:nowrap';
       el.append(label,value);
     }
-    if(el.parentElement!==row){row.style.flexWrap='wrap';row.append(el);}
+    if(el.parentElement!==row){row.style.flexWrap='wrap';row.style.rowGap='4px';row.append(el);}
+    if(typeof getComputedStyle==='function'){
+      const label=row.querySelector('.energy-chart-soc-label'),value=row.querySelector('.energy-chart-soc-value');
+      for(const [original,copy] of [[label,el.querySelector('span')],[value,el.querySelector('strong')]]){
+        if(original&&original!==copy){const font=getComputedStyle(original).font;if(font&&copy.style.font!==font)copy.style.font=font;}
+      }
+    }
     const shown=view.compactSoc??view.soc;
     const value=el.querySelector('strong');if(value.textContent!==shown)value.textContent=shown;
     if(el.title!==view.state)el.title=view.state;
@@ -448,6 +454,17 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
 @media(max-width:560px){.be-own-soc form[data-settings]{gap:13px;padding:14px}.be-own-soc [data-cap-fcc]{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.be-own-soc [data-cap-fcc]>label:last-child{grid-column:1 / -1}.be-own-soc [data-settings] .be-capacity-method,.be-own-soc [data-cap-kwh]{max-width:none}.be-own-soc [data-settings] .be-capacity-footer{flex-direction:column;align-items:stretch;gap:12px;padding-top:3px}.be-own-soc [data-settings] button{width:100%}.be-own-soc [data-settings] .be-cap-input,.be-own-soc [data-settings] select,.be-own-soc [data-settings] button{min-height:44px;height:44px}}
 @media(max-width:560px){.be-own-soc [data-settings] input[type=number],.be-own-soc [data-settings] select,.be-own-soc [data-manual] input[type=number]{font-size:16px}.be-own-soc [data-manual] input[type=number],.be-own-soc [data-manual] button{min-height:44px}}
 `;
+  style.textContent+=`.be-soc-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-sizing:border-box;width:100%;margin:0;padding:8px 0 4px;color:inherit;font:11px/1.3 system-ui,sans-serif}
+.be-soc-legend[data-be-soc-inline]{display:inline-flex;width:auto;padding:0;font:inherit}
+.be-soc-legend .be-soc-series-toggle{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:0;padding:3px 0;margin:0;background:transparent;color:inherit;font:inherit;cursor:pointer;box-shadow:none;min-height:0}
+.be-soc-legend .be-soc-series-toggle[aria-pressed="false"]{opacity:.5;text-decoration:line-through}
+.be-soc-legend .be-soc-series-toggle:focus-visible{outline:2px solid #0891b2;outline-offset:3px}
+.be-soc-legend .be-soc-series-swatch{width:13px;height:3px;display:inline-block;flex:none}
+[data-be-coulomb-readout] .be-own-soc-label::before{background:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.14)}
+
+.be-soc-legend .be-soc-series-toggle{font:11px/1.3 system-ui,sans-serif!important;font-weight:400!important;border:0!important;border-radius:0!important;padding:3px 0!important;margin:0!important;min-height:0!important;background:transparent!important;box-shadow:none!important}
+.be-soc-legend .be-soc-series-toggle>span{font:inherit!important}
+`;
   document.head.append(style);
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
@@ -538,27 +555,29 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
     if(!row){
-      // Prefer the existing SOC legend. Never append to the power/energy legend.
       let host=canvas.parentElement,existing=null;
       for(let depth=0;host&&depth<3;depth++,host=host.parentElement){
         const candidate=host.querySelector('[class*="legend-soc"], [id*="soc-legend"], [aria-label="SOC reeksen"]');
         if(candidate){existing=candidate;break;}
       }
-      row=document.createElement('span');row.dataset.beSocLegend=canvas.id;
-      row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center';
-      if(existing){existing.dataset.beSocCompact='';existing.append(row);}else canvas.parentElement.insertAdjacentElement('afterend',row);
+      row=document.createElement('span');row.dataset.beSocLegend=canvas.id;row.className='be-soc-legend';
+      if(existing){existing.dataset.beSocCompact='';row.dataset.beSocInline='';existing.append(row);}
+      else canvas.parentElement.insertAdjacentElement('beforebegin',row);
       for(const [group,label,color] of [['kwh','Coulombtelling in/uit','#0891b2']]){
-        const button=document.createElement('button');button.type='button';button.className='forecast-series-toggle';
-        button.dataset.beSocGroup=group;button.style.setProperty('--series-color',color);
-        button.innerHTML='<span class="forecast-series-swatch" style="display:inline-block;width:18px;height:3px;background:'+color+'"></span> <span class="forecast-series-name">'+label+'</span>';
-        button.style.cssText+=';display:inline-flex;gap:7px;align-items:center;padding:6px 10px;border:1px solid '+color+';border-radius:7px;background:transparent;color:inherit;cursor:pointer';
+        const button=document.createElement('button');button.type='button';button.className='be-soc-series-toggle';
+        button.dataset.beSocGroup=group;
+        button.innerHTML='<span class="be-soc-series-swatch" aria-hidden="true" style="background:'+color+'"></span><span>'+label+'</span>';
         button.onclick=()=>{cfg['show_'+group]=cfg['show_'+group]===false;localStorage.setItem(key,JSON.stringify(cfg));render();};
         row.append(button);
       }
     }
+    if(!row.hasAttribute('data-be-soc-inline')){
+      const rect=canvas.getBoundingClientRect(),scale=chart.width>0?rect.width/chart.width:1;
+      row.style.paddingLeft=Math.max(0,(chart.chartArea?.left||0)*scale)+'px';
+    }
     for(const button of row.querySelectorAll('button')){
       const visible=cfg['show_'+button.dataset.beSocGroup]!==false;
-      button.setAttribute('aria-pressed',String(visible));button.classList.toggle('is-muted',!visible);button.style.opacity=visible?'1':'.45';
+      button.setAttribute('aria-pressed',String(visible));
     }
   }
   function render(){
