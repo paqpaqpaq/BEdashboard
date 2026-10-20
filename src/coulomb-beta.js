@@ -1,5 +1,4 @@
-/* BE-only energy balance. bo: W out of battery; negative means charging.
-   Only BE measurements and locally stored observations are used. */
+/* BE-only energy balance. Positive bo is battery output in W. */
 (function(root){
   'use strict';
   const defaults={capacity:48.2,chargeEfficiency:1,dischargeEfficiency:1,maxGapMs:360000,auto:true};
@@ -13,57 +12,78 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lastRaw=null,lowMode='ready',lowMinimum=null;
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
       if(prev){
         const dt=r[0]-prev[0];
         if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
-          // Integrate EVERY available power interval, including sparse history.
           const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;change=e.input-e.output;
-          if(stored!==null)stored+=e.input-e.output;
+          if(stored!==null)stored+=change;
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
-      let anchor=anchors.get(r[0]);
+      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState);
+      let anchor=explicit;
       if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
-      // Follow the low-water mark during discharge; release on net energy in.
-      // Crossing 10% upwards never creates an anchor.
-      const charging=change!==null?change>0:!prev&&!anchor?.lowState&&Number.isFinite(r[2])&&r[2]<0;
-      if(anchor?.lowState){lowMode=anchor.lowState.mode;lowMinimum=anchor.lowState.minimum;}
-      else if(anchors.has(r[0])){lowMode='released';lowMinimum=null;}
-      if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
-      if(lowMode==='ready'&&raw!==null&&raw<=10){
-        if(charging)lowMode='released';
-        else{lowMode='tracking';lowMinimum=raw;anchor={t:r[0],soc:raw,kind:'Laagste BE-SOC · volgen'};}
-      }
-      if(lowMode==='tracking'){
-        if(charging)lowMode='released';
-        else if(raw!==null){
-          const lower=lowMinimum===null||raw<lowMinimum;
-          if(lower)lowMinimum=raw;
-          anchor={t:r[0],soc:lowMinimum,kind:'Laagste BE-SOC · volgen',silent:!lower&&anchor?.kind!=='Laagste BE-SOC · volgen'};
+      const charging=change!==null?change>0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]<0;
+      const discharging=change!==null?change<0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]>0;
+      if(checkpoint){
+        if(explicit.lowState){lowMode=explicit.lowState.mode;lowMinimum=explicit.lowState.minimum;}
+        if(explicit.highState){highMode=explicit.highState.mode;highMaximum=explicit.highState.maximum;}
+      }else if(explicit){lowMode=highMode='released';lowMinimum=highMaximum=null;}
+      else{
+        if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
+        if(highMode==='released'&&raw!==null&&raw<95&&change!==null&&change>=0&&r[2]<=0){highMode='ready';highMaximum=null;}
+        if(lowMode==='ready'&&raw!==null&&raw<=10){
+          if(charging)lowMode='released';
+          else{lowMode='tracking';lowMinimum=raw;anchor={t:r[0],soc:raw,kind:'Laagste BE-SOC · volgen'};}
         }
-      }
-      if(raw!==null){
-        const crossedHigh=lastRaw!==null&&((lastRaw<95&&raw>95)||(lastRaw>95&&raw<95));
-        if(raw===95||crossedHigh){anchor={t:r[0],soc:raw,kind:'Automatisch 95% · BE-SOC'};lowMode='ready';lowMinimum=null;}
-        lastRaw=raw;
+        if(lowMode==='tracking'){
+          if(charging)lowMode='released';
+          else if(raw!==null){
+            const lower=lowMinimum===null||raw<lowMinimum;if(lower)lowMinimum=raw;
+            anchor={t:r[0],soc:lowMinimum,kind:'Laagste BE-SOC · volgen',silent:!lower&&anchor?.kind!=='Laagste BE-SOC · volgen'};
+            highMode='ready';highMaximum=null;
+          }
+        }
+        if(highMode==='ready'&&raw!==null&&raw>=95){
+          if(discharging)highMode='released';
+          else{highMode='tracking';highMaximum=raw;anchor={t:r[0],soc:raw,kind:'Hoogste BE-SOC · volgen'};}
+        }
+        if(highMode==='tracking'){
+          if(discharging)highMode='released';
+          else if(raw!==null){
+            const higher=highMaximum===null||raw>highMaximum;if(higher)highMaximum=raw;
+            anchor={t:r[0],soc:highMaximum,kind:'Hoogste BE-SOC · volgen',silent:!higher&&anchor?.kind!=='Hoogste BE-SOC · volgen'};
+            lowMode='ready';lowMinimum=null;
+          }
+        }
       }
       if(anchor){
         const before=stored===null?null:stored/c.capacity*100;
         stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
-        if(!anchor.silent){lastAnchor={...anchor,correction:before===null?null:anchor.soc-before};events.push(lastAnchor);}
+        if(anchor.statsReference){
+          const saved=anchor.statsReference;
+          lastAnchor={...saved.reference,input:input-saved.input,output:output-saved.output};
+        }else{
+          lastAnchor={...anchor,correction:before===null?null:anchor.soc-before,input,output};
+          if(!anchor.silent)events.push(lastAnchor);
+        }
       }
-      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,lowState:{mode:lowMode,minimum:lowMinimum}});
+      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
+        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},reference:lastAnchor,
+        sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
     return {points,input,output,gaps,lastAnchor,events,uncertain};
   }
   function at(points,t,maxGapMs=defaults.maxGapMs){
     let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
     if(points[lo]?.t===t)return points[lo].soc;
-    const a=points[lo-1],b=points[lo];if(!a||!b||a.soc===null||b.soc===null||b.gap||(b.anchor&&!(a.lowState?.mode==='tracking'&&b.lowState?.mode==='tracking'))||b.t-a.t>maxGapMs)return null;
+    const a=points[lo-1],b=points[lo];
+    const tracking=a&&b&&((a.lowState?.mode==='tracking'&&b.lowState?.mode==='tracking')||(a.highState?.mode==='tracking'&&b.highState?.mode==='tracking'));
+    if(!a||!b||a.soc===null||b.soc===null||b.gap||(b.anchor&&!tracking)||b.t-a.t>maxGapMs)return null;
     return a.soc+(b.soc-a.soc)*(t-a.t)/(b.t-a.t);
   }
   root.BEEnergySOC={defaults,valid,energy,calculate,at};
@@ -236,10 +256,10 @@
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
   const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   const latest=()=>result?.points.at(-1);
-  const followsOriginal=p=>p?.lowState?.mode==='tracking';
+  const followsOriginal=p=>p?.lowState?.mode==='tracking'||p?.highState?.mode==='tracking';
   const visualSoc=p=>p?.soc??null;
 
-  const displayKey=key+':last-display:v2';
+  const displayKey=key+':last-display:v3';
   let lastDisplay=null,displaySaved='';
   try{const saved=JSON.parse(localStorage.getItem(displayKey)||'null');if(validDisplay(saved))lastDisplay=saved;}catch{}
   function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&(!cfg.capacity||v.capacity===settings().capacity);}
@@ -252,16 +272,18 @@
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
     const soc=shown?number(visualSoc(shown))+'%':'—';
-    const energy=shown?'Gemeten in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
+    const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
+    const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
     if(shown&&Number.isFinite(shown.raw))state+=' · gemeld '+number(shown.raw,0)+'% · verschil '+number(visualSoc(shown)-shown.raw)+' procentpunt';
-    if(shown&&followsOriginal(shown))state+=' · volgt laagste originele SOC';
+    if(shown?.lowState?.mode==='tracking')state+=' · volgt laagste originele SOC';
+    else if(shown?.highState?.mode==='tracking')state+=' · volgt hoogste originele SOC';
     if(shown?.uncertain)state+=' · onzekere meetintervallen';
     if(stale)state+=' · metingen verouderd';
     if(!current&&shown)state+=' · wacht op nieuwe metingen';
     if(error)state+=' · bronmelding: '+error;
     if(storageError)state+=' · '+storageError;
-    return {soc,energy,state};
+    return {soc,energy,history,state};
   }
   function textIfChanged(el,value){if(el.textContent!==value)el.textContent=value;}
   function openDB(){return new Promise((resolve,reject)=>{
@@ -286,7 +308,7 @@
           // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
           if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
             rows=rows.slice(index);manual=manual.filter(a=>a.t>=rows[0][0]);
-            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState});
+            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState,highState:prior.highState,statsReference:prior.reference?{reference:prior.reference,input:prior.sinceInput,output:prior.sinceOutput}:undefined});
           }
         }
         record={...old,rows,manual};store.put(record,id);
@@ -327,7 +349,7 @@
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Tijdens de daling naar 10% en lager volgt blauw de laagste originele SOC. Zodra de telling door laden stijgt, gaat blauw vanaf dat ijkpunt zelfstandig verder, ook onder 10%. De stijging langs 10% herijkt niet opnieuw. Herijken op 95% en handmatig herijken blijven mogelijk. De kWh-tellers blijven doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const c=settings(),f=p.querySelector('[data-settings]');
     f.elements.capacity.value=c.capacity;
@@ -342,7 +364,7 @@
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -406,6 +428,7 @@
     textIfChanged(p.querySelector('[data-soc]'),view.soc);
     textIfChanged(p.querySelector('[data-energy]'),view.energy);
     textIfChanged(p.querySelector('[data-state]'),view.state);
+    textIfChanged(p.querySelector('[data-history]'),view.history);
     p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
     const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
     for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}

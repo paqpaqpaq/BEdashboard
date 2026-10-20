@@ -1,5 +1,4 @@
-/* BE-only energy balance. bo: W out of battery; negative means charging.
-   Only BE measurements and locally stored observations are used. */
+/* BE-only energy balance. Positive bo is battery output in W. */
 (function(root){
   'use strict';
   const defaults={capacity:48.2,chargeEfficiency:1,dischargeEfficiency:1,maxGapMs:360000,auto:true};
@@ -13,57 +12,78 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lastRaw=null,lowMode='ready',lowMinimum=null;
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
       if(prev){
         const dt=r[0]-prev[0];
         if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
-          // Integrate EVERY available power interval, including sparse history.
           const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;change=e.input-e.output;
-          if(stored!==null)stored+=e.input-e.output;
+          if(stored!==null)stored+=change;
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
-      let anchor=anchors.get(r[0]);
+      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState);
+      let anchor=explicit;
       if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
-      // Follow the low-water mark during discharge; release on net energy in.
-      // Crossing 10% upwards never creates an anchor.
-      const charging=change!==null?change>0:!prev&&!anchor?.lowState&&Number.isFinite(r[2])&&r[2]<0;
-      if(anchor?.lowState){lowMode=anchor.lowState.mode;lowMinimum=anchor.lowState.minimum;}
-      else if(anchors.has(r[0])){lowMode='released';lowMinimum=null;}
-      if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
-      if(lowMode==='ready'&&raw!==null&&raw<=10){
-        if(charging)lowMode='released';
-        else{lowMode='tracking';lowMinimum=raw;anchor={t:r[0],soc:raw,kind:'Laagste BE-SOC · volgen'};}
-      }
-      if(lowMode==='tracking'){
-        if(charging)lowMode='released';
-        else if(raw!==null){
-          const lower=lowMinimum===null||raw<lowMinimum;
-          if(lower)lowMinimum=raw;
-          anchor={t:r[0],soc:lowMinimum,kind:'Laagste BE-SOC · volgen',silent:!lower&&anchor?.kind!=='Laagste BE-SOC · volgen'};
+      const charging=change!==null?change>0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]<0;
+      const discharging=change!==null?change<0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]>0;
+      if(checkpoint){
+        if(explicit.lowState){lowMode=explicit.lowState.mode;lowMinimum=explicit.lowState.minimum;}
+        if(explicit.highState){highMode=explicit.highState.mode;highMaximum=explicit.highState.maximum;}
+      }else if(explicit){lowMode=highMode='released';lowMinimum=highMaximum=null;}
+      else{
+        if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
+        if(highMode==='released'&&raw!==null&&raw<95&&change!==null&&change>=0&&r[2]<=0){highMode='ready';highMaximum=null;}
+        if(lowMode==='ready'&&raw!==null&&raw<=10){
+          if(charging)lowMode='released';
+          else{lowMode='tracking';lowMinimum=raw;anchor={t:r[0],soc:raw,kind:'Laagste BE-SOC · volgen'};}
         }
-      }
-      if(raw!==null){
-        const crossedHigh=lastRaw!==null&&((lastRaw<95&&raw>95)||(lastRaw>95&&raw<95));
-        if(raw===95||crossedHigh){anchor={t:r[0],soc:raw,kind:'Automatisch 95% · BE-SOC'};lowMode='ready';lowMinimum=null;}
-        lastRaw=raw;
+        if(lowMode==='tracking'){
+          if(charging)lowMode='released';
+          else if(raw!==null){
+            const lower=lowMinimum===null||raw<lowMinimum;if(lower)lowMinimum=raw;
+            anchor={t:r[0],soc:lowMinimum,kind:'Laagste BE-SOC · volgen',silent:!lower&&anchor?.kind!=='Laagste BE-SOC · volgen'};
+            highMode='ready';highMaximum=null;
+          }
+        }
+        if(highMode==='ready'&&raw!==null&&raw>=95){
+          if(discharging)highMode='released';
+          else{highMode='tracking';highMaximum=raw;anchor={t:r[0],soc:raw,kind:'Hoogste BE-SOC · volgen'};}
+        }
+        if(highMode==='tracking'){
+          if(discharging)highMode='released';
+          else if(raw!==null){
+            const higher=highMaximum===null||raw>highMaximum;if(higher)highMaximum=raw;
+            anchor={t:r[0],soc:highMaximum,kind:'Hoogste BE-SOC · volgen',silent:!higher&&anchor?.kind!=='Hoogste BE-SOC · volgen'};
+            lowMode='ready';lowMinimum=null;
+          }
+        }
       }
       if(anchor){
         const before=stored===null?null:stored/c.capacity*100;
         stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
-        if(!anchor.silent){lastAnchor={...anchor,correction:before===null?null:anchor.soc-before};events.push(lastAnchor);}
+        if(anchor.statsReference){
+          const saved=anchor.statsReference;
+          lastAnchor={...saved.reference,input:input-saved.input,output:output-saved.output};
+        }else{
+          lastAnchor={...anchor,correction:before===null?null:anchor.soc-before,input,output};
+          if(!anchor.silent)events.push(lastAnchor);
+        }
       }
-      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,lowState:{mode:lowMode,minimum:lowMinimum}});
+      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
+        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},reference:lastAnchor,
+        sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
     return {points,input,output,gaps,lastAnchor,events,uncertain};
   }
   function at(points,t,maxGapMs=defaults.maxGapMs){
     let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
     if(points[lo]?.t===t)return points[lo].soc;
-    const a=points[lo-1],b=points[lo];if(!a||!b||a.soc===null||b.soc===null||b.gap||(b.anchor&&!(a.lowState?.mode==='tracking'&&b.lowState?.mode==='tracking'))||b.t-a.t>maxGapMs)return null;
+    const a=points[lo-1],b=points[lo];
+    const tracking=a&&b&&((a.lowState?.mode==='tracking'&&b.lowState?.mode==='tracking')||(a.highState?.mode==='tracking'&&b.highState?.mode==='tracking'));
+    if(!a||!b||a.soc===null||b.soc===null||b.gap||(b.anchor&&!tracking)||b.t-a.t>maxGapMs)return null;
     return a.soc+(b.soc-a.soc)*(t-a.t)/(b.t-a.t);
   }
   root.BEEnergySOC={defaults,valid,energy,calculate,at};

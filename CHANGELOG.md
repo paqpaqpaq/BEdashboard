@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.1.1 BETA — 20 oktober 2026
+
+- kWh in/uit in het SOC-overzicht worden getoond sinds het laatste ijkpunt; totalen over de bewaarde historie staan bij de details.
+- Vanaf 95% volgt blauw de hoogste originele SOC en laat los zodra de coulombtelling daalt. De daling langs 95% herijkt niet opnieuw.
+
 ## 6.1 BETA — 20 oktober 2026
 
 - Blauw volgt bij ontladen de laagste originele SOC rond en onder 10%, en telt vanaf dat ijkpunt zelfstandig verder zodra de coulombtelling stijgt. De stijging langs 10% herijkt niet opnieuw.
