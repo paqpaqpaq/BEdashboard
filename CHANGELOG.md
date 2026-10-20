@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.0.7 BETA — 20 oktober 2026
+
+- Onder 10% volgt de blauwe SOC-weergave de originele SOC; vanaf 10% omhoog hervat de eigen telling. De kWh-tellers blijven doorlopen.
+- Mobiele SOC-opstart verbeterd voor dashboardadressen zonder afsluitende slash en later aangemaakte grafieken.
+
 ## 6.0.6 BETA — 20 oktober 2026
 
 - Opstarten van de EPEX- en SOC-grafieken op smartphones verbeterd, inclusief herstel na verbergen, draaien en terugkeren naar de pagina.

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.0.6 BETA
+// @name         Balansenergie All-in v6.0.7 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.6
-// @description  BETA 6.0.6: Coulombtelling in/uit met automatische herijking op 10% en 95%. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.0.7
+// @description  BETA 6.0.7: Coulombtelling in/uit met automatische herijking op 10% en 95%. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0.6'
+    '6.0.7'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11869,7 +11869,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.0.6 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.0.7 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12163,7 +12163,7 @@
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.6 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.7 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13655,11 +13655,11 @@
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — beta 6.0.6. BE data only. */
+/* Coulombtelling in/uit — beta 6.0.7. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage606)return;window.__beCoulombPage606=true;
+    if(window.__beCoulombPage607)return;window.__beCoulombPage607=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -13889,9 +13889,10 @@
 
 (async function () {
   'use strict';
-  if(window.__beCoulombInOut6)return;window.__beCoulombInOut6=true;
-  const id=location.pathname.match(/^\/customer\/([^/]+)\//)?.[1];
+  if(window.__beCoulombInOut6)return;
+  const id=location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)?.[1];
   if(!id||['account','current-history','current-prices'].includes(id))return;
+  window.__beCoulombInOut6=true;
   const ext=window.BESOCExtras;
   const pastColorsPlugin={id:'beOwnSocPastColors',afterDraw(chart){
     const area=chart.chartArea,x=chart.scales.x;if(!area||!x)return;
@@ -13921,6 +13922,9 @@
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
   const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   const latest=()=>result?.points.at(-1);
+  const followsOriginal=p=>Number.isFinite(p?.raw)&&p.raw>=0&&p.raw<10;
+  const visualSoc=p=>followsOriginal(p)?p.raw:p?.soc??null;
+
   const displayKey=key+':last-display:v1';
   let lastDisplay=null,displaySaved='';
   try{const saved=JSON.parse(localStorage.getItem(displayKey)||'null');if(validDisplay(saved))lastDisplay=saved;}catch{}
@@ -13933,10 +13937,11 @@
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
-    const soc=shown?number(shown.soc)+'%':'—';
+    const soc=shown?number(visualSoc(shown))+'%':'—';
     const energy=shown?'Gemeten in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
-    if(shown&&Number.isFinite(shown.raw))state+=' · gemeld '+number(shown.raw,0)+'% · verschil '+number(shown.soc-shown.raw)+' procentpunt';
+    if(shown&&Number.isFinite(shown.raw))state+=' · gemeld '+number(shown.raw,0)+'% · verschil '+number(visualSoc(shown)-shown.raw)+' procentpunt';
+    if(shown&&followsOriginal(shown))state+=' · onder 10%: volgt originele SOC';
     if(shown?.uncertain)state+=' · onzekere meetintervallen';
     if(stale)state+=' · metingen verouderd';
     if(!current&&shown)state+=' · wacht op nieuwe metingen';
@@ -14008,7 +14013,7 @@
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij 10% of 95% van de originele SOC wordt de telling altijd automatisch herijkt, ook bij een passage tussen meetpunten. Daarbij wordt de gemelde BE-SOC overgenomen. De kWh-tellers blijven doorlopen. Handmatig herijken kan hierboven.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
+    p.innerHTML=`<header><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings><label>Capaciteit kWh<input name="capacity" type="number" min="0.1" max="1000" step="0.1" required></label><button>Instellingen opslaan</button></form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij 10% of 95% van de originele SOC wordt de telling altijd automatisch herijkt, ook bij een passage tussen meetpunten. Daarbij wordt de gemelde BE-SOC overgenomen. De kWh-tellers blijven doorlopen. Handmatig herijken kan hierboven. Onder 10% volgt de blauwe lijn de originele SOC; vanaf 10% omhoog volgt hij weer de eigen telling. De kWh-tellers blijven doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const c=settings(),f=p.querySelector('[data-settings]');
     f.elements.capacity.value=c.capacity;
@@ -14023,13 +14028,13 @@
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.0.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.0.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
   function dataset(chart,tag,label,points,extra={}){
     let d=chart.data.datasets.find(d=>d.beOwnSOC===tag);
-    if(!d){d={beOwnSOC:tag,label,type:'line',borderColor:'#0891b2',backgroundColor:'#0891b2',borderWidth:1.6,pointRadius:0,pointHitRadius:8,fill:false,tension:0,spanGaps:false,...extra};chart.data.datasets.push(d);}
+    if(!d){d={beOwnSOC:tag,label,type:'line',order:-20,borderColor:'#0891b2',backgroundColor:'#0891b2',borderWidth:1.6,pointRadius:0,pointHitRadius:8,fill:false,tension:0,spanGaps:false,...extra};chart.data.datasets.push(d);}
     Object.assign(d,extra);d.data=points;
     d.borderDash=[];
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
@@ -14040,8 +14045,9 @@
       load:i.usage_kwh?.[k],pv:i.pv_production_kwh?.[k]})));
     if(slots.length!==chart.data.labels?.length)return null;
     const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
-    return {actual:slots.map(q=>core.at(result?.points||[],q.t,c.maxGapMs)),
-      future:ext.project(slots,latest(),c,power)};
+    const visible=(result?.points||[]).map(p=>({...p,soc:visualSoc(p)})),last=latest();
+    return {actual:slots.map(q=>core.at(visible,q.t,c.maxGapMs)),
+      future:ext.project(slots,last?{...last,soc:visualSoc(last)}:null,c,power)};
   }
   function applyVisibility(chart){
     chart.data.datasets.forEach((d,i)=>{
@@ -14095,7 +14101,7 @@
     if(chart.canvas.id==='soc-chart'){
       const a=chart.scales.x?.min??0,b=chart.scales.x?.max??Infinity;
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
-      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a-120000&&p.t<=b+120000).map(p=>({x:p.t,y:p.gap&&!p.anchor?null:p.soc})),{yAxisID:axis,parsing:false});
+      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a-120000&&p.t<=b+120000).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)})),{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
       const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,borderColor:'rgba(8,145,178,.55)',backgroundColor:'rgba(8,145,178,.55)'});}
     }
@@ -14108,14 +14114,24 @@
     if(!plugins.some(p=>p?.id===pastColorsPlugin.id))plugins.push(pastColorsPlugin);
   }
   // The dashboard refreshes and sometimes replaces its datasets. Restore only our own series.
+  let renderPending=false,started=false;
+  function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;register();render();},0);}
   let library;
-  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register({id:'beOwnEnergySoc',beforeUpdate:decorate});library=C;}}
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register({id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
+  new MutationObserver(records=>{
+    const added=records.flatMap(r=>Array.from(r.addedNodes));
+    if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();
+  }).observe(document.documentElement,{childList:true,subtree:true});
+  window.addEventListener('pageshow',()=>{scheduleRender();if(started&&Date.now()-lastFetch>14000)poll();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRender();});
+  let startupTries=0;
+  const startupTimer=setInterval(()=>{register();scheduleRender();const C=window.Chart,ready=C?.getChart&&(C.getChart('soc-chart')||C.getChart('soc-forecast-chart'));if(ready||++startupTries>=40)clearInterval(startupTimer);},500);
   register();compute();render();
   setInterval(()=>{register();render();},5000);
   let storageTimer;
   try{db=await Promise.race([openDB(),new Promise((_,reject)=>{storageTimer=setTimeout(()=>reject(Error('Opslag reageert niet')),3000);})]);await persist();}
   catch(e){storageError='Lokale opslag niet beschikbaar: '+e.message;}
-  finally{clearTimeout(storageTimer);compute();await poll();}
+  finally{clearTimeout(storageTimer);started=true;compute();await poll();}
   setInterval(()=>{if(Date.now()-lastFetch>14000)poll();},15000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
   window.addEventListener('storage',e=>{if(e.key===key){try{cfg=JSON.parse(e.newValue||'{}');compute();render();}catch{}}});
