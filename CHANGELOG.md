@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.0.6 BETA — 20 oktober 2026
+
+- Opstarten van de EPEX- en SOC-grafieken op smartphones verbeterd, inclusief herstel na verbergen, draaien en terugkeren naar de pagina.
+
 ## 6.0.5 BETA — 19 oktober 2026
 
 - Coulombtelling: laatste geldige waarde blijft zichtbaar tijdens verversen en herladen. Verouderde metingen en bronfouten worden met het bijbehorende tijdstip vermeld.

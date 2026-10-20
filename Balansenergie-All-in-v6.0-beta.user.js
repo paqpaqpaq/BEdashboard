@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.0.5 BETA
+// @name         Balansenergie All-in v6.0.6 BETA
 // @namespace    paq.balansenergie.beta
-// @version      6.0.5
-// @description  BETA 6.0.5: Coulombtelling in/uit met automatische herijking op 10% en 95%. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
+// @version      6.0.6
+// @description  BETA 6.0.6: Coulombtelling in/uit met automatische herijking op 10% en 95%. Financieel met maandstaat, stroomresultaten, prognose en EB/btw. Actueel met blijvende BID-cache. Apart beta-kanaal; handmatig installeren.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in-v6.0-beta.user.js
@@ -43,7 +43,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.0.5'
+    '6.0.6'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -1837,7 +1837,9 @@
   }
 
   var ACTUEEL_BRIDGE_CODE =
-    "(function(){\n" +
+    "(function startBEActueel(){\n" +
+    " if(typeof Chart==='undefined'||!Chart.getChart||!Chart.getChart('battery-chart')){setTimeout(startBEActueel,150);return;}\n" +
+    "\n" +
     " if(window.__beActueelAllinBridge)return;\n" +
     " window.__beActueelAllinBridge=true;\n" +
     " var CANVAS='battery-chart';\n" +
@@ -2014,6 +2016,11 @@
     "  try{TG=Object.assign(TG,JSON.parse(n.textContent||'{}'));tgVul();}\n" +
     "  catch(e){console.error('[BE tariefgrafiek bridge]',e);}\n" +
     " });\n" +
+    " var initial=document.getElementById('be-actueel-allin-data');\n" +
+    " try{if(initial)st=Object.assign(st,JSON.parse(initial.textContent||'{}'));}catch(e){}\n" +
+    " var initialTarief=document.getElementById('be-tarief-data');\n" +
+    " try{if(initialTarief)TG=Object.assign(TG,JSON.parse(initialTarief.textContent||'{}'));}catch(e){}\n" +
+    " wikkel();tgVul();\n" +
     " setInterval(function(){ if(TG.aan) tgVul(); },3000);\n" +
     " setInterval(wikkel,3000);\n" +
     " console.log('[BE Actueel all-in bridge] actief');\n" +
@@ -11862,7 +11869,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.0.5 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.0.6 beta. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12156,7 +12163,7 @@
           .row{gap:8px;font-size:12px}.row>span{min-width:0;overflow-wrap:anywhere}.chart-hint{margin-left:0}.section-head{gap:8px}.top .actions button{padding:7px 8px;font-size:12px}
         }
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.5 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.0.6 beta</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13302,7 +13309,7 @@
     button.setAttribute('role','switch');button.setAttribute('aria-label','EPEX day-ahead');
     button.innerHTML='<span>EPEX</span><span class="be-epex-track" aria-hidden="true"><span class="be-epex-thumb"></span></span><span class="be-epex-state" aria-hidden="true"></span>';
     button.addEventListener('click',()=>{enabled=!enabled;save(KEY,enabled?'aan':'uit');publish();refresh();});
-    status=document.createElement('span');status.id='be-epex-status';var voortgang=document.createElement('progress');voortgang.max=1;voortgang.value=0;voortgang.hidden=true;voortgang.style.cssText='width:100%;height:10px;accent-color:'+D.paars;voortgang.setAttribute('aria-label','Voortgang kwartierexport');box.appendChild(voortgang);
+    status=document.createElement('span');status.id='be-epex-status';
     status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
     source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
@@ -13314,7 +13321,7 @@
   // The main plugin also bridges into the page, where its Chart instance lives.
   function chartBridge(){
     if(window.__beEpexBridge)return;window.__beEpexBridge=true;
-    let data={enabled:false,rows:[]},registered=false;
+    let data={enabled:false,rows:[]},library=null,attachedChart=null;
     function config(){try{data=JSON.parse(document.getElementById('be-epex-addon').textContent);}catch(_){}}
     function points(c){
       const x=c.options.scales?.x||{},min=x.min??-Infinity,max=x.max??Infinity,out=[];
@@ -13327,9 +13334,9 @@
       }
       return out;
     }
-    function install(){
+    function install(force=false){
       const C=typeof Chart!=='undefined'?Chart:window.Chart;if(!C)return;
-      if(!registered){C.register({id:'beEpexOverlay',beforeUpdate(c){
+      if(C!==library){C.register({id:'beEpexOverlay',beforeUpdate(c){
         if(c.canvas.id!=='be-tarief-chart')return;
         // Write raw configuration, never assign Chart.js option resolvers to themselves.
         const opts=c.config.options;
@@ -13359,12 +13366,13 @@
           const label=document.createElement('span');label.textContent=item.label;button.append(swatch,label);
           button.addEventListener('click',()=>{c.setDatasetVisibility(item.index,!c.isDatasetVisible(item.index));c.update('none');});host.append(button);
         });
-      }});registered=true;}
-      const c=C.getChart('be-tarief-chart');if(c)c.update('none');
+      }});library=C;}
+      const c=C.getChart('be-tarief-chart');if(c&&(force||c!==attachedChart)){attachedChart=c;c.update('none');}
     }
-    document.addEventListener('be-epex-data',()=>{config();install();});
-    document.addEventListener('be-tarief-update',()=>{config();install();});
+    document.addEventListener('be-epex-data',()=>{config();install(true);});
+    document.addEventListener('be-tarief-update',()=>{config();install(true);});
     config();install();
+    setInterval(install,1000);
   }
   const bridge=document.createElement('script');bridge.textContent='('+chartBridge.toString()+')();';document.documentElement.appendChild(bridge);bridge.remove();
   let pending=false;
@@ -13647,11 +13655,48 @@
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — beta 6.0.5. BE data only. */
+/* Coulombtelling in/uit — beta 6.0.6. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage605)return;window.__beCoulombPage605=true;
+    if(window.__beCoulombPage606)return;window.__beCoulombPage606=true;
+(function(){
+  'use strict';
+  if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
+  const ids=['battery-chart','be-tarief-chart','soc-chart','soc-forecast-chart'],seen=new WeakMap(),watched=new WeakSet();
+  let queued=false;
+  function schedule(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;repair();});}
+  const resize=typeof ResizeObserver==='function'?new ResizeObserver(schedule):null;
+  const intersect=typeof IntersectionObserver==='function'?new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))schedule();}):null;
+  function repair(){
+    if(document.hidden)return;
+    const C=window.Chart;if(!C?.getChart)return;
+    for(const id of ids){
+      const canvas=document.getElementById(id);if(!canvas?.isConnected)continue;
+      const parent=canvas.parentElement;if(!parent)continue;
+      if(!watched.has(parent)){resize?.observe(parent);intersect?.observe(parent);watched.add(parent);}
+      const box=parent.getBoundingClientRect(),chart=C.getChart(canvas),before=seen.get(canvas);
+      if(!chart||!(box.width>0&&box.height>0)||canvas.getClientRects().length===0){seen.delete(canvas);continue;}
+      const changed=!before||before.chart!==chart||Math.abs(before.w-box.width)>1||Math.abs(before.h-box.height)>1;
+      if(changed||!(chart.width>0&&chart.height>0)){
+        // Remember first: resize/update may synchronously notify other extensions.
+        seen.set(canvas,{chart,w:box.width,h:box.height});
+        try{chart.resize();chart.update('none');}catch(e){seen.delete(canvas);console.warn('[BE grafiekherstel]',id,e);}
+      }
+    }
+  }
+  new MutationObserver(records=>{
+    const added=records.flatMap(r=>Array.from(r.addedNodes));
+    if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))schedule();
+  }).observe(document.documentElement,{childList:true,subtree:true});
+  document.addEventListener('visibilitychange',schedule);
+  window.addEventListener('pageshow',schedule);
+  window.addEventListener('resize',schedule);
+  window.addEventListener('orientationchange',schedule);
+  window.visualViewport?.addEventListener('resize',schedule);
+  setInterval(schedule,2000);schedule();
+})();
+
 /* BE-only energy balance. bo: W out of battery; negative means charging.
    Only BE measurements and locally stored observations are used. */
 (function(root){
@@ -13978,7 +14023,7 @@
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.0.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.0.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
