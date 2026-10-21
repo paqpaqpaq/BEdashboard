@@ -523,7 +523,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -553,7 +553,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     });
   }
   function filterNativeLegend(chart){
-    const native=chart.options?.plugins?.legend;
+    const native=(chart.config?.options||chart.options)?.plugins?.legend;
     if(!native)return;
     const labels=native.labels||(native.labels={});
     if(labels.filter?.beOwnSocLegendFilter)return;
@@ -567,6 +567,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function legend(chart){
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
+    // Actueel already has the full-size Coulomb readout beside the SOC value.
+    if(canvas.id==='soc-chart'){
+      document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
+      return;
+    }
     if(!row){
       let host=canvas.parentElement,existing=null;
       for(let depth=0;host&&depth<3;depth++,host=host.parentElement){

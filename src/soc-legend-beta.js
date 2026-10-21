@@ -1,5 +1,5 @@
   function filterNativeLegend(chart){
-    const native=chart.options?.plugins?.legend;
+    const native=(chart.config?.options||chart.options)?.plugins?.legend;
     if(!native)return;
     const labels=native.labels||(native.labels={});
     if(labels.filter?.beOwnSocLegendFilter)return;
@@ -13,6 +13,11 @@
   function legend(chart){
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
+    // Actueel already has the full-size Coulomb readout beside the SOC value.
+    if(canvas.id==='soc-chart'){
+      document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
+      return;
+    }
     if(!row){
       let host=canvas.parentElement,existing=null;
       for(let depth=0;host&&depth<3;depth++,host=host.parentElement){
