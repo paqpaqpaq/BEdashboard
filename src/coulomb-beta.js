@@ -349,7 +349,7 @@
     const styleId='be-history-soc-legend-style';
     if(!document.getElementById(styleId)){
       const style=document.createElement('style');style.id=styleId;
-      style.textContent=':root [data-be-history-coulomb][aria-pressed]::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}';
+      style.textContent=':root :is(#be-soc-colour-priority,[data-be-history-coulomb])[aria-pressed]::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}';
       (document.head||document.documentElement).append(style);
     }
     if(label)button.style.font=getComputedStyle(label).font;
@@ -518,7 +518,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
 .be-soc-legend .be-soc-series-toggle[aria-pressed="false"]{opacity:.5;text-decoration:line-through}
 .be-soc-legend .be-soc-series-toggle:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}
 .be-soc-legend .be-soc-series-swatch{width:13px;height:3px;display:inline-block;flex:none}
-:root [data-be-coulomb-readout] .be-own-soc-label::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}
+:root :is(#be-soc-colour-priority,[data-be-coulomb-readout]) .be-own-soc-label::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}
 
 .be-soc-legend .be-soc-series-toggle{font:11px/1.3 system-ui,sans-serif!important;font-weight:400!important;border:0!important;border-radius:0!important;padding:3px 0!important;margin:0!important;min-height:0!important;background:transparent!important;box-shadow:none!important}
 .be-soc-legend .be-soc-series-toggle>span{font:inherit!important}
