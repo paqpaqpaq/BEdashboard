@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.6 — 21 oktober 2026
+
+- Visuele weergave fix in historie
+
 ## 6.1.5 — 21 oktober 2026
 
 - kleine bugfix weergave

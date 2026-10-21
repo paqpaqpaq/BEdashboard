@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.5
+// @name         Balansenergie All-in v6.1.6
 // @namespace    paq.balansenergie
-// @version      6.1.5
+// @version      6.1.6
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -87,7 +87,7 @@
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.5'
+    '6.1.6'
   );
 
   // Colour-only theme: never alter dimensions, typography, positioning or SVG paths.
@@ -11494,7 +11494,7 @@
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.1.5' +
+        'Instellingen v6.1.6' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11928,7 +11928,7 @@
    * ============================================================
    */
 
-  /* Financieel v6.1.5. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.6. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12231,7 +12231,7 @@
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.5</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.6</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13610,11 +13610,11 @@
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.1.5. BE data only. */
+/* Coulombtelling in/uit — 6.1.6. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage615)return;window.__beCoulombPage615=true;
+    if(window.__beCoulombPage616)return;window.__beCoulombPage616=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -13957,6 +13957,63 @@
   root.BESocNativeReadout={render,target};
 })(window);
 
+(function(root){
+  'use strict';
+  const active=chart=>chart.canvas?.id==='soc-chart'&&/\/customer\/[^/]+\/history\/?$/.test(location.pathname);
+  function range(chart){
+    // Read the current native input, never the previous, already expanded axis
+    // or parsed metadata from the period that was just replaced.
+    const native=chart.data.datasets.filter(d=>!d.beOwnSOC);
+    const axis=native[0]?.xAxisID||'x',scale=chart.scales?.[axis];
+    const options=(chart.config?.options||chart.options)?.scales?.[axis]||{};
+    function time(value){
+      if(value==null||value==='')return NaN;
+      if(Number.isFinite(value))return value;
+      if(value instanceof Date)return +value;
+      const parsed=scale?.parse?.(value);
+      return Number.isFinite(parsed)?parsed:typeof value==='string'?Date.parse(value):NaN;
+    }
+    let min=Infinity,max=-Infinity;
+    for(const d of native){
+      if((d.xAxisID||'x')!==axis)continue;
+      for(let i=0;i<(d.data?.length||0);i++){
+        const p=d.data[i],x=time(Array.isArray(p)?p[0]:p&&typeof p==='object'?p.x:chart.data.labels?.[i]);
+        if(Number.isFinite(x)){min=Math.min(min,x);max=Math.max(max,x);}
+      }
+    }
+    const start=time(options.min),end=time(options.max);
+    if(Number.isFinite(start))min=start;
+    if(Number.isFinite(end))max=end;
+    return Number.isFinite(min)&&Number.isFinite(max)&&min<=max?{min,max}:null;
+  }
+  function legend(chart,visible,toggle){
+    const frame=chart.canvas.closest('.history-chart-soc-row');
+    const header=frame?.querySelector('.history-chart-soc-header');
+    if(!header)return;
+    const label=header.querySelector('.history-chart-soc-label:not([data-be-history-coulomb])');
+    let button=header.querySelector('[data-be-history-coulomb]');
+    if(!button){
+      button=document.createElement('button');button.type='button';
+      button.dataset.beHistoryCoulomb='';button.className='history-chart-soc-label';
+      button.textContent='Coulombtelling in/uit';
+      button.style.cssText='border:0;background:transparent;color:inherit;padding:6px 0;min-height:44px;cursor:pointer;font:inherit;white-space:normal;text-align:left';
+      header.style.display='flex';header.style.flexWrap='wrap';header.style.alignItems='center';header.style.gap='6px 24px';
+      header.append(button);
+    }
+    const styleId='be-history-soc-legend-style';
+    if(!document.getElementById(styleId)){
+      const style=document.createElement('style');style.id=styleId;
+      style.textContent='[data-be-history-coulomb]::before{background:#0891b2!important;box-shadow:0 0 0 3px rgba(8,145,178,.14)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid #0891b2;outline-offset:3px}';
+      (document.head||document.documentElement).append(style);
+    }
+    if(label)button.style.font=getComputedStyle(label).font;
+    button.setAttribute('aria-pressed',String(visible));button.setAttribute('aria-controls',chart.canvas.id);
+    button.title=visible?'Coulombtelling verbergen':'Coulombtelling tonen';
+    button.onclick=toggle;
+  }
+  root.BESocHistory={active,range,legend};
+})(window);
+
 (async function () {
   'use strict';
   if(window.__beCoulombInOut6)return;
@@ -14177,7 +14234,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14221,6 +14278,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function legend(chart){
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
+    if(window.BESocHistory?.active(chart)){
+      document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
+      window.BESocHistory.legend(chart,cfg.show_kwh!==false,()=>{
+        cfg.show_kwh=cfg.show_kwh===false;localStorage.setItem(key,JSON.stringify(cfg));render();
+      });
+      return;
+    }
     // Actueel already has the full-size Coulomb readout beside the SOC value.
     if(canvas.id==='soc-chart'){
       document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
@@ -14269,9 +14333,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function decorate(chart){
 
     if(chart.canvas.id==='soc-chart'){
-      const a=chart.scales.x?.min??0,b=chart.scales.x?.max??Infinity;
+      const history=window.BESocHistory.active(chart),range=history?window.BESocHistory.range(chart):null;
+      const a=history?(range?.min??Infinity):(chart.scales.x?.min??0)-120000;
+      const b=history?(range?.max??-Infinity):(chart.scales.x?.max??Infinity)+120000;
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
-      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a-120000&&p.t<=b+120000).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)})),{yAxisID:axis,parsing:false});
+      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)})),{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
       const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,borderColor:'rgba(8,145,178,.55)',backgroundColor:'rgba(8,145,178,.55)'});}
     }
