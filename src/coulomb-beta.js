@@ -147,7 +147,7 @@
       if(d.borderWidth===0||meta.dataset?.options?.borderWidth===0)return;
       const own=d.beOwnSOC,group=own?'be':'native:'+i;
       const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
-      const baseColor=own?'#0891b2':meta.dataset?.options?.borderColor||d.borderColor;
+      const baseColor=own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
       const color=typeof baseColor==='string'?baseColor:'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
@@ -349,7 +349,7 @@
     const styleId='be-history-soc-legend-style';
     if(!document.getElementById(styleId)){
       const style=document.createElement('style');style.id=styleId;
-      style.textContent='[data-be-history-coulomb]::before{background:#0891b2!important;box-shadow:0 0 0 3px rgba(8,145,178,.14)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid #0891b2;outline-offset:3px}';
+      style.textContent=':root [data-be-history-coulomb][aria-pressed]::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}';
       (document.head||document.documentElement).append(style);
     }
     if(label)button.style.font=getComputedStyle(label).font;
@@ -516,9 +516,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
 .be-soc-legend[data-be-soc-inline]{display:inline-flex;width:auto;padding:0;font:inherit}
 .be-soc-legend .be-soc-series-toggle{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:0;padding:3px 0;margin:0;background:transparent;color:inherit;font:inherit;cursor:pointer;box-shadow:none;min-height:0}
 .be-soc-legend .be-soc-series-toggle[aria-pressed="false"]{opacity:.5;text-decoration:line-through}
-.be-soc-legend .be-soc-series-toggle:focus-visible{outline:2px solid #0891b2;outline-offset:3px}
+.be-soc-legend .be-soc-series-toggle:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}
 .be-soc-legend .be-soc-series-swatch{width:13px;height:3px;display:inline-block;flex:none}
-[data-be-coulomb-readout] .be-own-soc-label::before{background:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.14)}
+:root [data-be-coulomb-readout] .be-own-soc-label::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}
 
 .be-soc-legend .be-soc-series-toggle{font:11px/1.3 system-ui,sans-serif!important;font-weight:400!important;border:0!important;border-radius:0!important;padding:3px 0!important;margin:0!important;min-height:0!important;background:transparent!important;box-shadow:none!important}
 .be-soc-legend .be-soc-series-toggle>span{font:inherit!important}
@@ -580,14 +580,16 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
   function dataset(chart,tag,label,points,extra={}){
     let d=chart.data.datasets.find(d=>d.beOwnSOC===tag);
     if(!d){d={beOwnSOC:tag,label,type:'line',order:-20,borderColor:'#0891b2',backgroundColor:'#0891b2',borderWidth:1.6,pointRadius:0,pointHitRadius:8,fill:false,tension:0,spanGaps:false,...extra};chart.data.datasets.push(d);}
-    Object.assign(d,extra);d.data=points;
+    const series=tag==='forecast'?'coulomb-forecast':'coulomb';
+    const color=window.BETheme?.seriesColor(series)||(tag==='forecast'?'rgba(8,145,178,.55)':'#0891b2');
+    Object.assign(d,extra,{borderColor:color,backgroundColor:color});d.data=points;
     d.borderDash=[];
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
@@ -645,7 +647,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       row=document.createElement('span');row.dataset.beSocLegend=canvas.id;row.className='be-soc-legend';
       if(existing){existing.dataset.beSocCompact='';row.dataset.beSocInline='';existing.append(row);}
       else canvas.parentElement.insertAdjacentElement('beforebegin',row);
-      for(const [group,label,color] of [['kwh','Coulombtelling in/uit','#0891b2']]){
+      for(const [group,label,color] of [['kwh','Coulombtelling in/uit','var(--be-coulomb-line,#0891b2)']]){
         const button=document.createElement('button');button.type='button';button.className='be-soc-series-toggle';
         button.dataset.beSocGroup=group;
         button.innerHTML='<span class="be-soc-series-swatch" aria-hidden="true" style="background:'+color+'"></span><span>'+label+'</span>';
@@ -685,7 +687,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
       dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)})),{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
-      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,borderColor:'rgba(8,145,178,.55)',backgroundColor:'rgba(8,145,178,.55)'});}
+      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2});}
     }
     if(chart.canvas.id==='soc-forecast-chart')attachPastColors(chart);
     applyVisibility(chart);
@@ -705,6 +707,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const added=records.flatMap(r=>Array.from(r.addedNodes));
     if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();
   }).observe(document.documentElement,{childList:true,subtree:true});
+  document.addEventListener('be-dark-change',scheduleRender);
   window.addEventListener('pageshow',()=>{scheduleRender();if(started&&Date.now()-lastFetch>14000)poll();});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRender();});
   let startupTries=0;

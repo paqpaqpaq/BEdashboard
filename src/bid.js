@@ -4,9 +4,7 @@
     const directions = ['import', 'export'];
     const colours = {import: '#b65c72', export: '#73b9a1'};
     function bidColour(direction) {
-      return document.documentElement.getAttribute('data-be-dark') === 'aan'
-        ? (direction === 'import' ? 'rgba(242,79,91,0.55)' : 'rgba(51,192,113,0.55)')
-        : colours[direction];
+      return window.BETheme?.seriesColor('bid-'+direction) || colours[direction];
     }
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
@@ -127,7 +125,7 @@
               beBidDirection: direction,
               label: 'BID ' + direction,
               borderColor: bidColour(direction), backgroundColor: bidColour(direction),
-              borderDash: [], borderWidth: 1, pointRadius: 0,
+              borderDash: [], borderWidth: 1.5, pointRadius: 0,
               pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
               stepped: false, order: -5,
               tooltip: {callbacks: {

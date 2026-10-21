@@ -44,7 +44,7 @@
     const styleId='be-history-soc-legend-style';
     if(!document.getElementById(styleId)){
       const style=document.createElement('style');style.id=styleId;
-      style.textContent='[data-be-history-coulomb]::before{background:#0891b2!important;box-shadow:0 0 0 3px rgba(8,145,178,.14)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid #0891b2;outline-offset:3px}';
+      style.textContent=':root [data-be-history-coulomb][aria-pressed]::before{background:var(--be-coulomb-line,#0891b2)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--be-coulomb-line,#0891b2) 14%,transparent)!important}[data-be-history-coulomb][aria-pressed="false"]{opacity:.5;text-decoration:line-through}[data-be-history-coulomb]:focus-visible{outline:2px solid var(--be-coulomb-line,#0891b2);outline-offset:3px}';
       (document.head||document.documentElement).append(style);
     }
     if(label)button.style.font=getComputedStyle(label).font;

@@ -34,7 +34,7 @@
       if(d.borderWidth===0||meta.dataset?.options?.borderWidth===0)return;
       const own=d.beOwnSOC,group=own?'be':'native:'+i;
       const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
-      const baseColor=own?'#0891b2':meta.dataset?.options?.borderColor||d.borderColor;
+      const baseColor=own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
       const color=typeof baseColor==='string'?baseColor:'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,

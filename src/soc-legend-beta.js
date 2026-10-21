@@ -34,7 +34,7 @@
       row=document.createElement('span');row.dataset.beSocLegend=canvas.id;row.className='be-soc-legend';
       if(existing){existing.dataset.beSocCompact='';row.dataset.beSocInline='';existing.append(row);}
       else canvas.parentElement.insertAdjacentElement('beforebegin',row);
-      for(const [group,label,color] of [['kwh','Coulombtelling in/uit','#0891b2']]){
+      for(const [group,label,color] of [['kwh','Coulombtelling in/uit','var(--be-coulomb-line,#0891b2)']]){
         const button=document.createElement('button');button.type='button';button.className='be-soc-series-toggle';
         button.dataset.beSocGroup=group;
         button.innerHTML='<span class="be-soc-series-swatch" aria-hidden="true" style="background:'+color+'"></span><span>'+label+'</span>';
