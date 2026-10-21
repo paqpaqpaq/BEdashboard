@@ -1,0 +1,81 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grafiet — weergavecontrole</title>
+<!-- Module fixture: a native parser script loads the theme early. This does not
+     reproduce the asynchronous injection delay of Safari's Userscripts extension.
+     Passing these checks cannot establish flash-free startup through Userscripts. -->
+<script>
+if(!localStorage.getItem('be_cfg_darkmode'))localStorage.setItem('be_cfg_darkmode','aan');
+window.__earlyTheme=[];
+function early(){if(!document.body)return requestAnimationFrame(early);__earlyTheme.push({state:document.readyState,dark:document.documentElement.getAttribute('data-be-dark'),style:document.documentElement.getAttribute('data-be-dark-style'),background:getComputedStyle(document.body).backgroundColor});if(document.readyState==='loading')requestAnimationFrame(early);}requestAnimationFrame(early);
+</script><script src="/src/dark-theme.js"></script>
+<style>
+body{margin:0;background:#fff;color:#222;font:15px/1.5 system-ui}main{padding:20px;max-width:1100px;margin:auto}button,select{font:inherit;padding:8px}.card{background:white;color:black;border:1px solid #ddd;padding:20px;border-radius:10px;margin:12px 0}.energy-flow{display:flex;gap:20px}.energy-icon{width:58px;height:58px;fill:none;stroke:#198754;stroke-width:2;transition:stroke .2s,background-color .2s;background:#eee}.energy-icon.grid{stroke:#555}.energy-node.same .energy-icon{background:#eee}.native-readout{color:#000}.native-control{color:black;background:#ddd;border-color:#aaa}.native-selected{background:#6b3fa0;color:#fff}#test-controls{position:relative;z-index:2000;display:flex;gap:12px;padding:8px;flex-wrap:wrap}#results{position:relative;z-index:2000;white-space:pre-wrap;font:12px/1.5 monospace;margin:10px 20px;padding:10px}#be-energieoverzicht{position:relative!important;z-index:100!important;inset:auto!important;min-height:650px}#results.pass{border-left:4px solid #23d9a0}#results.fail{border-left:4px solid #ff6079}
+</style></head><body>
+<div id="test-controls"><button id="run">Controles uitvoeren</button><button id="brown">Bruingrijs</button><button id="graphite">Grafiet</button><a href="?navigation=1">Volgende pagina</a></div>
+<main id="native"><h1>Live Status</h1><div class="card"><div class="energy-flow"><div class="energy-node" id="pv"><svg class="energy-icon" viewBox="0 0 50 50"><path d="M5 35H45M10 20H40M10 20L5 40H45L40 20M20 20L17 40M30 20L33 40"/></svg><p class="native-readout">PV 0 W</p></div><div class="energy-node" id="grid"><svg class="energy-icon grid" viewBox="0 0 50 50"><path d="M25 5L10 45M25 5L40 45M15 20H35M10 30H40"/></svg><p class="native-readout">Net 24 W</p></div></div><button class="native-control">Instellingen</button><button class="native-selected">Actief</button><span id="inline-black" style="color:#000;background:white">Zwarte brontekst</span></div><div id="navigation-target"></div><canvas id="theme-canvas" width="100" height="30"></canvas></main>
+<span id="important-black" style="color:black!important;background:white!important">Zwarte tekst met inline voorrang</span><span id="hsl-black" style="color:hsl(0 0% 0%);background:hsl(0 0% 100%)">HSL tekst</span><script src="/slow-theme-test.js"></script><script src="/financial-theme-test.js"></script>
+<pre id="results" role="status">Gereed voor controle.</pre>
+<script>
+const result=document.getElementById('results'),lines=[];
+const frame=()=>new Promise(done=>requestAnimationFrame(done));
+const check=(ok,label)=>{if(!ok)throw Error(label);lines.push('PASS '+label);};
+const shadow=__financialTheme.shadow;
+document.getElementById('brown').onclick=()=>BETheme.apply(true,'bruingrijs');
+document.getElementById('graphite').onclick=()=>BETheme.apply(true,'grafiet');
+function rgb(s){return s.match(/[\d.]+/g).slice(0,3).map(Number);}
+function luminance(s){return rgb(s).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);}
+function contrast(a,b){a=luminance(a);b=luminance(b);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);}
+function assertContrast(el,bg,label){check(contrast(getComputedStyle(el).color,bg)>=4.5,label);}
+document.getElementById('run').onclick=async()=>{
+lines.length=0;result.className='';
+try{
+ check(__earlyTheme.some(f=>f.state==='loading'),'Dark mode actief vóór DOMContentLoaded');
+ check(__earlyTheme.every(f=>f.dark==='aan'&&f.background!=='rgb(255, 255, 255)'),'Bij vroege module-injectie geen lichte frame tijdens vertraagde paginastart');
+ if(location.search.includes('navigation'))check(__earlyTheme.every(f=>f.style==='grafiet'),'Opgeslagen Grafiet-keuze is vanaf de eerste frame actief na navigatie');
+ const paths=Array.from(document.querySelectorAll('.energy-icon path')).map(p=>p.getAttribute('d'));
+ const dimensions=Array.from(document.querySelectorAll('.energy-icon')).map(e=>[e.clientWidth,e.clientHeight].join(','));
+ BETheme.apply(true,'grafiet');await frame();
+ await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));
+ assertContrast(document.querySelector('.native-readout'),getComputedStyle(document.querySelector('.card')).backgroundColor,'Oorspronkelijke zwarte tekst wordt leesbaar wit');
+ assertContrast(document.getElementById('inline-black'),getComputedStyle(document.getElementById('inline-black')).backgroundColor,'Inline zwarte tekst heeft voldoende contrast');
+ assertContrast(document.getElementById('important-black'),getComputedStyle(document.getElementById('important-black')).backgroundColor,'Ook inline !important tekst is leesbaar');
+ assertContrast(document.getElementById('hsl-black'),getComputedStyle(document.getElementById('hsl-black')).backgroundColor,'HSL kleurwaarden blijven leesbaar');
+ assertContrast(document.querySelector('.native-selected'),getComputedStyle(document.querySelector('.native-selected')).backgroundColor,'Witte tekst op gekleurde knop');
+ let transitionCount=0;document.querySelectorAll('.energy-icon').forEach(e=>e.addEventListener('transitionrun',()=>transitionCount++));
+ const expected=Array.from(document.querySelectorAll('.energy-icon')).map(e=>getComputedStyle(e).stroke);
+ let stable=true,mutations=0;const observer=new MutationObserver(records=>mutations+=records.length);observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark']});
+ for(let i=0;i<32;i++){
+   document.getElementById('pv').className='energy-node '+(i%2?'same':'');
+   document.getElementById('grid').style.setProperty('--live-reading',String(i));
+   document.querySelector('#pv p').textContent='PV '+i+' W';
+   await frame();
+   stable=stable&&Array.from(document.querySelectorAll('.energy-icon')).every((e,j)=>getComputedStyle(e).stroke===expected[j]);
+ }
+ observer.disconnect();
+ check(stable&&transitionCount===0,'32 live updates veroorzaken geen kleurflits of herstart van icontransities ('+transitionCount+')');
+ check(mutations===0&&!document.getElementById('be-dark-style').disabled,'Live updates schakelen de themalaag nooit uit');
+ check(JSON.stringify(paths)===JSON.stringify(Array.from(document.querySelectorAll('.energy-icon path')).map(p=>p.getAttribute('d'))),'Oorspronkelijke SVG-iconen behouden');
+ check(JSON.stringify(dimensions)===JSON.stringify(Array.from(document.querySelectorAll('.energy-icon')).map(e=>[e.clientWidth,e.clientHeight].join(','))),'Afmetingen van iconen behouden');
+ const nativeStyle=document.createElement('style');nativeStyle.textContent='.new-page{color:black;background:white;padding:10px}.new-page::before{content:"Nieuw";background:#ddd;color:black}';document.head.appendChild(nativeStyle);
+ document.getElementById('navigation-target').innerHTML='<section class="new-page"><b>Andere dashboardpagina</b></section>';
+ await frame();
+ const page=document.querySelector('.new-page');assertContrast(page,getComputedStyle(page).backgroundColor,'Nieuwe pagina-inhoud wordt direct donker en leesbaar');
+ check(getComputedStyle(page,'::before').color!=='rgb(0, 0, 0)','Pseudo-elementen krijgen ook lichte tekst');
+ const styleChoice=shadow.getElementById('cfg-dark-style');styleChoice.value='bruingrijs';styleChoice.dispatchEvent(new Event('change'));await frame();
+ check(BETheme.style()==='bruingrijs'&&localStorage.getItem('be_cfg_darkstyle')==='bruingrijs','Bruingrijs blijft selecteerbaar en wordt bewaard');
+ assertContrast(document.querySelector('.native-selected'),getComputedStyle(document.querySelector('.native-selected')).backgroundColor,'Bruingrijs: lichte tekst op actieve knop');
+ styleChoice.value='grafiet';styleChoice.dispatchEvent(new Event('change'));await frame();
+ check(BETheme.style()==='grafiet'&&localStorage.getItem('be_cfg_darkstyle')==='grafiet'&&__financialTheme.root.dataset.darkStyle==='grafiet','Grafiet-keuze geldt voor hele dashboard en Financieel');
+ assertContrast(shadow.getElementById('period').parentElement.querySelector('[aria-pressed="true"]'),getComputedStyle(shadow.querySelector('[aria-pressed="true"]')).backgroundColor,'Financieel: witte tekst op actieve periodeknop');
+ assertContrast(styleChoice,getComputedStyle(styleChoice).backgroundColor,'Financieel: stijlkeuze heeft leesbare tekst');
+ assertContrast(shadow.getElementById('title'),getComputedStyle(shadow.querySelector('.page')).backgroundColor,'Financieel: titel is licht en leesbaar');
+ check(contrast(getComputedStyle(shadow.querySelector('.help')).color,getComputedStyle(shadow.querySelector('.panel')).backgroundColor)>=4.5,'Financieel: hulptekst heeft voldoende contrast');
+ const context=document.getElementById('theme-canvas').getContext('2d');context.fillStyle='#111';context.fillText('SOC',3,20);check(context.fillStyle==='#111111','Canvas-kleuren worden na tekenen hersteld');
+ BETheme.apply(false);await frame();check(getComputedStyle(document.querySelector('.native-readout')).color==='rgb(0, 0, 0)','Uitschakelen herstelt originele lichte weergave');
+ check(getComputedStyle(document.getElementById('important-black')).color==='rgb(0, 0, 0)'&&getComputedStyle(document.getElementById('important-black')).backgroundColor==='rgb(255, 255, 255)','Inline !important kleuren herstellen bij uitschakelen');
+ BETheme.apply(true,'grafiet');await frame();
+ check(__financialTheme.root.scrollWidth<=__financialTheme.root.clientWidth,'Financieel veroorzaakt geen horizontale pagina-overloop');
+ shadow.getElementById('options').click();
+ result.textContent=lines.length+' controles geslaagd\n'+lines.join('\n');result.className='pass';
+}catch(error){result.textContent=lines.join('\n')+'\nFAIL '+error.message;result.className='fail';throw error;}
+};
+</script></body></html>

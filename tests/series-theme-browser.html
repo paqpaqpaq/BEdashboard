@@ -1,0 +1,66 @@
+<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dark mode — grafiekkleuren</title>
+<script>localStorage.setItem('be_cfg_darkmode','aan');</script><script src="/src/dark-theme.js"></script>
+<style>
+body{margin:0;background:#fff;color:#222;font:14px/1.45 system-ui}main{max-width:1100px;margin:auto;padding:20px}.card{padding:16px;border:1px solid #ddd;border-radius:12px;background:#fff;margin:12px 0}.frame{position:relative;height:190px}.controls{display:flex;gap:12px;flex-wrap:wrap}button{font:inherit;padding:10px}h1{font-size:22px}h2{font-size:16px;margin:0 0 10px}.history-chart-soc-label,.energy-chart-soc-label{display:inline-flex;align-items:center;gap:7px;margin-right:14px}.history-chart-soc-label::before,.energy-chart-soc-label::before{content:"";width:9px;height:9px;border-radius:50%;background:#6b3f8d}.energy-chart-soc-header{display:flex;flex-wrap:wrap}.energy-chart-soc-value{margin-left:auto}pre{white-space:pre-wrap;font:12px/1.5 monospace}.pass{border-left:4px solid #23d9a0;padding-left:12px}.be-soc-series-swatch{display:inline-block;width:13px;height:3px}
+</style></head><body><main><h1>Dark mode — grafiekkleuren</h1><p>Controle met Chart.js en de werkelijke Coulomb- en BID-datasetcode. Uitsluitend voorbeeldgegevens.</p><div class="controls"><button id="run">Controles uitvoeren</button><button id="brown">Bruingrijs</button><button id="graphite">Grafiet</button></div>
+<section class="card"><h2>Zon / PV-opwek</h2><div class="frame"><canvas id="pv-chart"></canvas></div></section>
+<section class="card"><h2>SOC-voorspelling</h2><div class="legend-soc" aria-label="SOC reeksen">Gemeten → lichtere verwachting</div><div class="frame"><canvas id="soc-forecast-chart"></canvas></div></section>
+<section class="card"><h2>BID-prijzen</h2><p>Roze/rood: import · groen: export</p><div class="frame"><canvas id="be-tarief-chart"></canvas></div></section>
+<section class="card history-chart-soc-row"><h2>Historie</h2><div class="history-chart-soc-header"><span class="history-chart-soc-label">SOC</span></div><div class="frame"><canvas id="soc-chart"></canvas></div></section>
+<section class="card" id="power-chart-content"><h2>Actueel</h2><div class="energy-chart-soc-header"><span class="energy-chart-soc-label">SOC</span><strong class="energy-chart-soc-value">64%</strong></div></section>
+<pre id="results" role="status">Gereed voor controle.</pre></main>
+<script src="/chart.umd.js"></script><script src="/src/soc-history-beta.js"></script><script src="/src/soc-native-readout-beta.js"></script><script src="/series-theme-test.js"></script>
+<script>
+const nativeStyle=document.createElement('style');
+// Same variable-based marker declarations used by the production SOC module.
+fetch('/src/soc-legend-beta.css').then(r=>r.text()).then(css=>{nativeStyle.textContent=css;document.head.append(nativeStyle);});
+const common={animation:false,responsive:true,maintainAspectRatio:false,devicePixelRatio:1,plugins:{legend:{display:false}},scales:{x:{type:'linear',min:0,max:4,ticks:{stepSize:1}},y:{min:0,max:100}}};
+const pv=new Chart(document.getElementById('pv-chart'),{type:'bar',data:{datasets:[{label:'PV-opwek',data:[{x:0,y:20},{x:1,y:65},{x:2,y:90},{x:3,y:50},{x:4,y:12}],backgroundColor:'rgba(255,193,7,.2)',borderColor:'#ffc107',borderWidth:1}]},options:structuredClone(common)});
+const soc=new Chart(document.getElementById('soc-forecast-chart'),{type:'line',data:{datasets:[]},options:structuredClone(common)});
+const bids=new Chart(document.getElementById('be-tarief-chart'),{type:'line',data:{datasets:[]},options:{...structuredClone(common),scales:{x:{type:'linear',min:0,max:4},y:{min:0,max:.6}}},plugins:[seriesTest.bidPlugin]});
+const history=new Chart(document.getElementById('soc-chart'),{type:'line',data:{datasets:[{label:'SOC',data:[{x:0,y:55},{x:4,y:55}],borderColor:'#6b3f8d',pointRadius:0}]},options:structuredClone(common)});
+function refresh(){
+ seriesTest.dataset(soc,'measured','Coulombtelling gemeten',[{x:0,y:65},{x:1,y:65},{x:2,y:65}]);
+ seriesTest.dataset(soc,'forecast','Coulombtelling verwachting',[{x:2,y:65},{x:3,y:65},{x:4,y:65}],{borderWidth:1.2});
+ seriesTest.legend(soc);soc.update('none');
+ seriesTest.dataset(history,'measured','Coulombtelling',[{x:0,y:62},{x:4,y:62}]);
+ BESocHistory.legend(history,true,()=>{});history.update('none');
+ BESocNativeReadout.render({soc:'64%',compactSoc:'64%',state:'voorbeeld'});
+ bids.update('none');pv.update('none');
+}
+document.addEventListener('be-dark-change',refresh);refresh();
+document.getElementById('brown').onclick=()=>BETheme.apply(true,'bruingrijs');
+document.getElementById('graphite').onclick=()=>BETheme.apply(true,'grafiet');
+const frame=()=>new Promise(r=>requestAnimationFrame(r)),lines=[],out=document.getElementById('results');
+function check(ok,text){if(!ok)throw Error(text);lines.push('PASS '+text);}
+function rgb(s){if(s.startsWith('#'))return s.slice(1).match(/../g).map(v=>parseInt(v,16));return s.match(/[\d.]+/g).slice(0,3).map(Number);}
+function luminance(a){return a.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);}
+function contrast(a,b){a=luminance(a);b=luminance(b);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);}
+function sample(chart,x,y){const ctx=chart.ctx,cx=chart.scales.x.getPixelForValue(x),cy=chart.scales.y.getPixelForValue(y);const data=ctx.getImageData(Math.floor(cx)-1,Math.floor(cy)-1,3,3).data;let best=[0,0,0,0];for(let i=0;i<data.length;i+=4)if(data[i+3]>best[3])best=Array.from(data.slice(i,i+4));return best;}
+function paper(chart){return rgb(getComputedStyle(chart.canvas.closest('.card')).backgroundColor);}
+function visiblePixel(chart,p){return p.slice(0,3).map((v,i)=>v*p[3]/255+paper(chart)[i]*(1-p[3]/255));}
+document.getElementById('run').onclick=async()=>{
+ lines.length=0;
+ try{
+  for(const style of ['bruingrijs','grafiet']){
+   BETheme.apply(true,style);await frame();await frame();
+   const solar=sample(pv,2,50),measured=sample(soc,1,65),forecast=sample(soc,3,65);
+   check(solar[0]>solar[1]&&solar[1]>solar[2]*1.5&&contrast(visiblePixel(pv,solar),paper(pv))>=3,style+': PV-staafjes zichtbaar goudgeel met minimaal 3:1 contrast');
+   check(measured[2]>measured[0]&&forecast[2]>forecast[0]&&luminance(visiblePixel(soc,forecast))>luminance(visiblePixel(soc,measured)),style+': dunne forecastlijn blijft een lichtere blauwe tint');
+   const measuredColor=rgb(BETheme.seriesColor('coulomb'));
+   check(measured.slice(0,3).every((v,i)=>Math.abs(v-measuredColor[i])<=2)&&JSON.stringify(measuredColor)===JSON.stringify(rgb(getComputedStyle(document.querySelector('.be-soc-series-swatch')).backgroundColor)),style+': forecastlegenda gelijk aan werkelijk getekende lijnkleur');
+   for(const selector of ['[data-be-history-coulomb]','[data-be-coulomb-readout] .be-own-soc-label'])check(JSON.stringify(rgb(getComputedStyle(document.querySelector(selector),'::before').backgroundColor))===JSON.stringify(rgb(BETheme.seriesColor('coulomb'))),style+': legendabolletje '+selector+' gelijk aan lijnkleur');
+   for(const [direction,y] of [['import',.4],['export',.2]]){
+    const px=sample(bids,1,y),target=rgb(BETheme.seriesColor('bid-'+direction));
+    check(px.slice(0,3).every((v,i)=>Math.abs(v-target[i])<=2)&&contrast(visiblePixel(bids,px),paper(bids))>=4.5,style+': dunne BID '+direction+'-lijn heeft eigen kleur en minimaal 4,5:1 contrast');
+   }
+   const data=JSON.stringify(soc.data.datasets.map(d=>d.data));BETheme.setStyle(style==='grafiet'?'bruingrijs':'grafiet');await frame();check(JSON.stringify(soc.data.datasets.map(d=>d.data))===data,style+': wisselen van stijl verandert geen meetgegevens');
+  }
+  BETheme.apply(false);await frame();
+  check(soc.data.datasets[0].borderColor==='#0891b2'&&soc.data.datasets[1].borderColor==='rgba(8,145,178,.55)'&&bids.data.datasets[0].borderColor==='#b65c72','Uitschakelen herstelt de originele lichte serie-kleuren');
+  check(getComputedStyle(document.querySelector('.be-soc-series-swatch')).backgroundColor==='rgb(8, 145, 178)','Legenda herstelt ook in lichte modus');
+  check(document.documentElement.scrollWidth<=innerWidth,'Geen horizontale overloop, ook op smartphone');
+  BETheme.apply(true,'grafiet');await frame();out.className='pass';out.textContent=lines.length+' controles geslaagd\n'+lines.join('\n');
+ }catch(e){out.textContent=lines.join('\n')+'\nFAIL '+e.message;throw e;}
+};
+</script></body></html>
