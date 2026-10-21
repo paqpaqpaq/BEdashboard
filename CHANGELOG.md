@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.7 — 21 oktober 2026
+
+- Aanpassingen en keuze in dark mode
+
 ## 6.1.6 — 21 oktober 2026
 
 - Visuele weergave fix in historie
