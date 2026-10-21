@@ -1,16 +1,19 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=__dirname+'/../',full=fs.readFileSync(root+'Balansenergie-All-in.user.js','utf8');
 new vm.Script(full);
-assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.1.4.user.js','utf8'));
-assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.1.4.txt','utf8'));
+assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.1.5.user.js','utf8'));
+assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.1.5.txt','utf8'));
 const meta=fs.readFileSync(root+'Balansenergie-All-in.meta.js','utf8');
 assert.equal(meta,full.slice(0,full.indexOf('// ==/UserScript==')+'// ==/UserScript=='.length)+'\n');
 assert.match(meta,/@namespace\s+paq\.balansenergie\n/);
-assert.match(meta,/@version\s+6\.1\.4\n/);
+assert.match(meta,/@version\s+6\.1\.5\n/);
 assert(!/BETA|v6\.0-beta/.test(meta));
 assert.match(meta,/@updateURL\s+https:\/\/raw\.githubusercontent\.com\/paqpaqpaq\/BEdashboard\/main\/Balansenergie-All-in\.meta\.js/);
 const bid=fs.readFileSync(root+'src/bid.js','utf8'),soc=fs.readFileSync(root+'src/coulomb-beta.js','utf8');
 assert(full.includes(bid));assert(full.includes(soc));
+const guard=fs.readFileSync(root+'src/soc-display-guard.js','utf8');
+assert(full.includes(guard));
+assert(full.indexOf(guard)<full.indexOf('function dashboardCode()'));
 assert(!/192\.168\.|paqha\.duckdns|eyJhbGci/.test(full));
 
 const resolver=full.slice(full.indexOf('  var klantMatch ='),full.indexOf('  var beNativeFetch ='));
