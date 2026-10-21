@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.5 — 21 oktober 2026
+
+- kleine bugfix weergave
+
 ## 6.1.4 — 21 oktober 2026
 
 - Dubbele legenda voor Coulombtelling in/uit verwijderd; de bestaande aan/uitknop blijft beschikbaar.
