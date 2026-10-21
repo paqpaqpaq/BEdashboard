@@ -13,6 +13,13 @@
   function legend(chart){
     const canvas=chart.canvas;
     let row=document.querySelector('[data-be-soc-legend="'+canvas.id+'"]');
+    if(window.BESocHistory?.active(chart)){
+      document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
+      window.BESocHistory.legend(chart,cfg.show_kwh!==false,()=>{
+        cfg.show_kwh=cfg.show_kwh===false;localStorage.setItem(key,JSON.stringify(cfg));render();
+      });
+      return;
+    }
     // Actueel already has the full-size Coulomb readout beside the SOC value.
     if(canvas.id==='soc-chart'){
       document.querySelectorAll('[data-be-soc-legend="soc-chart"]').forEach(node=>node.remove());
