@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.9
+// @name         Balansenergie All-in v6.1.9.1
 // @namespace    paq.balansenergie
-// @version      6.1.9
+// @version      6.1.9.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -399,7 +399,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.9'
+    '6.1.9.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11694,7 +11694,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.1.9' +
+        'Instellingen v6.1.9.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12132,7 +12132,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.1.9. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.9.1. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12440,7 +12440,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.9</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.9.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13845,11 +13845,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.1.9. BE data only. */
+/* Coulombtelling in/uit — 6.1.9.1. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage619)return;window.__beCoulombPage619=true;
+    if(window.__beCoulombPage6191)return;window.__beCoulombPage6191=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -14195,6 +14195,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 (function(root){
   'use strict';
   const active=chart=>chart.canvas?.id==='soc-chart'&&/\/customer\/[^/]+\/history\/?$/.test(location.pathname);
+  function linuxChromium(){
+    const ua=root.navigator?.userAgent||'';
+    return /Linux|X11/.test(ua)&&!/Android/.test(ua)&&/(?:Chrome|Chromium|Edg)\//.test(ua);
+  }
   function range(chart){
     // Read the current native input, never the previous, already expanded axis
     // or parsed metadata from the period that was just replaced.
@@ -14211,8 +14215,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     let min=Infinity,max=-Infinity;
     for(const d of native){
       if((d.xAxisID||'x')!==axis)continue;
-      for(let i=0;i<(d.data?.length||0);i++){
-        const p=d.data[i],x=time(Array.isArray(p)?p[0]:p&&typeof p==='object'?p.x:chart.data.labels?.[i]);
+      const data=linuxChromium()?(d._data||d.data):d.data;
+      for(let i=0;i<(data?.length||0);i++){
+        const p=data[i],x=time(Array.isArray(p)?p[0]:p&&typeof p==='object'?p.x:chart.data.labels?.[i]);
         if(Number.isFinite(x)){min=Math.min(min,x);max=Math.max(max,x);}
       }
     }
@@ -14221,6 +14226,54 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     if(Number.isFinite(end))max=end;
     return Number.isFinite(min)&&Number.isFinite(max)&&min<=max?{min,max}:null;
   }
+  // Chart.js' generic decimator mixes null boundaries into pixel buckets and
+  // moves their timestamps. Keep each uninterrupted run separate on Linux
+  // Chromium, retaining original first/min/max/last samples per screen column.
+  function project(chart,points,extent){
+    if(!active(chart)||!linuxChromium())return points;
+    const width=Math.max(1,Math.ceil(chart.chartArea?.width||chart.width||chart.canvas?.clientWidth||1000));
+    if(points.length<=width*4||!extent||!(extent.max>extent.min))return points;
+    const out=[];let bucket=null,group=[];
+    function flush(){
+      if(!group.length)return;
+      let min=0,max=0;
+      for(let i=1;i<group.length;i++){if(group[i].y<group[min].y)min=i;if(group[i].y>group[max].y)max=i;}
+      [...new Set([0,min,max,group.length-1])].sort((a,b)=>a-b).forEach(i=>out.push(group[i]));group=[];
+    }
+    for(const p of points){
+      if(!Number.isFinite(p.x))continue;
+      if(!Number.isFinite(p.y)){
+        flush();bucket=null;
+        const gap=p.y===null?p:{x:p.x,y:null};
+        if(out.length&&out[out.length-1].y===null)out[out.length-1]=gap;else out.push(gap);
+        continue;
+      }
+      const column=Math.floor((p.x-extent.min)/(extent.max-extent.min)*width);
+      if(column!==bucket){flush();bucket=column;}
+      group.push(p);
+    }
+    flush();return out;
+  }
+  const controllers=new WeakMap();
+  const plugin={id:'beSocHistoryRendering',beforeElementsUpdate(chart){
+    const protect=active(chart)&&linuxChromium();
+    chart.data.datasets.forEach((d,index)=>{
+      if(!d.beOwnSOC)return;
+      const controller=chart.getDatasetMeta(index)?.controller;
+      if(!protect){
+        if(controller&&controllers.has(controller)){controller.supportsDecimation=controllers.get(controller);controllers.delete(controller);}
+        return;
+      }
+      // The built-in decimator runs first. Restore only our own original input
+      // before Chart.js builds elements; leave native SOC and its options alone.
+      if(d._data&&Object.getOwnPropertyDescriptor(d,'data')?.get){
+        const original=d._data;delete d._decimated;delete d._data;
+        Object.defineProperty(d,'data',{configurable:true,enumerable:true,writable:true,value:original});
+      }
+      if(controller){if(!controllers.has(controller))controllers.set(controller,controller.supportsDecimation);controller.supportsDecimation=false;}
+      d.spanGaps=false;d.stepped=false;d.tension=0;
+    });
+  }};
   function legend(chart,visible,toggle){
     const frame=chart.canvas.closest('.history-chart-soc-row');
     const header=frame?.querySelector('.history-chart-soc-header');
@@ -14246,7 +14299,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     button.title=visible?'Coulombtelling verbergen':'Coulombtelling tonen';
     button.onclick=toggle;
   }
-  root.BESocHistory={active,range,legend};
+  root.BESocHistory={active,range,project,plugin,legend};
 })(window);
 
 (async function () {
@@ -14469,7 +14522,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.9',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.9.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14574,7 +14627,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       const a=history?(range?.min??Infinity):(chart.scales.x?.min??0)-120000;
       const b=history?(range?.max??-Infinity):(chart.scales.x?.max??Infinity)+120000;
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
-      dataset(chart,'measured','Coulombtelling in/uit',(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)})),{yAxisID:axis,parsing:false});
+      let points=(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)}));
+      if(history)points=window.BESocHistory.project(chart,points,range);
+      dataset(chart,'measured','Coulombtelling in/uit',points,{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
       const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2});}
     }
@@ -14591,7 +14646,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   let renderPending=false,started=false;
   function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;register();render();},0);}
   let library;
-  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,window.BESocHistory.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
   new MutationObserver(records=>{
     const added=records.flatMap(r=>Array.from(r.addedNodes));
     if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();
