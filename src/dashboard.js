@@ -193,6 +193,10 @@ html[data-be-dark="aan"] :is(.sidebar,.sidenav,#mobileSidebar) a:is(.active,[ari
 html[data-be-dark="aan"] #be-panelen tr:nth-child(odd){background:var(--be-theme-paper)!important}
 html[data-be-dark="aan"] #be-panelen tr:nth-child(even){background:var(--be-theme-raised)!important}
 html[data-be-dark="aan"] #be-panelen details{background:var(--be-theme-paper)!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]) :is([data-be-tg-track],[data-be-track]){background:#65615b!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin])[aria-pressed="true"] :is([data-be-tg-track],[data-be-track]){background:#287dbb!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]) :is([data-be-tg-thumb],[data-be-thumb]){background:#fff!important;box-shadow:0 1px 3px #0004!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]):focus-visible{outline:2px solid #429ee8!important;outline-offset:4px;border-radius:4px}
 html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-cap-surface:var(--be-theme-paper);--be-cap-control:var(--be-theme-raised);--be-cap-muted:var(--be-theme-muted);--be-cap-accent:var(--be-theme-control)}
 `;
     base.textContent=css;document.documentElement.appendChild(base);
@@ -235,6 +239,77 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   init();
 })();
 
+/* Short-lived observations of the running quarter; settled prices and BID history are separate. */
+(function () {
+  'use strict';
+  if(window.BECurrentTariffCache)return;
+  var TTL=30*60*1000,QUARTER=900000,PREFIX='be_current_tariffs_v1:',memory=new Map(),expires=new Map(),timer;
+  var fields=['onbalans_import','onbalans_export'];
+  function write(id,rows){
+    memory.set(id,rows);
+    var next=Infinity;Object.keys(rows).forEach(function(key){
+      fields.forEach(function(field){var q=rows[key].quotes[field];if(q)next=Math.min(next,q.at+TTL);});
+      rows[key].samples.forEach(function(s){next=Math.min(next,s.t+TTL);});
+    });expires.set(id,next);
+    try{if(Object.keys(rows).length)localStorage.setItem(PREFIX+id,JSON.stringify(rows));else localStorage.removeItem(PREFIX+id);}catch(_){}
+  }
+  function read(id){
+    var now=Date.now();if(memory.has(id)&&now<expires.get(id))return memory.get(id);
+    var rows=memory.get(id)||{},clean={};
+    try{rows=JSON.parse(localStorage.getItem(PREFIX+id)||'null')||rows;}catch(_){}
+    Object.keys(rows).forEach(function(key){
+      var p=rows[key];if(!p||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER)return;
+      var quotes={};fields.forEach(function(field){
+        var q=p.quotes&&p.quotes[field];
+        if(q&&Number.isFinite(q.value)&&Number.isFinite(q.at)&&q.at<=now&&now-q.at<TTL)quotes[field]={value:q.value,at:q.at};
+      });
+      if(!Object.keys(quotes).length)return;
+      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,
+        samples:(Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
+    });
+    write(id,clean);return clean;
+  }
+  function schedule(){
+    clearTimeout(timer);var next=Infinity;
+    expires.forEach(function(at){next=Math.min(next,at);});
+    if(Number.isFinite(next))timer=setTimeout(function(){memory.forEach(function(_,id){read(id);});schedule();},Math.max(1,next-Date.now()));
+  }
+  function remember(id,payload){
+    if(!id||!payload||!Array.isArray(payload.prices))return;
+    var now=Date.now(),rows=read(id);
+    payload.prices.forEach(function(p){
+      if(!p||p.carried||p.temporaryTariffs||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER||p.start>now||now>=p.end)return;
+      var row=rows[p.start]||{start:p.start,end:p.end,quotes:{},samples:[]},v=p.values||{};
+      var revision=Date.parse(p.updatedAt);
+      if(Number.isFinite(revision)&&Number.isFinite(row.sourceUpdatedAt)&&revision<row.sourceUpdatedAt)return;
+      if(Number.isFinite(revision))row.sourceUpdatedAt=revision;
+      var discovery=(payload.afrrDiscovery||[]).find(function(d){return d.start===p.start;});
+      row.afrr=Array.isArray(payload.afrrEventIsps)?payload.afrrEventIsps.indexOf(p.start)!==-1:!!p.afrr;
+      row.directions=discovery&&Array.isArray(discovery.directions)?discovery.directions.slice():Array.isArray(p.directions)?p.directions.slice():null;
+      fields.forEach(function(field){if(Number.isFinite(v[field]))row.quotes[field]={value:v[field],at:now};});
+      var imbalance=Array.isArray(row.directions)?!row.directions.length:!row.afrr;
+      if(imbalance&&fields.every(function(field){return Number.isFinite(v[field]);})){
+        var last=row.samples[row.samples.length-1];
+        if(!last||last.ki!==v.onbalans_import||last.ke!==v.onbalans_export)row.samples.push({t:now,ki:v.onbalans_import,ke:v.onbalans_export,marktImport:'onbalans',marktExport:'onbalans',temporaryTariffs:true});
+      }
+      if(Object.keys(row.quotes).length)rows[p.start]=row;
+    });
+    write(id,rows);schedule();
+  }
+  function get(id,start){return id?read(id)[start]||null:null;}
+  function restore(id,source){
+    var rows=(source||[]).filter(function(p){return !p.temporaryTariffs;}),saved=id?read(id):{};
+    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,values:{},provisional:true,temporaryTariffs:true});});
+    return rows.sort(function(a,b){return a.start-b.start;});
+  }
+  try{Array.from({length:localStorage.length},function(_,i){return localStorage.key(i);}).filter(function(key){return key&&key.indexOf(PREFIX)===0;}).forEach(function(key){read(key.slice(PREFIX.length));});}catch(_){}
+  window.addEventListener('storage',function(event){if(event.key&&event.key.indexOf(PREFIX)===0){var id=event.key.slice(PREFIX.length);memory.delete(id);expires.delete(id);read(id);schedule();}});
+  window.BECurrentTariffCache={remember:remember,get:get,restore:restore};schedule();
+})();
+
+
+
+
 (function () {
   'use strict';
 
@@ -258,7 +333,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.8'
+    '6.1.9'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -617,7 +692,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var nu = Date.now();
       if (p.start <= nu && nu < p.end) {
         var r = actueelPrijsRij(snapshot);
-        if (Number.isFinite(r.ki) && Number.isFinite(r.ke)) {
+        if (Number.isFinite(r.ki) && Number.isFinite(r.ke) && !r.historischImport && !r.historischExport) {
           var last = verloop[verloop.length - 1];
           if (!last || last.ki !== r.ki || last.ke !== r.ke ||
               last.marktImport !== r.marktImport || last.marktExport !== r.marktExport) {
@@ -638,12 +713,19 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var ai = Array.isArray(ds) ? ds.indexOf('import') !== -1 : !!p.afrr;
     var ae = Array.isArray(ds) ? ds.indexOf('export') !== -1 : !!p.afrr;
     var saved=Object.assign({},beLokalePrijsHistorie[p.start]||{},p.bewaardeTarieven||{});
+    var cached=window.BECurrentTariffCache.get(KLANT,p.start),live=p.start<=Date.now()&&Date.now()<p.end;
+    var verloop=(p.temporaryTariffs?[]:p.verloop||[]).filter(function(o){return !o.temporaryTariffs||Date.now()-o.t<30*60*1000;});
+    if(cached)verloop=Array.from(new Map(verloop.concat(cached.samples).map(function(o){return [o.t,o];})).values()).sort(function(a,b){return a.t-b.t;});
+    ['onbalans_import','onbalans_export'].forEach(function(field){
+      if(live||p.temporaryTariffs)delete saved[field];
+      if(cached&&cached.quotes[field])saved[field]=cached.quotes[field].value;
+    });
     var ik=ai?'afrr_import':'onbalans_import',ek=ae?'afrr_export':'onbalans_export';
     var ki=v[ik],ke=v[ek],hi=false,he=false;
     if(!Number.isFinite(ki) && Number.isFinite(saved[ik])){ki=saved[ik];hi=true;}
     if(!Number.isFinite(ke) && Number.isFinite(saved[ek])){ke=saved[ek];he=true;}
     // Recorded live observations can repair a same-market quote as well.
-    (p.verloop || []).slice().reverse().forEach(function(o){
+    verloop.slice().reverse().forEach(function(o){
       if(!Number.isFinite(ki) && o.marktImport===(ai?'aFRR':'onbalans') && Number.isFinite(o.ki)){ki=o.ki;hi=true;}
       if(!Number.isFinite(ke) && o.marktExport===(ae?'aFRR':'onbalans') && Number.isFinite(o.ke)){ke=o.ke;he=true;}
     });
@@ -651,7 +733,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       marktImport:ai?'aFRR':'onbalans',marktExport:ae?'aFRR':'onbalans',ki:ki,ke:ke,
       historischImport:hi,historischExport:he,
       provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
-      carried:!!p.carried,sourceStart:p.sourceStart,verloop:p.verloop||[],values:Object.assign({},v)};
+      carried:!!p.carried,sourceStart:p.sourceStart,verloop:verloop,values:Object.assign({},v)};
   }
 
   async function beVerwerkBron(u, j) {
@@ -2326,7 +2408,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   function tariefKwartieren() {
     var KW = 15 * 60 * 1000;
     var nu = Date.now();
-    if (beLivePrijsRows && beLivePrijsRows.length) {
+    beLivePrijsRows=window.BECurrentTariffCache.restore(KLANT,beLivePrijsRows);
+    if (beLivePrijsRows) {
       beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,nu);
       actueelRijen=beLivePrijsRows.map(actueelPrijsRij).filter(function(r){return Number.isFinite(r.ki)||Number.isFinite(r.ke);});
     }
@@ -2582,8 +2665,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var bePrijsHydratie = null;
   function beHerstelPrijsVerloop(){
     if(bePrijsHydratie)return;
+    beLivePrijsRows=window.BECurrentTariffCache.restore(KLANT,beLivePrijsRows);
+    if(beLivePrijsRows.length&&isActueelPagina())actueelPasPrijzenToe({prices:beLivePrijsRows});
     bePrijsHydratie=beLeesBron('prijzen').then(function(saved){
-      beLivePrijsRows=beVoegPrijzenSamen(saved.rows||[],beLivePrijsRows);
+      beLivePrijsRows=window.BECurrentTariffCache.restore(KLANT,beVoegPrijzenSamen(saved.rows||[],beLivePrijsRows));
       beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
       if(isActueelPagina())actueelPasPrijzenToe({prices:beLivePrijsRows});
     }).catch(function(e){console.warn('[BE prijsarchief lezen]',e.message);});
@@ -2605,6 +2690,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   }
   function beOntvangLivePrijzen(j) {
     if(!j||!Array.isArray(j.prices))return;
+    window.BECurrentTariffCache.remember(KLANT,j);
+    beLivePrijsRows=window.BECurrentTariffCache.restore(KLANT,beLivePrijsRows);
     document.dispatchEvent(new CustomEvent('be-afrr-source',{detail:j}));
     beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
     beLivePrijsRows=beVoegPrijzenSamen(beLivePrijsRows,j.prices,j.afrrEventIsps,j.afrrDiscovery);
@@ -10066,6 +10153,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
           p.then(function (resp) {
             if (!resp.ok) return;
             return resp.clone().json().then(function (j) {
+              window.BECurrentTariffCache.remember(KLANT,j);
               if (isActueelPagina()) beOntvangLivePrijzen(j);
               beBewaarPrijzenLater(j);
             });
@@ -11540,7 +11628,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.1.8' +
+        'Instellingen v6.1.9' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11978,7 +12066,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.1.8. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.9. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12265,7 +12353,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         @media(max-width:767px){
           .top{position:static;background:var(--bg);padding:8px 0 12px}.mobile-menu{font-weight:600}
           .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:clip}
-          .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;width:100%}
+          .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px;width:100%}
           button,select,input[type=date],input[type=month],input[type=number]{min-height:44px}.fields select,.fields input,.toggles select,.settings-grid input,.settings-grid select{font-size:16px;min-width:0;max-width:100%}
           .period-switch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%}.period-switch button{font-size:12px;padding:6px 2px}
           .period-navigation{display:grid;grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:4px;width:100%}.period-navigation label{min-width:0}.period-navigation:has(#from-field:not([hidden])){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -12286,7 +12374,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.8</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.9</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12324,10 +12412,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         '<p>Btw of EB uit is een vergelijking, geen factuurbedrag. Netto niet terugleveren maakt btw niet automatisch nul. De opslag van 2 cent inclusief btw is al verwerkt in de bron; we tellen hem niet nogmaals op. Ontbrekende jaartarieven of hogere verbruiksschijven geven geen verzonnen bedrag.</p>'+
         '<p><a href="https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen" target="_blank" rel="noopener noreferrer">ACM: salderen</a> · <a href="https://download.belastingdienst.nl/belastingdienst/docs/handboek_milieubelast_2026_ml0301z61fd.pdf" target="_blank" rel="noopener noreferrer">Belastingdienst: Handboek 2026, 7.4.2 en 7.8.14</a></p>';
       $('refresh').onclick = function () { cache.clear(); load(); };
-      $('close').onclick = close; $('csv').onclick = exportCSV;
+      $('csv').onclick = exportCSV;
       $('mobile-menu').onclick=function(){
         var toggle=document.querySelector('[data-bs-target="#mobileSidebar"]');
-        close();
         if(toggle&&toggle.getAttribute('aria-expanded')!=='true')toggle.click();
       };
       ['pointerover','pointermove','focusin'].forEach(function(event){$('content').addEventListener(event,function(e){
@@ -12829,7 +12916,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       addMenu();if(!navAnchor&&!fallback){fallback=document.createElement('a');fallback.href=HASH;fallback.textContent='€ Financieel';fallback.style.cssText='position:fixed;z-index:1041;left:12px;bottom:20px;padding:12px 16px;border-radius:10px;background:#65419d;color:#fff;font:600 14px system-ui;text-decoration:none;box-shadow:0 3px 12px #0003';fallback.onclick=function(e){e.preventDefault();open(true);};document.body.appendChild(fallback);}
     },1500);
     document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(opened&&a&&!navLinks.includes(a)&&a!==fallback&&!root.contains(a)&&a.getAttribute('href')!==HASH)close();},true);
-    document.addEventListener('keydown',function(e){if(opened&&e.key==='Escape'){e.preventDefault();close();}});
     document.addEventListener('wheel',function(e){
       if(!opened||!root||e.ctrlKey||!e.deltaY||e.clientX>=root.getBoundingClientRect().left)return;
       var factor=e.deltaMode===1?18:e.deltaMode===2?(root.clientHeight||innerHeight):1;

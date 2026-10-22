@@ -193,6 +193,10 @@ html[data-be-dark="aan"] :is(.sidebar,.sidenav,#mobileSidebar) a:is(.active,[ari
 html[data-be-dark="aan"] #be-panelen tr:nth-child(odd){background:var(--be-theme-paper)!important}
 html[data-be-dark="aan"] #be-panelen tr:nth-child(even){background:var(--be-theme-raised)!important}
 html[data-be-dark="aan"] #be-panelen details{background:var(--be-theme-paper)!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]) :is([data-be-tg-track],[data-be-track]){background:#65615b!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin])[aria-pressed="true"] :is([data-be-tg-track],[data-be-track]){background:#287dbb!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]) :is([data-be-tg-thumb],[data-be-thumb]){background:#fff!important;box-shadow:0 1px 3px #0004!important}
+html[data-be-dark="aan"] :is(#be-tariefgrafiek-knop,[data-be-actueel-allin]):focus-visible{outline:2px solid #429ee8!important;outline-offset:4px;border-radius:4px}
 html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-cap-surface:var(--be-theme-paper);--be-cap-control:var(--be-theme-raised);--be-cap-muted:var(--be-theme-muted);--be-cap-accent:var(--be-theme-control)}
 `;
     base.textContent=css;document.documentElement.appendChild(base);

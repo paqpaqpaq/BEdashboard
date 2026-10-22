@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.9 — 22 oktober 2026
+
+- Duidelijkere schakelaars in dark mode, tijdelijke tariefcache en navigatie in Financieel.
+
 ## 6.1.8 — 22 oktober 2026
 
 - visuele aanpassingen bids, en smartphone navigatie

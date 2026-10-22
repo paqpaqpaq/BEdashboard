@@ -1,5 +1,8 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(__dirname+'/../src/financial-beta.js','utf8');
+assert(!source.includes("button('Sluiten"),'Financial has no close-page button');
+assert(!source.includes("$('close')"),'mounting the page must not bind a removed element');
+assert(!source.includes("e.key==='Escape'){e.preventDefault();close();"),'Escape must not close a normal page');
 function node(parent=null){
  const properties=new Map(),attributes=new Map();
  const el={parentElement:parent,children:[],inert:false,isConnected:true,hidden:false,className:'',

@@ -1,4 +1,4 @@
-  /* Financieel v6.1.8. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.9. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -285,7 +285,7 @@
         @media(max-width:767px){
           .top{position:static;background:var(--bg);padding:8px 0 12px}.mobile-menu{font-weight:600}
           .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:clip}
-          .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;width:100%}
+          .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px;width:100%}
           button,select,input[type=date],input[type=month],input[type=number]{min-height:44px}.fields select,.fields input,.toggles select,.settings-grid input,.settings-grid select{font-size:16px;min-width:0;max-width:100%}
           .period-switch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%}.period-switch button{font-size:12px;padding:6px 2px}
           .period-navigation{display:grid;grid-template-columns:44px minmax(0,1fr) 44px 44px;gap:4px;width:100%}.period-navigation label{min-width:0}.period-navigation:has(#from-field:not([hidden])){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -306,7 +306,7 @@
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.8</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.9</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -344,10 +344,9 @@
         '<p>Btw of EB uit is een vergelijking, geen factuurbedrag. Netto niet terugleveren maakt btw niet automatisch nul. De opslag van 2 cent inclusief btw is al verwerkt in de bron; we tellen hem niet nogmaals op. Ontbrekende jaartarieven of hogere verbruiksschijven geven geen verzonnen bedrag.</p>'+
         '<p><a href="https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen" target="_blank" rel="noopener noreferrer">ACM: salderen</a> · <a href="https://download.belastingdienst.nl/belastingdienst/docs/handboek_milieubelast_2026_ml0301z61fd.pdf" target="_blank" rel="noopener noreferrer">Belastingdienst: Handboek 2026, 7.4.2 en 7.8.14</a></p>';
       $('refresh').onclick = function () { cache.clear(); load(); };
-      $('close').onclick = close; $('csv').onclick = exportCSV;
+      $('csv').onclick = exportCSV;
       $('mobile-menu').onclick=function(){
         var toggle=document.querySelector('[data-bs-target="#mobileSidebar"]');
-        close();
         if(toggle&&toggle.getAttribute('aria-expanded')!=='true')toggle.click();
       };
       ['pointerover','pointermove','focusin'].forEach(function(event){$('content').addEventListener(event,function(e){
@@ -849,7 +848,6 @@
       addMenu();if(!navAnchor&&!fallback){fallback=document.createElement('a');fallback.href=HASH;fallback.textContent='€ Financieel';fallback.style.cssText='position:fixed;z-index:1041;left:12px;bottom:20px;padding:12px 16px;border-radius:10px;background:#65419d;color:#fff;font:600 14px system-ui;text-decoration:none;box-shadow:0 3px 12px #0003';fallback.onclick=function(e){e.preventDefault();open(true);};document.body.appendChild(fallback);}
     },1500);
     document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(opened&&a&&!navLinks.includes(a)&&a!==fallback&&!root.contains(a)&&a.getAttribute('href')!==HASH)close();},true);
-    document.addEventListener('keydown',function(e){if(opened&&e.key==='Escape'){e.preventDefault();close();}});
     document.addEventListener('wheel',function(e){
       if(!opened||!root||e.ctrlKey||!e.deltaY||e.clientX>=root.getBoundingClientRect().left)return;
       var factor=e.deltaMode===1?18:e.deltaMode===2?(root.clientHeight||innerHeight):1;
