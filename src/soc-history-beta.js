@@ -61,7 +61,19 @@
     flush();return out;
   }
   const controllers=new WeakMap();
-  const plugin={id:'beSocHistoryRendering',beforeElementsUpdate(chart){
+  const plugin={id:'beSocHistoryRendering',beforeUpdate(chart){
+    if(!active(chart))return;
+    // The native SOC and our archive have independent timestamps. With
+    // normalized:true Chart.js takes time ticks from the first sorted dataset
+    // only (our foreground line), hiding morning ticks when it starts later.
+    const options=chart.config?.options||chart.options;
+    if(options)options.normalized=false;
+    // Scale.init already ran for this update; also correct its cached flag so
+    // the very first render uses all series instead of waiting for a refresh.
+    for(const scale of Object.values(chart.scales||{})){
+      if(scale.axis==='x'&&'_normalized' in scale)scale._normalized=false;
+    }
+  },beforeElementsUpdate(chart){
     const protect=active(chart)&&linuxChromium();
     chart.data.datasets.forEach((d,index)=>{
       if(!d.beOwnSOC)return;

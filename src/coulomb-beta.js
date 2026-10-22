@@ -366,7 +366,19 @@
     flush();return out;
   }
   const controllers=new WeakMap();
-  const plugin={id:'beSocHistoryRendering',beforeElementsUpdate(chart){
+  const plugin={id:'beSocHistoryRendering',beforeUpdate(chart){
+    if(!active(chart))return;
+    // The native SOC and our archive have independent timestamps. With
+    // normalized:true Chart.js takes time ticks from the first sorted dataset
+    // only (our foreground line), hiding morning ticks when it starts later.
+    const options=chart.config?.options||chart.options;
+    if(options)options.normalized=false;
+    // Scale.init already ran for this update; also correct its cached flag so
+    // the very first render uses all series instead of waiting for a refresh.
+    for(const scale of Object.values(chart.scales||{})){
+      if(scale.axis==='x'&&'_normalized' in scale)scale._normalized=false;
+    }
+  },beforeElementsUpdate(chart){
     const protect=active(chart)&&linuxChromium();
     chart.data.datasets.forEach((d,index)=>{
       if(!d.beOwnSOC)return;
@@ -633,7 +645,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.9.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }

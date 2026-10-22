@@ -78,4 +78,20 @@ for(const ua of [
   assert.equal(JSON.stringify(chart.data),before);
   assert.deepEqual(controllers.map(c=>c.supportsDecimation),supports);
 }
-console.log('PASS Linux Chromium history: dense projection, original timestamps and extrema, exact gap boundaries, resize, refresh, native decimation isolation, navigation restore; Mac/iPhone and other platforms unchanged.');
+// Every platform needs independent time sampling for the native and own line.
+for(const ua of [linux,'Macintosh Version/18.0 Safari/605.1.15','iPhone Version/18.0 Mobile/15E148 Safari/604.1']){
+  const {api:other,context:ctx}=setup(ua);
+  const config={options:{normalized:true}},scales={x:{axis:'x',_normalized:true},y:{axis:'y',_normalized:true}};
+  const chart={canvas:{id:'soc-chart'},config,scales};
+  other.plugin.beforeUpdate(chart);
+  assert.equal(config.options.normalized,false);
+  assert.equal(scales.x._normalized,false,'first render also uses independent time sampling');
+  assert.equal(scales.y._normalized,true,'no changes to vertical scale');
+  for(const path of ['/customer/test/','/customer/test/forecast/']){
+    ctx.location.pathname=path;config.options.normalized=true;scales.x._normalized=true;
+    other.plugin.beforeUpdate(chart);assert.equal(config.options.normalized,true);assert.equal(scales.x._normalized,true);
+  }
+  ctx.location.pathname='/customer/test/history/';chart.canvas.id='battery-chart';
+  other.plugin.beforeUpdate(chart);assert.equal(config.options.normalized,true,'other charts stay untouched');
+}
+console.log('PASS history: Linux Chromium reduction preserves timestamps, extrema and exact gaps; native decimation isolation; all platforms keep independent time sampling; other pages/charts unchanged.');
