@@ -139,6 +139,7 @@
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
+          dataset.borderWidth=window.BETheme?.isDark()?1:1.5;
           dataset.borderColor=bidColour(direction);
           dataset.backgroundColor=dataset.borderColor;
         }

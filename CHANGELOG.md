@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.8 — 22 oktober 2026
+
+- visuele aanpassingen bids, en smartphone navigatie
+
 ## 6.1.7 — 21 oktober 2026
 
 - Aanpassingen en keuze in dark mode

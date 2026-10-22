@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.1.7
+// @name         Balansenergie All-in v6.1.8
 // @namespace    paq.balansenergie
-// @version      6.1.7
+// @version      6.1.8
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -324,7 +324,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.1.7'
+    '6.1.8'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11606,7 +11606,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.1.7' +
+        'Instellingen v6.1.8' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12044,7 +12044,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.1.7. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.1.8. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12285,7 +12285,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var layoutTimer, monthNow = iso(new Date()).slice(0, 7), inertNodes = [], oldHash = '', previousFocus;
     var ownRefreshPromise=null, ownRefreshAt=0, expandedMonth=null, chartUnit='eur', chartPoints=[], tooltipPinned=false, tooltipIndex=-1;
     var monthAnimation=null,monthToggleSerial=0,menuActiveBefore=[],navLinks=[],menuSerial=0;
-    var mobileChrome=[],mobileHeader=null,mobileSidebar=null;
+    var mobileChrome=[],mobileHeader=null,mobileSidebar=null,pageScrollBefore=null;
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     function fmt(v, decimals) { return Number(v).toLocaleString('nl-NL', {minimumFractionDigits: decimals || 0, maximumFractionDigits: decimals == null ? 1 : decimals}); }
     function money(v) { return v === null || !Number.isFinite(v) ? 'Nog onbekend' : new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR'}).format(Math.abs(v) < 0.005 ? 0 : v); }
@@ -12329,7 +12329,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         .stream-result{display:flex;align-items:baseline;gap:8px 20px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}.stream-result>span:first-child{font-weight:650;font-size:13px}.stream-result>strong{font-size:24px;font-variant-numeric:tabular-nums}.stream-result strong small{font-size:13px;font-weight:600}.stream-result>span:last-child{font-size:11px;color:var(--muted)}.cache-table .net-stream{font-size:15px;font-weight:750;background:var(--paper)}.day-result-label{pointer-events:none}.month-progress{display:block;font-size:10px;font-weight:400;line-height:1.5;white-space:normal;margin-top:4px;color:var(--muted)}
 
         @media(max-width:767px){
-          .top{position:sticky;top:0;z-index:4;background:var(--bg);padding:8px 0 12px}.mobile-menu{font-weight:600}
+          .top{position:static;background:var(--bg);padding:8px 0 12px}.mobile-menu{font-weight:600}
           .page{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));overflow-x:clip}
           .wrap,.panel,.fields,.filters{min-width:0;max-width:100%}.top h1{font-size:21px}.top .actions{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;width:100%}
           button,select,input[type=date],input[type=month],input[type=number]{min-height:44px}.fields select,.fields input,.toggles select,.settings-grid input,.settings-grid select{font-size:16px;min-width:0;max-width:100%}
@@ -12352,7 +12352,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.7</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.1.8</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}${button('Sluiten ×','id="close"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12417,10 +12417,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       settingsUI(); updateFilters(); theme();
     }
     function toggleMonth(key){
-      var scroll=root.scrollTop,closing=expandedMonth===key,token=++monthToggleSerial;
+      var scroll=innerWidth<768?window.scrollY:root.scrollTop,closing=expandedMonth===key,token=++monthToggleSerial;
       expandedMonth=closing?null:key;
       if(monthAnimation){monthAnimation.cancel();monthAnimation=null;}
-      function redraw(){render();var row=$('month-row-'+key);if(row)row.focus({preventScroll:true});root.scrollTop=scroll;}
+      function redraw(){render();var row=$('month-row-'+key);if(row)row.focus({preventScroll:true});if(innerWidth<768)window.scrollTo(window.scrollX,scroll);else root.scrollTop=scroll;}
       if(!closing)redraw();
       var detail=$('reveal-'+key),reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if(!detail||!detail.animate||reduce){if(closing)redraw();return;}
@@ -12770,21 +12770,31 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       mobileChrome.forEach(function(pair){var node=pair[0];pair[1].forEach(function(p){if(p[1])node.style.setProperty(p[0],p[1],p[2]);else node.style.removeProperty(p[0]);});});
       mobileChrome=[];mobileHeader=null;mobileSidebar=null;
     }
+    function showBackground(show){
+      inertNodes.forEach(function(pair){
+        var style=pair[0].style;
+        if(!show){
+          if(!pair[2])pair[2]=[style.getPropertyValue('display'),style.getPropertyPriority('display')];
+          style.setProperty('display','none','important');
+        }else if(pair[2]){
+          if(pair[2][0])style.setProperty('display',pair[2][0],pair[2][1]);else style.removeProperty('display');
+          pair.pop();
+        }
+      });
+    }
     function preserveMobileNavigation(){
       var toggle=innerWidth<768&&document.querySelector('[data-bs-target="#mobileSidebar"]');
       var header=toggle&&toggle.closest('header,nav,.navbar'),menu=toggle&&document.querySelector('#mobileSidebar');
-      if(!header){restoreMobileNavigation();root.style.top='0px';return false;}
+      if(!header){restoreMobileNavigation();return false;}
       if(header!==mobileHeader||menu!==mobileSidebar){
         restoreMobileNavigation();mobileHeader=header;mobileSidebar=menu;
-        [[header,['position','top','left','right','z-index']],[menu,['position','top','left','z-index','max-height','overflow-y']]].forEach(function(pair){
+        [[header,['position','top','left','right','z-index']],[menu,['position','top','left','z-index','min-height','max-height','overflow-y']]].forEach(function(pair){
           if(pair[0])mobileChrome.push([pair[0],pair[1].map(function(key){return [key,pair[0].style.getPropertyValue(key),pair[0].style.getPropertyPriority(key)];})]);
         });
       }
       function set(node,key,value){if(node.style.getPropertyValue(key)!==value||node.style.getPropertyPriority(key)!=='important')node.style.setProperty(key,value,'important');}
-      set(header,'position','fixed');set(header,'top','0px');set(header,'left','0px');set(header,'right','0px');set(header,'z-index','1042');
-      var height=Math.ceil(header.getBoundingClientRect().height);
-      root.style.top=height+'px';
-      if(menu){set(menu,'position','fixed');set(menu,'top',height+'px');set(menu,'left','0px');set(menu,'z-index','1043');set(menu,'max-height','calc(100dvh - '+height+'px)');set(menu,'overflow-y','auto');}
+      set(header,'position','static');set(header,'top','auto');set(header,'left','auto');set(header,'right','auto');set(header,'z-index','1042');
+      if(menu){set(menu,'position','static');set(menu,'top','auto');set(menu,'left','auto');set(menu,'z-index','1043');set(menu,'min-height','0px');set(menu,'max-height','none');set(menu,'overflow-y','visible');}
       return true;
     }
     function makeBackgroundInert(node){
@@ -12801,6 +12811,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       while(innerWidth>=768&&container&&container!==document.body){var rect=container.getBoundingClientRect();if(rect.width>80&&rect.width<440&&rect.height>180&&rect.left<120&&rect.right<innerWidth*.6){left=Math.max(left,rect.right);}container=container.parentElement;}
       root.style.left=Math.round(left)+'px';
       var nativeMenu=preserveMobileNavigation();
+      // Mobile uses the document's scroll so the real menu and our title leave together.
+      var mobile=innerWidth<768,height=mobileHeader?Math.ceil(mobileHeader.getBoundingClientRect().height):0;
+      root.style.position=mobile?'relative':'fixed';root.style.top=mobile?'auto':'0px';root.style.bottom=mobile?'auto':'0px';
+      root.style.overflow=mobile?'visible':'auto';root.style.minHeight=mobile?'calc(100dvh - '+height+'px)':'0px';
+      root.style.overscrollBehavior=mobile?'auto':'contain';
+      showBackground(!mobile);
       $('mobile-menu').hidden=nativeMenu||innerWidth>=768||!document.querySelector('[data-bs-target="#mobileSidebar"]');
       if(fallback)fallback.style.display=opened?'none':'';
     }
@@ -12810,7 +12826,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var mobileToggle=document.querySelector('[data-bs-target="#mobileSidebar"][aria-expanded="true"]');
       if(innerWidth<768&&mobileToggle)mobileToggle.click();
       if(opened){layout();return;}
-      previousFocus=document.activeElement;oldHash=location.hash===HASH?'':location.hash;
+      previousFocus=document.activeElement;pageScrollBefore=[window.scrollX,window.scrollY];oldHash=location.hash===HASH?'':location.hash;
       if(push&&location.hash!==HASH)history.pushState({beEnergyOverview:true},'',location.pathname+location.search+HASH);
       root.hidden=false;opened=true;theme();layout();
       document.querySelectorAll('main,[role="main"],.main-content,.content-wrapper').forEach(makeBackgroundInert);
@@ -12824,19 +12840,23 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         menuActiveBefore=Array.from(document.querySelectorAll('a.active')).filter(function(a){return !navLinks.includes(a)&&a.closest('nav,aside,.sidebar,.sidenav,#sidebar,.nav');}).map(function(a){var old=a.className;a.className=old.replace(/\bactive\b/g,'').trim();return [a,old];});
         navLinks.forEach(function(a){a.className=a.className.replace(/\bactive\b/g,'').trim()+' active';a.setAttribute('aria-current','page');});
       }
-      $('title').focus();load();
+      showBackground(innerWidth>=768);
+      if(innerWidth<768){$('title').focus({preventScroll:true});window.scrollTo(0,0);}else $('title').focus();
+      load();
     }
     function close() {
       if(!opened)return;
       serial++;opened=false;root.hidden=true;
       restoreMobileNavigation();
+      showBackground(true);
       inertNodes.forEach(function(pair){pair[0].inert=pair[1];});inertNodes=[];
       if(location.hash===HASH)history.replaceState(history.state,'',location.pathname+location.search+oldHash);
       navLinks.forEach(function(a){a.removeAttribute('aria-current');a.className=a.className.replace(/\bactive\b/g,'').trim();});
       menuActiveBefore.forEach(function(pair){if(pair[0].isConnected)pair[0].className=pair[1];});menuActiveBefore=[];
       if(fallback)fallback.style.display='';
       var mobileToggle=innerWidth<768&&document.querySelector('[data-bs-target="#mobileSidebar"]');
-      if(mobileToggle)mobileToggle.focus();else if(previousFocus&&previousFocus.isConnected)previousFocus.focus();
+      if(mobileToggle)mobileToggle.focus({preventScroll:true});else if(previousFocus&&previousFocus.isConnected)previousFocus.focus({preventScroll:true});
+      if(pageScrollBefore){window.scrollTo(pageScrollBefore[0],pageScrollBefore[1]);pageScrollBefore=null;}
     }
     function addMenu() {
       var candidates=Array.from(document.querySelectorAll('a[href*="/results"]')).filter(function(a){return !a.closest('#be-energieoverzicht');});
@@ -13610,6 +13630,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
             chart.data.datasets.push(dataset);
           }
           dataset.data = points(direction, tariff, settings);
+          dataset.borderWidth=window.BETheme?.isDark()?1:1.5;
           dataset.borderColor=bidColour(direction);
           dataset.backgroundColor=dataset.borderColor;
         }
@@ -13738,11 +13759,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.1.7. BE data only. */
+/* Coulombtelling in/uit — 6.1.8. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage617)return;window.__beCoulombPage617=true;
+    if(window.__beCoulombPage618)return;window.__beCoulombPage618=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -14362,7 +14383,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.1.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.1.8',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
