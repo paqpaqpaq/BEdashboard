@@ -26,13 +26,25 @@ chart.canvas.getBoundingClientRect=()=>({left:0,top:0,width:600,height:200});cha
 chart.scales.x.getValueForPixel=x=>T+x/100*h;chart.scales.x.getPixelForValue=x=>(x-T)/h*100;
 chart.getActiveElements=()=>active;chart.setActiveElements=v=>{active=v;};chart.draw=()=>draws++;chart.tooltip={options:{enabled:true}};
 chart.isDatasetVisible=()=>true;metas[1].data[2].stop=false;
-hover.attach(chart);events.mousemove({clientX:300,clientY:100});
+hover.attach(chart,{capacity:48.2});events.mousemove({clientX:300,clientY:100});
 assert.equal(active.length,0);assert.equal(draws,1);assert.equal(nodes[2].children.length,2);
 assert(nodes[2].children.every(n=>n.style.cssText.includes('left:300px')));
+assert.equal(nodes[0].children[1].children[2].textContent,'≈ 50% · 24,1 kWh');
+assert.equal(nodes[0].children[2].children[2].textContent,'≈ 40% · 19,3 kWh');
+assert.equal(hover.info(chart,{x:300}).rows[0].energyKwh,24.1);
+assert(Math.abs(hover.info(chart,{x:300}).rows[1].energyKwh-19.28)<1e-10);
+assert(nodes[0].children[2].children[2].style.cssText.includes('--be-soc-tooltip-series:var(--be-coulomb-line'));
 assert.equal(hover.plugin.beforeEvent(chart,{event:{type:'mousemove'}}),false);
 assert.equal(hover.plugin.beforeEvent(chart,{event:{type:'click'}}),undefined);
 events.mouseleave();assert.equal(nodes[0].style.display,'none');assert.equal(nodes[2].style.display,'none');assert.equal(chart.tooltip.options.enabled,true);
+hover.attach(chart,{capacity:60});assert.equal(hover.info(chart,{x:300}).rows[0].energyKwh,30);
+hover.attach(chart,{capacity:NaN});assert.equal(hover.info(chart,{x:300}).rows[0].energyKwh,null);
+hover.attach(chart,{capacity:48.2});
+metas[1].data[2].stop=true;assert.equal(hover.info(chart,{x:300}).rows[1].energyKwh,null);metas[1].data[2].stop=false;
+box.window.BETheme={isDark:()=>true,color:()=> '#a879ff'};
+assert.equal(hover.info(chart,{x:300}).rows[0].color,'#a879ff','native tooltip uses the rendered dark-mode line colour');
+delete box.window.BETheme;
 box.document.createElement=()=>{throw Error('simulated DOM failure');};const warn=console.warn;console.warn=()=>{};
 try{assert.doesNotThrow(()=>events.mousemove({clientX:300,clientY:100}));}finally{console.warn=warn;}
 assert.equal(nodes[2].style.display,'none');
-console.log('PASS SOC hover: continuous shared timestamp with unequal/sparse samples, interpolation, no extrapolation, gaps and hidden lines respected.');
+console.log('PASS SOC hover: shared timestamps and gaps, kWh from unrounded interpolation, one decimal, changed/missing capacity, matching line colours and mobile wrapping.');

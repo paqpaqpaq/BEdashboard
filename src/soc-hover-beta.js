@@ -27,7 +27,7 @@
   }
   function info(chart,pointer){
     const selected=pick(chart,pointer);if(!selected)return null;
-    const rows=[],groups=new Map();
+    const rows=[],groups=new Map(),capacity=configs.get(chart)?.capacity;
     chart.data.datasets.forEach((d,i)=>{
       if(!chart.isDatasetVisible(i))return;
       const meta=chart.getDatasetMeta(i);if(meta.type&&meta.type!=='line')return;
@@ -35,9 +35,10 @@
       const own=d.beOwnSOC,group=own?'be':'native:'+i;
       const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
       const baseColor=own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
-      const color=typeof baseColor==='string'?baseColor:'#6b7280';
+      const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
+        energyKwh:finite(sampled.value)&&finite(capacity)&&capacity>0?sampled.value*capacity/100:null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
@@ -48,7 +49,11 @@
     const title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
     return {...selected,title,rows};
   }
-  function format(row){return row.value===null?'—':(row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'%';}
+  function format(row){
+    if(!finite(row.value))return '—';
+    const energy=finite(row.energyKwh)?row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
+    return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
+  }
   function hide(state){
     state.tip.style.display='none';state.cursor.style.display='none';state.pointer=null;
     state.markers.style.display='none';
@@ -71,15 +76,15 @@
     const children=[title];
     for(const row of data.rows){
       const line=document.createElement('div');line.style.cssText='display:flex;align-items:center;gap:8px;min-height:22px';
-      const swatch=document.createElement('span');swatch.style.cssText='display:inline-block;width:14px;height:3px;flex:0 0 14px';swatch.style.background=row.color;
-      const label=document.createElement('span');label.textContent=row.label;label.style.cssText='flex:1;white-space:nowrap';
-      const value=document.createElement('span');value.textContent=format(row);value.style.cssText='font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:12px';
+      const swatch=document.createElement('span');swatch.style.cssText='display:inline-block;width:14px;height:3px;flex:0 0 14px;background:var(--be-soc-tooltip-series);--be-soc-tooltip-series:'+row.color;
+      const label=document.createElement('span');label.textContent=row.label;label.style.cssText='flex:1;min-width:0;white-space:normal;overflow-wrap:break-word;line-height:1.35';
+      const value=document.createElement('span');value.className='be-soc-tooltip-value';value.textContent=format(row);value.style.cssText='flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;margin-left:4px;color:var(--be-soc-tooltip-series)!important;--be-soc-tooltip-series:'+row.color;
       line.append(swatch,label,value);children.push(line);
     }
     state.tip.replaceChildren(...children);state.tip.style.display='block';
     state.markers.replaceChildren(...data.rows.filter(row=>finite(row.py)&&row.py>=a.top&&row.py<=a.bottom).map(row=>{
       const dot=document.createElement('span');
-      dot.style.cssText='position:fixed;display:block;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;transform:translate(-50%,-50%);background:'+row.color+';left:'+(rect.left+data.px*rect.width/chart.width)+'px;top:'+(rect.top+row.py*rect.height/chart.height)+'px';
+      dot.style.cssText='position:fixed;display:block;width:8px;height:8px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;transform:translate(-50%,-50%);background:var(--be-soc-tooltip-series);--be-soc-tooltip-series:'+row.color+';left:'+(rect.left+data.px*rect.width/chart.width)+'px;top:'+(rect.top+row.py*rect.height/chart.height)+'px';
       return dot;
     }));state.markers.style.display='block';
     const box=state.tip.getBoundingClientRect(),vw=window.innerWidth||document.documentElement.clientWidth,vh=window.innerHeight||document.documentElement.clientHeight;
@@ -101,7 +106,7 @@
       let state=bindings.get(chart.canvas);
       if(state){state.chart=chart;if(state.pointer)Promise.resolve().then(()=>state.move(state.pointer));return;}
       const tip=document.createElement('div'),cursor=document.createElement('div'),markers=document.createElement('div');
-      tip.setAttribute('role','tooltip');tip.style.cssText='position:fixed;display:none;pointer-events:none;z-index:2147483646;background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:7px;padding:10px 12px;box-shadow:0 3px 12px rgba(0,0,0,.2);font:12px/1.4 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 16px);box-sizing:border-box';
+      tip.setAttribute('role','tooltip');tip.setAttribute('data-be-soc-tooltip','');tip.style.cssText='position:fixed;display:none;pointer-events:none;z-index:2147483646;background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:7px;padding:10px 12px;box-shadow:0 3px 12px rgba(0,0,0,.2);font:12px/1.4 system-ui,-apple-system,sans-serif;max-width:calc(100vw - 16px);box-sizing:border-box';
       cursor.style.display='none';markers.style.cssText='display:none;pointer-events:none;position:fixed;inset:0;z-index:2147483645';
       (document.body||document.documentElement).append(tip,cursor,markers);
       state={chart,tip,cursor,markers,tooltip:null,pointer:null};
