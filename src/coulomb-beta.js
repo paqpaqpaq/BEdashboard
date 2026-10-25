@@ -12,7 +12,7 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null;
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
@@ -24,7 +24,7 @@
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
-      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState);
+      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState||explicit?.boundaryState);
       let anchor=explicit;
       if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
       const charging=change!==null?change>0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]<0;
@@ -32,6 +32,7 @@
       if(checkpoint){
         if(explicit.lowState){lowMode=explicit.lowState.mode;lowMinimum=explicit.lowState.minimum;}
         if(explicit.highState){highMode=explicit.highState.mode;highMaximum=explicit.highState.maximum;}
+        if(explicit.boundaryState)lastRaw=explicit.boundaryState.lastRaw;
       }else if(explicit){lowMode=highMode='released';lowMinimum=highMaximum=null;}
       else{
         if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
@@ -61,6 +62,15 @@
           }
         }
       }
+      // A real arrival at 5% or 100% is an independent calibration, even
+      // when a prior energy reversal released the broad 10%/95% tracker.
+      // A plateau must not pin the counter after charging/discharging reverses.
+      if(!explicit&&(raw===5||raw===100)&&raw!==lastRaw){
+        anchor={t:r[0],soc:raw,kind:'BE-SOC '+raw+'% · ijking'};
+        if(raw===5){lowMode=charging?'released':'tracking';lowMinimum=5;highMode='ready';highMaximum=null;}
+        else{highMode=discharging?'released':'tracking';highMaximum=100;lowMode='ready';lowMinimum=null;}
+      }
+      if(raw!==null)lastRaw=raw;
       if(anchor){
         const before=stored===null?null:stored/c.capacity*100;
         stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
@@ -73,7 +83,7 @@
         }
       }
       points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
-        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},reference:lastAnchor,
+        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},boundaryState:{lastRaw},reference:lastAnchor,
         sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
     return {points,input,output,gaps,lastAnchor,events,uncertain};
@@ -521,7 +531,7 @@
           // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
           if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
             rows=rows.slice(index);manual=manual.filter(a=>a.t>=rows[0][0]);
-            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState,highState:prior.highState,statsReference:prior.reference?{reference:prior.reference,input:prior.sinceInput,output:prior.sinceOutput}:undefined});
+            if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState,highState:prior.highState,boundaryState:prior.boundaryState,statsReference:prior.reference?{reference:prior.reference,input:prior.sinceInput,output:prior.sinceOutput}:undefined});
           }
         }
         record={...old,rows,manual};store.put(record,id);
@@ -631,7 +641,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
@@ -661,7 +671,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.2.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }

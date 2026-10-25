@@ -12,7 +12,7 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null;
+    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
@@ -24,7 +24,7 @@
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
-      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState);
+      const explicit=anchors.get(r[0]),checkpoint=!!(explicit?.lowState||explicit?.highState||explicit?.boundaryState);
       let anchor=explicit;
       if(stored===null&&!anchor&&raw!==null)anchor={t:r[0],soc:raw,kind:'Start uit BE-SOC'};
       const charging=change!==null?change>0:!prev&&!checkpoint&&Number.isFinite(r[2])&&r[2]<0;
@@ -32,6 +32,7 @@
       if(checkpoint){
         if(explicit.lowState){lowMode=explicit.lowState.mode;lowMinimum=explicit.lowState.minimum;}
         if(explicit.highState){highMode=explicit.highState.mode;highMaximum=explicit.highState.maximum;}
+        if(explicit.boundaryState)lastRaw=explicit.boundaryState.lastRaw;
       }else if(explicit){lowMode=highMode='released';lowMinimum=highMaximum=null;}
       else{
         if(lowMode==='released'&&raw!==null&&raw>10&&change!==null&&change<=0&&r[2]>=0){lowMode='ready';lowMinimum=null;}
@@ -61,6 +62,15 @@
           }
         }
       }
+      // A real arrival at 5% or 100% is an independent calibration, even
+      // when a prior energy reversal released the broad 10%/95% tracker.
+      // A plateau must not pin the counter after charging/discharging reverses.
+      if(!explicit&&(raw===5||raw===100)&&raw!==lastRaw){
+        anchor={t:r[0],soc:raw,kind:'BE-SOC '+raw+'% · ijking'};
+        if(raw===5){lowMode=charging?'released':'tracking';lowMinimum=5;highMode='ready';highMaximum=null;}
+        else{highMode=discharging?'released':'tracking';highMaximum=100;lowMode='ready';lowMinimum=null;}
+      }
+      if(raw!==null)lastRaw=raw;
       if(anchor){
         const before=stored===null?null:stored/c.capacity*100;
         stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
@@ -73,7 +83,7 @@
         }
       }
       points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
-        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},reference:lastAnchor,
+        lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},boundaryState:{lastRaw},reference:lastAnchor,
         sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
     return {points,input,output,gaps,lastAnchor,events,uncertain};

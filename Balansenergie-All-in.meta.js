@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.2.1
+// @name         Balansenergie All-in v6.3
 // @namespace    paq.balansenergie
-// @version      6.2.1
-// @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
+// @version      6.3
+// @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
 // @downloadURL  https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js
@@ -11,5 +11,13 @@
 // @run-at       document-start
 // @grant        GM.xmlHttpRequest
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.deleteValue
+// @connect      api.tennet.eu
+// @connect      api.acc.tennet.eu
 // @connect      public.api.energyzero.nl
 // ==/UserScript==
