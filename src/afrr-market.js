@@ -1,8 +1,9 @@
-/* Regelvermogen & biedingen — 6.3. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.3.1. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
   const ID='be-tennet-standalone-test', CONFIG='be-afrr-market-settings-v1';
+  const PANEL_SETTING='be_cfg_afrr_market';
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
@@ -11,6 +12,7 @@
   let bidDB,observedCustomer='',lastBidRead=0;
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+  function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
   class Fault extends Error {
     constructor(kind,message,status=0,retryAt=0){super(message);Object.assign(this,{kind,status,retryAt});}
@@ -403,6 +405,7 @@
     }catch(_){bidError='Het lokale BID-archief kon niet worden gelezen. Geen extra prijsaanvragen gestart.';}
   }
   async function receiveBids(event){
+    if(!panelEnabled())return;
     // CustomEvent detail can be inaccessible across Firefox userscript realms.
     // The IndexedDB archive remains the portable fallback, including Safari.
     try{
@@ -478,6 +481,7 @@
   }
   function mount(){
     if(!host)return;
+    const visible=panelEnabled();host.hidden=!visible;host.style.display=visible?'block':'none';
     const target=document.getElementById('be-tarief-row');
     if(target){if(target.nextElementSibling!==host)target.after(host);}
     else if(!host.isConnected)(document.querySelector('main')||document.body).prepend(host);
@@ -558,6 +562,7 @@
   }
   function render(){
     if(!shadow)return;
+    if(!panelEnabled()){mount();return;}
     mount();const now=Date.now(),s=state?.scope===config.scope?state:null,good=s?.good,row=good?.latest;
     const stale=good&&(now-good.fetchedAt>90000||now-good.advancedAt>90000||now-row.end>300000);
     text('[data-environment]',config.environment==='acceptance'?'Acceptance':'');
@@ -614,7 +619,9 @@
     }
   }
   async function tick(){
-    if(busy||destroyed)return;clearTimeout(timer);busy=true;
+    if(busy||destroyed)return;clearTimeout(timer);
+    if(!panelEnabled()){mount();return;}
+    busy=true;
     let wakeAt=Date.now()+5000;
     try{
       config=await loadConfig();
@@ -622,12 +629,13 @@
       await readBids();render();
       for(const channel of ['live','mol']){
         config=await loadConfig();
-        if(!config.enabled||!config.key||document.hidden)break;
+        if(!panelEnabled()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
         if(!reservation.reserved)continue;
+        if(!panelEnabled())break;
         inFlight=true;render();
         try{
           const data=await request(c,channel,reservation.state.target);
@@ -651,7 +659,7 @@
       for(const s of [state,molState]){
         if(config.enabled&&!s?.authBlocked&&s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
       }
-      if(!destroyed)timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
+      if(!destroyed&&panelEnabled())timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
     }
   }
   async function connect(event){
@@ -731,6 +739,7 @@
       <div class="actions"><button type="button" data-refresh>Ververs</button><button type="button" data-pause>Pauzeer</button></div>
       <p class="note">TenneT-regelprijs: hoogste geactiveerde opregelbiedprijs / laagste geactiveerde afregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
       <details data-settings open><summary data-settings-title>API-sleutel instellen</summary><p class="note" data-key-state></p><form data-form>
+        <p class="note"><a href="https://developer.tennet.eu/" target="_blank" rel="noopener noreferrer">API-sleutel aanvragen bij TenneT</a>. Kies Production en vraag toegang tot Balance Delta High Res en Merit Order List aFRR & mFRRsa.</p>
         <label for="tn-env">Omgeving</label><select id="tn-env" data-env-select><option value="production">Production — actuele marktgegevens</option><option value="acceptance">Acceptance — TenneT-testomgeving</option></select>
         <label for="tn-key" data-key-label>TenneT API-sleutel</label><input id="tn-key" data-key type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Vul je eigen API-sleutel in">
         <div class="actions"><button data-connect type="submit">Test & start</button><button data-forget type="button">Sleutel wissen</button></div>
@@ -758,7 +767,10 @@
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
     document.addEventListener('be-afrr-source',receiveBids);
-    document.addEventListener('be-tarief-update',()=>{readBids(true).then(render);});
+    document.addEventListener('be-tarief-update',()=>{if(panelEnabled())readBids(true).then(render);});
+    function settingChanged(){clearTimeout(timer);mount();if(panelEnabled())tick();}
+    document.addEventListener('be-afrr-market-change',settingChanged);
+    window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});
     window.addEventListener('pagehide',()=>{destroyed=true;clearTimeout(timer);});
     window.addEventListener('pageshow',()=>{destroyed=false;tick();});
     window.addEventListener('resize',()=>{const plot=shadow?.querySelector('[data-power-plot]');if(plot)plot.dataset.signature='';renderGraph();});

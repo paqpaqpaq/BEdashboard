@@ -13,10 +13,11 @@ function balance(at=end){return {Response:{informationType:'BALANCE_DELTA_HIGH_R
 const molBody={Response:{informationType:'MERIT_ORDER_LIST',TimeSeries:[{quantity_Measurement_Unit_name:'MAW',price_Measurement_Unit_name:'MWh',currency_Unit_name:'EUR',Period:{Points:[q-Q,q].map(start=>({timeInterval_start:new Date(start).toISOString(),timeInterval_end:new Date(start+Q).toISOString(),Thresholds:[{capacity_threshold:'10',price_up:'50',price_down:'20'},{capacity_threshold:'20',price_up:'100',price_down:'0'},{capacity_threshold:'30',price_up:'150',price_down:'-50'}]}))}}]}};
 const success=body=>({status:200,responseText:JSON.stringify(body)});
 const windows=[];
-function page({mainPlugin=true,response=success(balance()),molResponse=success(molBody),database=idb,values=store,record=requests,at=now,hidden=false,modern=false}={}){
+function page({mainPlugin=true,response=success(balance()),molResponse=success(molBody),database=idb,values=store,record=requests,at=now,hidden=false,modern=false,visible=true}={}){
  const w=new Window({url:'https://dashboard.balansenergie.nl/customer/test/'});windows.push(w);
  const RealDate=w.Date;w.Date=class extends RealDate{static now(){return at;}};
  w.document.write('<!doctype html><html><body><main>'+(mainPlugin?'<div id="be-tarief-row">Tariefgrafiek</div>':'')+'</main></body></html>');
+ if(!visible)w.localStorage.setItem('be_cfg_afrr_market','uit');
  let visibility=hidden;
  Object.defineProperty(w.document,'hidden',{get:()=>visibility,configurable:true});w.indexedDB=database;
  const get=(key,def)=>structuredClone(values.has(key)?values.get(key):def),set=(key,value)=>values.set(key,structuredClone(value)),del=key=>values.delete(key);
@@ -125,5 +126,30 @@ try{
  await until(()=>hidden.root?.querySelector('[data-poll]').textContent.includes('zichtbaar'),'hidden page idle');
  assert.equal(hiddenRequests.length,0,'hidden tab starts no requests');
  hidden.setHidden(false);await until(()=>hiddenRequests.length===1,'visible page resumes');
+ // Use the actual dashboard settings handlers, not a test-only switch.
+ const dashboard=fs.readFileSync(new URL('../src/dashboard.js',import.meta.url),'utf8');
+ const settings=dashboard.slice(dashboard.indexOf('  function beAfrrMarketEnabled()'),dashboard.indexOf('  var EB_BASIS'));
+ assert(dashboard.includes('id="be-p-afrr"'),'general settings expose the switch');
+ assert(dashboard.includes('id="cfg-afrr-market"'),'financial settings expose the same switch');
+ const offRequests=[],offStore=enabled('disabled-test'),offDB=new IDBFactory();
+ const off=page({database:offDB,values:offStore,record:offRequests,visible:false});
+ await until(()=>off.w.document.getElementById('be-tennet-standalone-test')?.hidden,'disabled panel stays hidden');
+ assert.equal(offRequests.length,0,'saved key cannot trigger a request while disabled');
+ assert.equal(off.w.document.getElementById('be-tennet-standalone-test').style.display,'none');
+ assert.equal(offStore.get('be-afrr-market-settings-v1').key,secret,'disabling preserves the key');
+ off.w.eval(settings);off.w.beAfrrMarketSet(true);
+ await until(()=>off.root.querySelector('[data-up]').textContent==='25,5 MW','settings restore panel with stored key');
+ assert.equal(offRequests.length,1);assert(!off.w.document.getElementById('be-tennet-standalone-test').hidden);
+ off.w.beAfrrMarketSet(false);assert(off.w.document.getElementById('be-tennet-standalone-test').hidden);
+ off.advance(60000);off.w.document.dispatchEvent(new off.w.Event('visibilitychange'));
+ await new Promise(resolve=>setTimeout(resolve,20));assert.equal(offRequests.length,1,'disabled panel cannot resume on visibility or refresh');
+ assert.equal(off.w.localStorage.getItem('be_cfg_afrr_market'),'uit');
+ const reloaded=page({database:offDB,values:offStore,record:offRequests,visible:off.w.localStorage.getItem('be_cfg_afrr_market')!=='uit'});
+ await until(()=>reloaded.w.document.getElementById('be-tennet-standalone-test')?.hidden,'disabled preference survives reload');
+ assert.equal(offRequests.length,1);assert.equal(offStore.get('be-afrr-market-settings-v1').key,secret);
+ reloaded.w.localStorage.setItem('be_cfg_afrr_market','aan');
+ reloaded.w.dispatchEvent(new reloaded.w.StorageEvent('storage',{key:'be_cfg_afrr_market',newValue:'aan'}));
+ await until(()=>!reloaded.w.document.getElementById('be-tennet-standalone-test').hidden,'cross-tab setting resumes panel');
+ assert(reloaded.root.querySelector('a[href="https://developer.tennet.eu/"]'),'key request portal is linked');
  console.log('PASS TenneT DOM: cached first-two-minute BIDs, correct raw prices/directions, both API caches shared across tabs, source-quarter isolation, honest chance warmup, per-endpoint permissions, modern/legacy GM, hidden-tab pause, dark theme and secret redaction.');
 }finally{for(const w of windows){await w.happyDOM.cancelAsync();w.close();}}

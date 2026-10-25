@@ -333,7 +333,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.3'
+    '6.3.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -341,6 +341,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var beDarkOn = window.BETheme.isDark();
   function beDarkApply(on, style) { window.BETheme.apply(on, style); beDarkOn=window.BETheme.isDark(); }
   document.addEventListener('be-dark-change',function(){beDarkOn=window.BETheme.isDark();});
+  function beAfrrMarketEnabled(){return localStorage.getItem('be_cfg_afrr_market')!=='uit';}
+  function beAfrrMarketSet(on){
+    localStorage.setItem('be_cfg_afrr_market',on?'aan':'uit');
+    document.dispatchEvent(new Event('be-afrr-market-change'));
+  }
+
 
   var EB_BASIS = 0.09161;
   var BTW      = 1.21;
@@ -11628,7 +11634,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.3' +
+        'Instellingen v6.3.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11678,6 +11684,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       '<select id="be-p-dark-style" style="width:100%;min-height:44px;padding:8px;border:1px solid #e8e2f0;border-radius:6px;background:#fff;color:#292633;font:inherit;">' +
       '<option value="bruingrijs"'+(window.BETheme.style()==='bruingrijs'?' selected':'')+'>Bruingrijs</option>' +
       '<option value="grafiet"'+(window.BETheme.style()==='grafiet'?' selected':'')+'>Grafiet</option></select></label>' +
+
+      '<label for="be-p-afrr" style="display:grid;gap:6px;margin:10px 0 14px;font-size:12px;">Regelvermogen &amp; biedingen' +
+      '<select id="be-p-afrr" style="width:100%;min-height:44px;padding:8px;border:1px solid #e8e2f0;border-radius:6px;background:#fff;color:#292633;font:inherit;"><option value="aan">Aan</option><option value="uit">Uit</option></select>' +
+      '<small>Direct opgeslagen. Uit verbergt het hele TenneT-paneel en stopt nieuwe API-aanvragen; je sleutel blijft bewaard.</small></label>' +
 
       knopje(
         'be-p-sald',
@@ -11814,6 +11824,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     };
 
     hangKnopje('be-p-dark', staat, 'dark');
+    var afrrSelect=document.getElementById('be-p-afrr');
+    afrrSelect.value=beAfrrMarketEnabled()?'aan':'uit';
+    afrrSelect.addEventListener('change',function(){beAfrrMarketSet(afrrSelect.value==='aan');});
+
 
     hangKnopje(
       'be-p-sald',
@@ -12066,7 +12080,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.3. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.3.1. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12374,12 +12388,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
         <div id="content"></div>
-        <div id="settings" hidden><section class="panel appearance-settings"><div><h2>Weergave</h2><p class="help">Donkere modus voor het hele dashboard.</p></div><label for="cfg-dark">Donkere modus<select id="cfg-dark"><option value="uit">Uit</option><option value="aan">Aan</option></select></label><label for="cfg-dark-style">Dark mode stijl<select id="cfg-dark-style"><option value="bruingrijs">Bruingrijs</option><option value="grafiet">Grafiet</option></select></label></section><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
+        <div id="settings" hidden><section class="panel appearance-settings"><div><h2>Weergave</h2><p class="help">Donkere modus voor het hele dashboard.</p></div><label for="cfg-dark">Donkere modus<select id="cfg-dark"><option value="uit">Uit</option><option value="aan">Aan</option></select></label><label for="cfg-dark-style">Dark mode stijl<select id="cfg-dark-style"><option value="bruingrijs">Bruingrijs</option><option value="grafiet">Grafiet</option></select></label><label for="cfg-afrr-market">Regelvermogen &amp; biedingen<select id="cfg-afrr-market"><option value="aan">Aan</option><option value="uit">Uit · geen API-aanvragen</option></select></label></section><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
       </div></div>`;
       theme();document.body.appendChild(root);
       var year = +monthNow.slice(0, 4), startYear = cfg.start.getFullYear();
@@ -12393,6 +12407,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       $('cfg-dark').onchange=function(){beDarkApply($('cfg-dark').value==='aan');};
       $('cfg-dark-style').value=window.BETheme.style();
       $('cfg-dark-style').onchange=function(){window.BETheme.setStyle($('cfg-dark-style').value);};
+      $('cfg-afrr-market').value=beAfrrMarketEnabled()?'aan':'uit';
+      $('cfg-afrr-market').onchange=function(){beAfrrMarketSet($('cfg-afrr-market').value==='aan');};
+
       $('price-mode').addEventListener('change',function(){var allin=$('price-mode').value==='allin';beOvSettings.tax=beOvSettings.vat=allin;save();updateFilters();if(latest)render();});
       shadow.querySelectorAll('[data-preset]').forEach(function(b){b.onclick=function(){
         $('period').value=b.dataset.preset;updateFilters();load();

@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.3
+// @name         Balansenergie All-in v6.3.1
 // @namespace    paq.balansenergie
-// @version      6.3
+// @version      6.3.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -407,7 +407,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.3'
+    '6.3.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -415,6 +415,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var beDarkOn = window.BETheme.isDark();
   function beDarkApply(on, style) { window.BETheme.apply(on, style); beDarkOn=window.BETheme.isDark(); }
   document.addEventListener('be-dark-change',function(){beDarkOn=window.BETheme.isDark();});
+  function beAfrrMarketEnabled(){return localStorage.getItem('be_cfg_afrr_market')!=='uit';}
+  function beAfrrMarketSet(on){
+    localStorage.setItem('be_cfg_afrr_market',on?'aan':'uit');
+    document.dispatchEvent(new Event('be-afrr-market-change'));
+  }
+
 
   var EB_BASIS = 0.09161;
   var BTW      = 1.21;
@@ -11702,7 +11708,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.3' +
+        'Instellingen v6.3.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -11752,6 +11758,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       '<select id="be-p-dark-style" style="width:100%;min-height:44px;padding:8px;border:1px solid #e8e2f0;border-radius:6px;background:#fff;color:#292633;font:inherit;">' +
       '<option value="bruingrijs"'+(window.BETheme.style()==='bruingrijs'?' selected':'')+'>Bruingrijs</option>' +
       '<option value="grafiet"'+(window.BETheme.style()==='grafiet'?' selected':'')+'>Grafiet</option></select></label>' +
+
+      '<label for="be-p-afrr" style="display:grid;gap:6px;margin:10px 0 14px;font-size:12px;">Regelvermogen &amp; biedingen' +
+      '<select id="be-p-afrr" style="width:100%;min-height:44px;padding:8px;border:1px solid #e8e2f0;border-radius:6px;background:#fff;color:#292633;font:inherit;"><option value="aan">Aan</option><option value="uit">Uit</option></select>' +
+      '<small>Direct opgeslagen. Uit verbergt het hele TenneT-paneel en stopt nieuwe API-aanvragen; je sleutel blijft bewaard.</small></label>' +
 
       knopje(
         'be-p-sald',
@@ -11888,6 +11898,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     };
 
     hangKnopje('be-p-dark', staat, 'dark');
+    var afrrSelect=document.getElementById('be-p-afrr');
+    afrrSelect.value=beAfrrMarketEnabled()?'aan':'uit';
+    afrrSelect.addEventListener('change',function(){beAfrrMarketSet(afrrSelect.value==='aan');});
+
 
     hangKnopje(
       'be-p-sald',
@@ -12140,7 +12154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.3. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.3.1. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12448,12 +12462,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
         <div id="content"></div>
-        <div id="settings" hidden><section class="panel appearance-settings"><div><h2>Weergave</h2><p class="help">Donkere modus voor het hele dashboard.</p></div><label for="cfg-dark">Donkere modus<select id="cfg-dark"><option value="uit">Uit</option><option value="aan">Aan</option></select></label><label for="cfg-dark-style">Dark mode stijl<select id="cfg-dark-style"><option value="bruingrijs">Bruingrijs</option><option value="grafiet">Grafiet</option></select></label></section><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
+        <div id="settings" hidden><section class="panel appearance-settings"><div><h2>Weergave</h2><p class="help">Donkere modus voor het hele dashboard.</p></div><label for="cfg-dark">Donkere modus<select id="cfg-dark"><option value="uit">Uit</option><option value="aan">Aan</option></select></label><label for="cfg-dark-style">Dark mode stijl<select id="cfg-dark-style"><option value="bruingrijs">Bruingrijs</option><option value="grafiet">Grafiet</option></select></label><label for="cfg-afrr-market">Regelvermogen &amp; biedingen<select id="cfg-afrr-market"><option value="aan">Aan</option><option value="uit">Uit · geen API-aanvragen</option></select></label></section><section class="panel"><h2>Voorschotten en contract</h2><div id="settings-body"></div></section><section class="panel"><h2>Berekening van deze selectie</h2><div id="calculation"></div></section><details class="panel"><summary>Rekenregels en bronnen</summary><div id="rules" class="note-list"></div></details><div class="actions" style="margin-top:12px">${button('CSV downloaden','id="csv"')}</div></div>
       </div></div>`;
       theme();document.body.appendChild(root);
       var year = +monthNow.slice(0, 4), startYear = cfg.start.getFullYear();
@@ -12467,6 +12481,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       $('cfg-dark').onchange=function(){beDarkApply($('cfg-dark').value==='aan');};
       $('cfg-dark-style').value=window.BETheme.style();
       $('cfg-dark-style').onchange=function(){window.BETheme.setStyle($('cfg-dark-style').value);};
+      $('cfg-afrr-market').value=beAfrrMarketEnabled()?'aan':'uit';
+      $('cfg-afrr-market').onchange=function(){beAfrrMarketSet($('cfg-afrr-market').value==='aan');};
+
       $('price-mode').addEventListener('change',function(){var allin=$('price-mode').value==='allin';beOvSettings.tax=beOvSettings.vat=allin;save();updateFilters();if(latest)render();});
       shadow.querySelectorAll('[data-preset]').forEach(function(b){b.onclick=function(){
         $('period').value=b.dataset.preset;updateFilters();load();
@@ -13853,11 +13870,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.3. BE data only. */
+/* Coulombtelling in/uit — 6.3.1. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage63)return;window.__beCoulombPage63=true;
+    if(window.__beCoulombPage631)return;window.__beCoulombPage631=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -14568,7 +14585,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.3.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14726,11 +14743,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.3. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.3.1. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
   const ID='be-tennet-standalone-test', CONFIG='be-afrr-market-settings-v1';
+  const PANEL_SETTING='be_cfg_afrr_market';
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
@@ -14739,6 +14757,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   let bidDB,observedCustomer='',lastBidRead=0;
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+  function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
   class Fault extends Error {
     constructor(kind,message,status=0,retryAt=0){super(message);Object.assign(this,{kind,status,retryAt});}
@@ -15131,6 +15150,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }catch(_){bidError='Het lokale BID-archief kon niet worden gelezen. Geen extra prijsaanvragen gestart.';}
   }
   async function receiveBids(event){
+    if(!panelEnabled())return;
     // CustomEvent detail can be inaccessible across Firefox userscript realms.
     // The IndexedDB archive remains the portable fallback, including Safari.
     try{
@@ -15206,6 +15226,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   }
   function mount(){
     if(!host)return;
+    const visible=panelEnabled();host.hidden=!visible;host.style.display=visible?'block':'none';
     const target=document.getElementById('be-tarief-row');
     if(target){if(target.nextElementSibling!==host)target.after(host);}
     else if(!host.isConnected)(document.querySelector('main')||document.body).prepend(host);
@@ -15286,6 +15307,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   }
   function render(){
     if(!shadow)return;
+    if(!panelEnabled()){mount();return;}
     mount();const now=Date.now(),s=state?.scope===config.scope?state:null,good=s?.good,row=good?.latest;
     const stale=good&&(now-good.fetchedAt>90000||now-good.advancedAt>90000||now-row.end>300000);
     text('[data-environment]',config.environment==='acceptance'?'Acceptance':'');
@@ -15342,7 +15364,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }
   }
   async function tick(){
-    if(busy||destroyed)return;clearTimeout(timer);busy=true;
+    if(busy||destroyed)return;clearTimeout(timer);
+    if(!panelEnabled()){mount();return;}
+    busy=true;
     let wakeAt=Date.now()+5000;
     try{
       config=await loadConfig();
@@ -15350,12 +15374,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       await readBids();render();
       for(const channel of ['live','mol']){
         config=await loadConfig();
-        if(!config.enabled||!config.key||document.hidden)break;
+        if(!panelEnabled()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
         if(!reservation.reserved)continue;
+        if(!panelEnabled())break;
         inFlight=true;render();
         try{
           const data=await request(c,channel,reservation.state.target);
@@ -15379,7 +15404,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       for(const s of [state,molState]){
         if(config.enabled&&!s?.authBlocked&&s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
       }
-      if(!destroyed)timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
+      if(!destroyed&&panelEnabled())timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
     }
   }
   async function connect(event){
@@ -15459,6 +15484,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       <div class="actions"><button type="button" data-refresh>Ververs</button><button type="button" data-pause>Pauzeer</button></div>
       <p class="note">TenneT-regelprijs: hoogste geactiveerde opregelbiedprijs / laagste geactiveerde afregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
       <details data-settings open><summary data-settings-title>API-sleutel instellen</summary><p class="note" data-key-state></p><form data-form>
+        <p class="note"><a href="https://developer.tennet.eu/" target="_blank" rel="noopener noreferrer">API-sleutel aanvragen bij TenneT</a>. Kies Production en vraag toegang tot Balance Delta High Res en Merit Order List aFRR & mFRRsa.</p>
         <label for="tn-env">Omgeving</label><select id="tn-env" data-env-select><option value="production">Production — actuele marktgegevens</option><option value="acceptance">Acceptance — TenneT-testomgeving</option></select>
         <label for="tn-key" data-key-label>TenneT API-sleutel</label><input id="tn-key" data-key type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Vul je eigen API-sleutel in">
         <div class="actions"><button data-connect type="submit">Test & start</button><button data-forget type="button">Sleutel wissen</button></div>
@@ -15486,7 +15512,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
     document.addEventListener('be-afrr-source',receiveBids);
-    document.addEventListener('be-tarief-update',()=>{readBids(true).then(render);});
+    document.addEventListener('be-tarief-update',()=>{if(panelEnabled())readBids(true).then(render);});
+    function settingChanged(){clearTimeout(timer);mount();if(panelEnabled())tick();}
+    document.addEventListener('be-afrr-market-change',settingChanged);
+    window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});
     window.addEventListener('pagehide',()=>{destroyed=true;clearTimeout(timer);});
     window.addEventListener('pageshow',()=>{destroyed=false;tick();});
     window.addEventListener('resize',()=>{const plot=shadow?.querySelector('[data-power-plot]');if(plot)plot.dataset.signature='';renderGraph();});
