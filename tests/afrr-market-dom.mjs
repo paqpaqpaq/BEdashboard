@@ -81,7 +81,7 @@ try{
  assert(a.root.querySelector('[data-power-plot] svg').getAttribute('aria-label').includes('dezelfde schaal'));
  assert(a.root.querySelectorAll('[data-power-plot] polyline').length>=2,'up/down get separate series');
  assert.equal(requests.length,graphRequests,'opening graph makes no API calls');
- const b=page({mainPlugin:false,at:now+1500});
+ const b=page({at:now+1500});
  await until(()=>b.root?.querySelector('[data-up-ladder]').textContent.includes('20–30 MW'),'second tab full cache');
  assert.equal(requests.length,2,'reloads and tabs reuse both API caches');
  assert.equal(b.root.querySelector('[data-settings]').open,false,'stored key does not require setup after reload');
@@ -90,7 +90,7 @@ try{
  assert(b.root.querySelector('[data-key]').placeholder.includes('opgeslagen sleutel'));
  assert.equal(b.root.querySelector('[data-key]').value,'','saved key is used without exposing it in the input');
  assert.equal(store.get('be-afrr-market-settings-v1').key,secret);
- assert.equal(b.w.document.querySelector('main').firstElementChild.id,'be-tennet-standalone-test');
+ assert.equal(b.w.document.getElementById('be-tarief-row').nextElementSibling.id,'be-tennet-standalone-test');
  a.w.document.documentElement.setAttribute('data-be-dark','aan');a.w.document.documentElement.setAttribute('data-be-dark-style','grafiet');
  await until(()=>a.w.document.getElementById('be-tennet-standalone-test').dataset.theme==='grafiet','theme follows dashboard');
  assert(a.root.querySelector('[data-diagnostic]').textContent.includes('HTTP-status: 200'));
@@ -126,6 +126,34 @@ try{
  await until(()=>hidden.root?.querySelector('[data-poll]').textContent.includes('zichtbaar'),'hidden page idle');
  assert.equal(hiddenRequests.length,0,'hidden tab starts no requests');
  hidden.setHidden(false);await until(()=>hiddenRequests.length===1,'visible page resumes');
+ // Navigation teardown must not cause a panel/native-page reinsertion loop.
+ const navigationDB=new IDBFactory(),navigationRequests=[],navigation=page({database:navigationDB,values:enabled('navigation'),record:navigationRequests});
+ await until(()=>navigation.root?.querySelector('[data-up]').textContent==='25,5 MW','navigation baseline');
+ const navHost=navigation.w.document.getElementById('be-tennet-standalone-test'),nativeMain=navigation.w.document.querySelector('main');
+ const marker=navigation.w.document.createElement('span');marker.id='native-navigation-marker';
+ navigation.w.document.getElementById('be-tarief-row').after(marker);
+ navigation.w.document.dispatchEvent(new navigation.w.Event('be-tarief-update'));
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(marker.nextElementSibling,navHost,'native sibling insertions are respected');
+ navigation.w.history.pushState({},'', '/customer/test/current-history/');
+ nativeMain.innerHTML='<article id="history-content">Historie blijft zichtbaar</article>';
+ navigation.w.dispatchEvent(new navigation.w.PopStateEvent('popstate'));
+ navigation.advance(60000);navigation.w.document.dispatchEvent(new navigation.w.Event('visibilitychange'));
+ await new Promise(resolve=>setTimeout(resolve,30));
+ assert.equal(nativeMain.children.length,1);assert.equal(nativeMain.firstElementChild.id,'history-content');
+ assert(!navigation.w.document.getElementById('be-tennet-standalone-test'),'panel stays out of a new native page');
+ assert.equal(navigationRequests.length,1,'history navigation cannot start another TenneT request');
+ navigation.w.history.pushState({},'', '/customer/test/');nativeMain.innerHTML='<div id="be-tarief-row">Nieuwe tariefgrafiek</div>';
+ navigation.w.document.dispatchEvent(new navigation.w.Event('be-tarief-update'));
+ await until(()=>navHost.isConnected,'return to Actueel remounts original panel');
+ assert.equal(navigation.w.document.getElementById('be-tarief-row').nextElementSibling,navHost);
+ // Repeated native DOM changes must not wake the widget or create mutations.
+ let widgetChanges=0;const observer=new navigation.w.MutationObserver(records=>{widgetChanges+=records.filter(r=>[...r.addedNodes,...r.removedNodes].includes(navHost)).length;});observer.observe(nativeMain,{childList:true,subtree:true});
+ for(let i=0;i<25;i++){const child=navigation.w.document.createElement('i');nativeMain.append(child);child.remove();}
+ await new Promise(resolve=>setTimeout(resolve,30));observer.disconnect();assert.equal(widgetChanges,0,'unrelated DOM changes cause zero widget moves');
+ const absent=page({mainPlugin:false,database:new IDBFactory(),values:enabled('no-chart'),record:[]});
+ await until(()=>absent.root,'anchorless module initialized');await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(absent.w.document.querySelector('main').children.length,0,'no fallback into native main');
  // Use the actual dashboard settings handlers, not a test-only switch.
  const dashboard=fs.readFileSync(new URL('../src/dashboard.js',import.meta.url),'utf8');
  const settings=dashboard.slice(dashboard.indexOf('  function beAfrrMarketEnabled()'),dashboard.indexOf('  var EB_BASIS'));

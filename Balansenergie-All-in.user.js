@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.3.1
+// @name         Balansenergie All-in v6.3.2
 // @namespace    paq.balansenergie
-// @version      6.3.1
+// @version      6.3.2
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -407,7 +407,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.3.1'
+    '6.3.2'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11708,7 +11708,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.3.1' +
+        'Instellingen v6.3.2' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12154,7 +12154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.3.1. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.3.2. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12462,7 +12462,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.3.2</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13870,11 +13870,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.3.1. BE data only. */
+/* Coulombtelling in/uit — 6.3.2. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
-    if(window.__beCoulombPage631)return;window.__beCoulombPage631=true;
+    if(window.__beCoulombPage632)return;window.__beCoulombPage632=true;
 (function(){
   'use strict';
   if(window.__beChartVisibility606)return;window.__beChartVisibility606=true;
@@ -14585,7 +14585,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.3.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.3.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14743,7 +14743,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.3.1. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.3.2. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -15224,12 +15224,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       mol?'Biedladder ontvangen '+time(mol.fetchedAt)+' · '+mol.quarters.length+' bronkwartieren.':'Biedladder wordt apart opgehaald; je sleutel heeft ook toegang tot Merit Order List nodig.');
     text('[data-history-status]',marketHistory.length+' complete bronkwartieren lokaal verzameld. Een percentage verschijnt vanaf 30 vergelijkbare kwartieren; per richting, resterende tijd, bronvertraging, vermogensverhouding en trend.');
   }
+  function placementTarget(){
+    const path=location.pathname;
+    if(!/^\/customer(?:\/[^/]+)?\/?$/.test(path)||/^\/customer\/(?:account|results|current-history|current-prices)(?:\/|$)/.test(path))return null;
+    const financial=document.getElementById('be-energieoverzicht');
+    if(financial&&!financial.hidden)return null;
+    const target=document.getElementById('be-tarief-row');
+    return target?.isConnected?target:null;
+  }
   function mount(){
     if(!host)return;
-    const visible=panelEnabled();host.hidden=!visible;host.style.display=visible?'block':'none';
-    const target=document.getElementById('be-tarief-row');
-    if(target){if(target.nextElementSibling!==host)target.after(host);}
-    else if(!host.isConnected)(document.querySelector('main')||document.body).prepend(host);
+    const target=placementTarget(),visible=panelEnabled()&&!!target;
+    if(host.hidden===visible)host.hidden=!visible;
+    const display=visible?'block':'none';if(host.style.display!==display)host.style.display=display;
+    // Never prepend into native page content or keep enforcing sibling order.
+    // Navigation may replace the entire graph container. Only mount against
+    // its real Actueel anchor, once, with no document-wide mutation observer.
+    if(!target){if(host.isConnected)host.remove();return;}
+    if(host.parentElement!==target.parentElement)target.after(host);
     host.dataset.theme=document.documentElement.getAttribute('data-be-dark')==='aan'?
       (document.documentElement.getAttribute('data-be-dark-style')==='grafiet'?'grafiet':'bruingrijs'):'light';
   }
@@ -15374,13 +15386,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       await readBids();render();
       for(const channel of ['live','mol']){
         config=await loadConfig();
-        if(!panelEnabled()||!config.enabled||!config.key||document.hidden)break;
+        if(!panelEnabled()||!placementTarget()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
         if(!reservation.reserved)continue;
-        if(!panelEnabled())break;
+        if(!panelEnabled()||!placementTarget())break;
         inFlight=true;render();
         try{
           const data=await request(c,channel,reservation.state.target);
@@ -15508,7 +15520,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     coordinator=createCoordinator(globalThis.indexedDB);createPanel();
     try{config=await loadConfig();shadow.querySelector('[data-env-select]').value=config.environment||'production';shadow.querySelector('[data-settings]').open=!config.key;}
     catch(e){localError=e.message;render();return;}
-    new MutationObserver(mount).observe(document.documentElement,{subtree:true,childList:true});
+    // The native dashboard owns its page tree. A broad childList observer
+    // can otherwise reinsert this panel during a navigation teardown loop.
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
     document.addEventListener('be-afrr-source',receiveBids);
@@ -15518,6 +15531,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});
     window.addEventListener('pagehide',()=>{destroyed=true;clearTimeout(timer);});
     window.addEventListener('pageshow',()=>{destroyed=false;tick();});
+    window.addEventListener('popstate',()=>{mount();if(placementTarget())tick();});
     window.addEventListener('resize',()=>{const plot=shadow?.querySelector('[data-power-plot]');if(plot)plot.dataset.signature='';renderGraph();});
     await tick();
   }

@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.3.1. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.3.2. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -479,12 +479,24 @@
       mol?'Biedladder ontvangen '+time(mol.fetchedAt)+' · '+mol.quarters.length+' bronkwartieren.':'Biedladder wordt apart opgehaald; je sleutel heeft ook toegang tot Merit Order List nodig.');
     text('[data-history-status]',marketHistory.length+' complete bronkwartieren lokaal verzameld. Een percentage verschijnt vanaf 30 vergelijkbare kwartieren; per richting, resterende tijd, bronvertraging, vermogensverhouding en trend.');
   }
+  function placementTarget(){
+    const path=location.pathname;
+    if(!/^\/customer(?:\/[^/]+)?\/?$/.test(path)||/^\/customer\/(?:account|results|current-history|current-prices)(?:\/|$)/.test(path))return null;
+    const financial=document.getElementById('be-energieoverzicht');
+    if(financial&&!financial.hidden)return null;
+    const target=document.getElementById('be-tarief-row');
+    return target?.isConnected?target:null;
+  }
   function mount(){
     if(!host)return;
-    const visible=panelEnabled();host.hidden=!visible;host.style.display=visible?'block':'none';
-    const target=document.getElementById('be-tarief-row');
-    if(target){if(target.nextElementSibling!==host)target.after(host);}
-    else if(!host.isConnected)(document.querySelector('main')||document.body).prepend(host);
+    const target=placementTarget(),visible=panelEnabled()&&!!target;
+    if(host.hidden===visible)host.hidden=!visible;
+    const display=visible?'block':'none';if(host.style.display!==display)host.style.display=display;
+    // Never prepend into native page content or keep enforcing sibling order.
+    // Navigation may replace the entire graph container. Only mount against
+    // its real Actueel anchor, once, with no document-wide mutation observer.
+    if(!target){if(host.isConnected)host.remove();return;}
+    if(host.parentElement!==target.parentElement)target.after(host);
     host.dataset.theme=document.documentElement.getAttribute('data-be-dark')==='aan'?
       (document.documentElement.getAttribute('data-be-dark-style')==='grafiet'?'grafiet':'bruingrijs'):'light';
   }
@@ -629,13 +641,13 @@
       await readBids();render();
       for(const channel of ['live','mol']){
         config=await loadConfig();
-        if(!panelEnabled()||!config.enabled||!config.key||document.hidden)break;
+        if(!panelEnabled()||!placementTarget()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
         if(!reservation.reserved)continue;
-        if(!panelEnabled())break;
+        if(!panelEnabled()||!placementTarget())break;
         inFlight=true;render();
         try{
           const data=await request(c,channel,reservation.state.target);
@@ -763,7 +775,8 @@
     coordinator=createCoordinator(globalThis.indexedDB);createPanel();
     try{config=await loadConfig();shadow.querySelector('[data-env-select]').value=config.environment||'production';shadow.querySelector('[data-settings]').open=!config.key;}
     catch(e){localError=e.message;render();return;}
-    new MutationObserver(mount).observe(document.documentElement,{subtree:true,childList:true});
+    // The native dashboard owns its page tree. A broad childList observer
+    // can otherwise reinsert this panel during a navigation teardown loop.
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
     document.addEventListener('be-afrr-source',receiveBids);
@@ -773,6 +786,7 @@
     window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});
     window.addEventListener('pagehide',()=>{destroyed=true;clearTimeout(timer);});
     window.addEventListener('pageshow',()=>{destroyed=false;tick();});
+    window.addEventListener('popstate',()=>{mount();if(placementTarget())tick();});
     window.addEventListener('resize',()=>{const plot=shadow?.querySelector('[data-power-plot]');if(plot)plot.dataset.signature='';renderGraph();});
     await tick();
   }
