@@ -1,3 +1,38 @@
+/* Measured 16S LFP voltage profile: RS232 logs 9–12, 19 and 25 October 2026.
+   Reported BMS SOC selects voltage; SOC itself is integrated from estimated Ah.
+   No fixed loss factor. This is a voltage estimate, not a voltage sensor. */
+(function(root){
+  'use strict';
+  const profile={"series_cells_per_pack":16,"reference_ah_per_pack":330.0,"models":{"charge":{"soc_percent":[0.0,2.0,5.0,8.0,10.0,15.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0,85.0,90.0,95.0,98.0,100.0],"zero_current_voltage_v":[45.04873667,46.21263523,48.01104624,48.01104624,51.33626837,51.63642474,52.110589,52.93937053,52.93937053,53.05079145,53.34006213,53.50776963,53.62106119,54.04416067,54.80427031,55.01987558,55.94997012,55.94997012],"voltage_per_c_rate_v":4.19762928},"discharge":{"soc_percent":[0.0,2.0,5.0,8.0,10.0,15.0,20.0,30.0,40.0,50.0,60.0,70.0,80.0,85.0,90.0,95.0,98.0,100.0],"zero_current_voltage_v":[44.92394152,47.65484755,47.65484755,47.65484755,47.65484755,48.37198358,51.17052752,52.63147204,52.63147204,52.73339626,53.05859432,53.32539778,53.32539778,53.32539778,53.32539778,53.32539778,53.50611041,55.35587888],"voltage_per_c_rate_v":4.64643859}},"id":"rs232-16s-20261026-v1","minimumSoc":4.0024,"minimumVoltage":46.643,"maximumVoltage":56.33};
+  const finite=Number.isFinite,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  function base(direction,soc){
+    const m=profile.models[direction],s=clamp(finite(soc)?soc:50,profile.minimumSoc,100),x=m.soc_percent,y=m.zero_current_voltage_v;
+    let i=1;while(i<x.length-1&&x[i]<s)i++;
+    return y[i-1]+(y[i]-y[i-1])*(s-x[i-1])/(x[i]-x[i-1]);
+  }
+  // Mean of the measured charge/discharge curves, integrated over SOC.
+  // Used only for kWh/Ah capacity display; actual counting uses varying voltage.
+  const referenceVoltage=(()=>{let total=0;for(let s=0;s<100;s+=.5)total+=(base('charge',s+.25)+base('discharge',s+.25))*.25;return total/100;})();
+  function current(powerOut,soc,capacityAh){
+    if(!finite(powerOut)||!finite(capacityAh)||capacityAh<=0)return null;
+    if(powerOut===0)return 0;
+    const p=-powerOut,direction=p>0?'charge':'discharge',u=base(direction,soc),r=profile.models[direction].voltage_per_c_rate_v/capacityAh;
+    const discriminant=u*u+4*r*p;
+    let i=discriminant>0?2*p/(u+Math.sqrt(discriminant)):p/profile.minimumVoltage;
+    const voltage=clamp(i?p/i:u,profile.minimumVoltage,profile.maximumVoltage);
+    return p/voltage; // Positive current charges the battery.
+  }
+  function integrate(p0,p1,ms,s0,s1,capacityAh){
+    if(p0*p1<0){const f=Math.abs(p0)/(Math.abs(p0)+Math.abs(p1)),s=s0+(s1-s0)*f;
+      const a=integrate(p0,0,ms*f,s0,s,capacityAh),b=integrate(0,p1,ms*(1-f),s,s1,capacityAh);
+      return {input:a.input+b.input,output:a.output+b.output};}
+    const a=current(p0,s0,capacityAh),b=current(p1,s1,capacityAh);
+    if(a===null||b===null)return null;
+    const ah=(a+b)*.5*ms/3600000;return {input:Math.max(0,ah),output:Math.max(0,-ah)};
+  }
+  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate};
+})(typeof window!=='undefined'?window:globalThis);
+
 /* BE-only energy balance. Positive bo is battery output in W. */
 (function(root){
   'use strict';
@@ -12,7 +47,8 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
+    const voltage=c.voltageProfile&&root.BEMeasuredVoltage,ahMode=!!(voltage&&Number.isFinite(c.capacityAh)&&c.capacityAh>0);
+    let stored=null,input=0,output=0,inputAh=0,outputAh=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
@@ -20,7 +56,12 @@
         const dt=r[0]-prev[0];
         if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
           const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;change=e.input-e.output;
-          if(stored!==null)stored+=change;
+          if(ahMode){
+            const s0=rawValid(prev[1])?prev[1]:lastRaw??stored??50,s1=raw??s0;
+            const ah=voltage.integrate(prev[2],r[2],dt,s0,s1,c.capacityAh);
+            inputAh+=ah.input;outputAh+=ah.output;
+            if(stored!==null)stored+=100*(ah.input-ah.output)/c.capacityAh;
+          }else if(stored!==null)stored+=100*change/c.capacity;
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
@@ -72,8 +113,8 @@
       }
       if(raw!==null)lastRaw=raw;
       if(anchor){
-        const before=stored===null?null:stored/c.capacity*100;
-        stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
+        const before=stored;
+        stored=anchor.soc;if(!anchor.silent||raw===anchor.soc)uncertain=false;
         if(anchor.statsReference){
           const saved=anchor.statsReference;
           lastAnchor={...saved.reference,input:input-saved.input,output:output-saved.output};
@@ -82,11 +123,11 @@
           if(!anchor.silent)events.push(lastAnchor);
         }
       }
-      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
+      points.push({t:r[0],raw,power:r[2],soc:stored,input,output,inputAh,outputAh,gap,uncertain,anchor:anchor||null,
         lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},boundaryState:{lastRaw},reference:lastAnchor,
         sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
-    return {points,input,output,gaps,lastAnchor,events,uncertain};
+    return {points,input,output,inputAh,outputAh,gaps,lastAnchor,events,uncertain};
   }
   function at(points,t,maxGapMs=defaults.maxGapMs){
     let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
@@ -113,7 +154,16 @@
       if(q.t>=r.t)out[k]=clamp(e/c.capacity*100);
       const fraction=(end-Math.max(q.t,r.t))/q.dt,limit=power*q.dt/3600000;
       const change=Math.max(-limit,Math.min(limit,q.pv-q.load))*fraction;
-      e=Math.max(.05*c.capacity,Math.min(c.capacity,e+(change>=0?change*c.chargeEfficiency:change/c.dischargeEfficiency)));
+      if(c.voltageProfile&&root.BEMeasuredVoltage&&c.capacityAh>0){
+        let s=e/c.capacity*100,remaining=q.dt*fraction;
+        const p=remaining>0?-change*3600000000/remaining:0;
+        while(remaining>0){
+          const dt=Math.min(remaining,60000),i=root.BEMeasuredVoltage.current(p,s,c.capacityAh),predicted=s+i*dt/3600000/c.capacityAh*100;
+          const ah=root.BEMeasuredVoltage.integrate(p,p,dt,s,predicted,c.capacityAh);
+          s=clamp(s+100*(ah.input-ah.output)/c.capacityAh);remaining-=dt;
+        }
+        e=s/100*c.capacity;
+      }else e=Math.max(.05*c.capacity,Math.min(c.capacity,e+(change>=0?change*c.chargeEfficiency:change/c.dischargeEfficiency)));
       last=end;
     }
     return out;
@@ -251,19 +301,20 @@
   function resolve(value){
     const c=value&&typeof value==='object'?value:{};
     if(c.capacityMode==='fcc'){
-      const fccAh=numeric(c.fccAh),packCount=numeric(c.packCount),nominalVoltage=numeric(c.nominalVoltage);
-      if(!(fccAh>0&&Number.isInteger(packCount)&&packCount>=1&&packCount<=100&&nominalVoltage>=1&&nominalVoltage<=1000))return null;
-      const capacity=fccAh*packCount*nominalVoltage/1000;
-      return capacity>=.01&&capacity<=1000?{mode:'fcc',capacity,fccAh,packCount,nominalVoltage}:null;
+      const fccAh=Math.min(330,numeric(c.fccAh)),packCount=numeric(c.packCount);
+      if(!(fccAh>0&&Number.isInteger(packCount)&&packCount>=1&&packCount<=100))return null;
+      const capacityAh=fccAh*packCount,capacity=capacityAh*root.BEMeasuredVoltage.referenceVoltage/1000;
+      return capacity>=.01&&capacity<=1000?{mode:'fcc',capacity,capacityAh,fccAh,packCount}:null;
     }
     if(c.capacityMode&&c.capacityMode!=='kwh')return null;
     const capacity=numeric(c.capacityKwh??c.capacity);
-    return capacity>=.01&&capacity<=1000?{mode:'kwh',capacity}:null;
+    return capacity>=.01&&capacity<=1000?{mode:'kwh',capacity,capacityAh:capacity*1000/root.BEMeasuredVoltage.referenceVoltage}:null;
   }
   function readForm(form,previous={}){
-    const next={...previous,capacityMode:form.elements.capacityMode.value,
-      capacityKwh:numeric(form.elements.capacity.value),fccAh:numeric(form.elements.fccAh.value),
-      packCount:numeric(form.elements.packCount.value),nominalVoltage:numeric(form.elements.nominalVoltage.value)};
+    const {nominalVoltage,...retained}=previous;
+    const next={...retained,capacityMode:form.elements.capacityMode.value,
+      capacityKwh:numeric(form.elements.capacity.value),fccAh:Math.min(330,numeric(form.elements.fccAh.value)),
+      packCount:numeric(form.elements.packCount.value)};
     const resolved=resolve(next);return resolved?{...next,capacity:resolved.capacity}:null;
   }
   root.BECapacity={numeric,resolve,readForm};
@@ -471,22 +522,22 @@
 
   const core=window.BEEnergySOC, key='be-own-soc-settings:'+id, DAY=86400000;
   let cfg={},record={rows:[],manual:[]},result=null,payload=null,db=null,busy=false,error='',storageError='',lastFetch=0,forecastFetch=0;
-  try{cfg=JSON.parse(localStorage.getItem(key)||'{}');}catch{}
-  const settings=()=>({...core.defaults,...cfg,capacity:window.BECapacity.resolve(cfg)?.capacity??NaN,chargeEfficiency:1,dischargeEfficiency:1,auto:true});
+  try{cfg=JSON.parse(localStorage.getItem(key)||'{}')||{};delete cfg.nominalVoltage;}catch{}
+  const settings=()=>{const r=window.BECapacity.resolve(cfg);return {...core.defaults,...cfg,capacity:r?.capacity??NaN,capacityAh:r?.capacityAh??NaN,voltageProfile:window.BEMeasuredVoltage.id,chargeEfficiency:1,dischargeEfficiency:1,auto:true};};
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
   const date=t=>new Date(t).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   const latest=()=>result?.points.at(-1);
   const followsOriginal=p=>p?.lowState?.mode==='tracking'||p?.highState?.mode==='tracking';
   const visualSoc=p=>p?.soc??null;
 
-  const displayKey=key+':last-display:v3';
+  const displayKey=key+':last-display:v4';
   let lastDisplay=null,displaySaved='';
   try{const saved=JSON.parse(localStorage.getItem(displayKey)||'null');if(validDisplay(saved))lastDisplay=saved;}catch{}
-  function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&v.capacity===settings().capacity;}
+  function validDisplay(v){return v&&Number.isFinite(v.t)&&v.t>0&&v.t<=Date.now()+10000&&Number.isFinite(v.soc)&&Number.isFinite(v.capacity)&&v.capacity>0&&Number.isFinite(v.input)&&Number.isFinite(v.output)&&v.capacity===settings().capacity&&v.voltageProfile===settings().voltageProfile;}
   function display(){
     const r=latest(),c=settings(),current=r&&Number.isFinite(r.soc);
     if(current){
-      lastDisplay={...r,capacity:c.capacity,input:result.input,output:result.output,start:record.rows[0]?.[0],gaps:result.gaps};
+      lastDisplay={...r,capacity:c.capacity,voltageProfile:c.voltageProfile,input:result.input,output:result.output,start:record.rows[0]?.[0],gaps:result.gaps};
       const saved=JSON.stringify(lastDisplay);
       if(saved!==displaySaved){try{localStorage.setItem(displayKey,saved);displaySaved=saved;}catch{}}
     }else if(!validDisplay(lastDisplay))lastDisplay=null;
@@ -554,6 +605,11 @@
       u.searchParams.set('installation',id);u.searchParams.set('start',String(Math.max(now-DAY,last?last-300000:0)));u.searchParams.set('end',String(now));
       const j=await request(u.href);
       if(!Array.isArray(j.rows))throw Error('Onbekend historieformaat');
+      // Public meter data only; the TenneT API key stays in private GM storage.
+      const net=[...j.rows,...(j.latest?[j.latest]:[]),...(j.priceSamples||[]).map(p=>({t:p.x,po:p.y,detail:2}))]
+        .filter(r=>Number.isFinite(r.t)&&r.t<=now&&Number.isFinite(r.po))
+        .map(r=>({t:r.t,po:r.po,detail:r.detail===2?2:1,...(Number.isFinite(r.bo)?{bo:r.bo}:{})}));
+      if(typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('be-installation-power',{detail:JSON.stringify({installation:id,rows:net})}));
       const rows=[...j.rows,...(j.latest?[j.latest]:[])].filter(r=>Number.isFinite(r.t)&&r.t<=now).map(r=>[r.t,Number.isFinite(r.s)?r.s:null,Number.isFinite(r.bo)?r.bo:null]);
       await persist(rows);compute();lastFetch=now;error='';
       if(!payload||now-forecastFetch>300000){
@@ -573,7 +629,7 @@
 .be-own-soc [data-settings] label{display:flex;flex-direction:column;min-width:0;gap:6px;font-size:12px;font-weight:550;line-height:1.4}
 .be-own-soc [data-settings] .be-capacity-method{max-width:280px}
 .be-own-soc [data-cap-kwh]{max-width:260px}
-.be-own-soc [data-cap-fcc]{display:grid;grid-template-columns:1fr .8fr 1.25fr;gap:12px;align-items:end;min-width:0}
+.be-own-soc [data-cap-fcc]{display:grid;grid-template-columns:1fr .8fr;gap:12px;align-items:end;min-width:0}
 .be-own-soc [data-cap-fcc][hidden],.be-own-soc [data-cap-kwh][hidden]{display:none!important}
 .be-own-soc [data-settings] .be-cap-input{display:flex;align-items:center;min-width:0;width:100%;height:40px;box-sizing:border-box;border:1px solid var(--be-cap-border);border-radius:8px;background:var(--be-cap-control);overflow:hidden}
 .be-own-soc [data-settings] input[type=number]{flex:1 1 0;min-width:0;width:100%;height:100%;box-sizing:border-box;margin:0;padding:8px 10px;border:0;border-radius:0;outline:none;box-shadow:none;background:transparent;color:inherit;font:inherit;font-size:14px;font-variant-numeric:tabular-nums}
@@ -630,40 +686,37 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div data-cap-fcc hidden>
     <label>Gemiddelde FCC
-      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="100000" step="0.01"><span class="be-cap-unit">Ah</span></span>
+      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="330" step="0.01"><span class="be-cap-unit">Ah</span></span>
     </label>
     <label>Aantal accu’s
       <span class="be-cap-input"><input name="packCount" type="number" inputmode="numeric" min="1" max="100" step="1"><span class="be-cap-unit">stuks</span></span>
     </label>
-    <label>Nominale spanning per accu
-      <span class="be-cap-input"><input name="nominalVoltage" type="number" inputmode="decimal" min="1" max="1000" step="0.1"><span class="be-cap-unit">V</span></span>
-    </label>
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw rekent uitsluitend met de BE-dashboarddata: accuvermogen in/uit, BE-SOC voor de ijkpunten en ingestelde accucapaciteit. SOC = start-SOC + 100 × (kWh in − kWh uit) / capaciteit. Alle beschikbare vermogensintervallen worden geïntegreerd; ontbrekende BE-SOC verwijdert geen geldige vermogensmeting. De kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
     f.elements.capacity.value=cfg.capacityKwh??(resolved?.mode==='kwh'?resolved.capacity:'');
-    f.elements.fccAh.value=cfg.fccAh??'';
+    f.elements.fccAh.value=cfg.fccAh==null?'':Math.min(330,cfg.fccAh);
     f.elements.packCount.value=cfg.packCount??'';
-    f.elements.nominalVoltage.value=cfg.nominalVoltage??51.2;
     function preview(){
+      const ah=window.BECapacity.numeric(f.elements.fccAh.value);if(ah>330)f.elements.fccAh.value=330;
       const fcc=f.elements.capacityMode.value==='fcc';
       f.querySelector('[data-cap-kwh]').hidden=fcc;f.querySelector('[data-cap-fcc]').hidden=!fcc;
       f.elements.capacity.disabled=fcc;f.elements.capacity.required=!fcc;
-      for(const name of ['fccAh','packCount','nominalVoltage']){f.elements[name].disabled=!fcc;f.elements[name].required=fcc;}
+      for(const name of ['fccAh','packCount']){f.elements[name].disabled=!fcc;f.elements[name].required=fcc;}
       const next=window.BECapacity.readForm(f,cfg),cap=next&&window.BECapacity.resolve(next);
       textIfChanged(f.querySelector('[data-capacity-preview]'),cap?'Rekencapaciteit: '+number(cap.capacity,2)+' kWh':'Vul de capaciteit in');
-      textIfChanged(f.querySelector('[data-capacity-help]'),fcc?'Gemiddelde FCC × aantal accu’s × nominale spanning ÷ 1000. Gebruik de FCC in Ah uit je BMS.':'Je eigen rekencapaciteit voor het hele systeem. Account wordt niet automatisch overgenomen.');
+      textIfChanged(f.querySelector('[data-capacity-help]'),fcc?'Ah per accu (maximaal 330) × aantal parallelle accu’s. Spanning automatisch uit het gemeten 16S-LiFePO₄-profiel.':'Je eigen kWh-capaciteit voor het hele systeem; Ah-equivalent uit het gemeten 16S-LiFePO₄-profiel.');
     }
     f.oninput=preview;f.onchange=preview;preview();
     f.onsubmit=async e=>{
-      e.preventDefault();if(!f.reportValidity())return;
+      e.preventDefault();preview();if(!f.reportValidity())return;
       const next=window.BECapacity.readForm(f,cfg);
       if(!next){error='Vul een geldige rekencapaciteit in';render();return;}
-      try{localStorage.setItem(key,JSON.stringify(next));cfg=next;error='';compute();render();}catch(e){error='Opslaan mislukt: '+e.message;render();}
+      try{localStorage.setItem(key,JSON.stringify(next));cfg=next;f.elements.fccAh.value=next.fccAh||'';error='';compute();render();}catch(e){error='Opslaan mislukt: '+e.message;render();}
     };
     p.querySelector('[data-manual]').onsubmit=async e=>{
       e.preventDefault();const form=e.currentTarget,r=latest();if(!r||!form.reportValidity())return;
@@ -671,7 +724,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.3.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }

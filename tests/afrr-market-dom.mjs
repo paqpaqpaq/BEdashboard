@@ -33,9 +33,15 @@ async function seedBids(database){
  const db=await new Promise((resolve,reject)=>{const r=database.open('balansenergie-bids-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('kwartieren',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
  await new Promise((resolve,reject)=>{const tx=db.transaction('kwartieren','readwrite');tx.objectStore('kwartieren').put({id:'test:'+q,customer:'test',start:q,end:q+Q,export:{value:.11,observedAt:q+30000},import:{value:-.02,observedAt:q+40000}});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
 }
+async function seedPower(database){
+ const db=await new Promise((resolve,reject)=>{const r=database.open('balansenergie-bronnen-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('dagen');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+ const day=new Date(now),key=day.getFullYear()+'-'+String(day.getMonth()+1).padStart(2,'0')+'-'+String(day.getDate()).padStart(2,'0');
+ await new Promise((resolve,reject)=>{const tx=db.transaction('dagen','readwrite');tx.objectStore('dagen').put({rows:[{t:now-1200000,po:2000},{t:now-1080000,po:-6000}]},'test:'+key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
+}
 const enabled=scope=>new Map([['be-afrr-market-settings-v1',{key:secret,scope,enabled:true,environment:'production'}]]);
 try{
  await seedBids(idb);
+ await seedPower(idb);
  const a=page();await until(()=>a.root?.querySelector('[data-status]').textContent.includes('Vul'),'initial panel');
  assert.equal(requests.length,0,'zero network before entering a key, including with existing BIDs');
  assert.equal(a.root.querySelector('[data-advanced]').open,false,'technical details start collapsed');
@@ -80,7 +86,28 @@ try{
  await until(()=>a.root.querySelector('[data-power-plot] svg'),'power graph rendered from cache');
  assert(a.root.querySelector('[data-power-plot] svg').getAttribute('aria-label').includes('dezelfde schaal'));
  assert(a.root.querySelectorAll('[data-power-plot] polyline').length>=2,'up/down get separate series');
- assert.equal(requests.length,graphRequests,'opening graph makes no API calls');
+ assert(a.root.querySelector('[data-series="own-export"]'),'own historical export backfilled from the existing BE archive');
+ a.w.document.dispatchEvent(new a.w.CustomEvent('be-installation-power',{detail:JSON.stringify({installation:'test',rows:[{t:now-1200000,po:2000},{t:now-1080000,po:-6000}]})}));
+ await until(()=>a.root.querySelector('[data-series="own-export"]'),'measured net export drawn');
+ assert(a.root.querySelector('[data-series="own-import"]'),'measured net import drawn');
+ assert(!a.root.querySelector('[data-market-activation]'),'no market activation bars');
+ assert(!a.root.querySelector('[data-bid-reached]'),'no bid-reached markers presented as own dispatch');
+ let svg=a.root.querySelector('[data-power-plot] svg');
+ assert.equal(Number(svg.getAttribute('data-window-end'))-Number(svg.getAttribute('data-window-start')),1800000);
+ const shortPoints=a.root.querySelector('[data-series="own-export"]').getAttribute('points');
+ const range=a.root.querySelector('[data-graph-range="21600000"]');range.click();
+ assert.equal(range.getAttribute('aria-pressed'),'true');assert.equal(a.root.querySelectorAll('[data-graph-range][aria-pressed="true"]').length,1);
+ svg=a.root.querySelector('[data-power-plot] svg');
+ assert.equal(Number(svg.getAttribute('data-window-end'))-Number(svg.getAttribute('data-window-start')),21600000,'selector changes the actual x-axis duration');
+ assert.notEqual(a.root.querySelector('[data-series="own-export"]').getAttribute('points'),shortPoints,'existing measurements move to their correct positions in a six-hour window');
+ assert(a.root.querySelector('[data-graph-coverage]').textContent.includes('Jouw net:'));
+ assert.equal(requests.length,graphRequests,'own meter data and history-range changes make no API calls');
+ for(const width of [320,375,800,1400]){
+   Object.defineProperty(a.root.querySelector('[data-power-plot]'),'clientWidth',{get:()=>width,configurable:true});a.w.dispatchEvent(new a.w.Event('resize'));
+   assert.equal(a.root.querySelector('[data-power-plot] svg').getAttribute('viewBox'),'0 0 '+width+' 300');
+   assert.equal(a.root.querySelectorAll('.period-control button').length,3);assert.equal(a.root.querySelectorAll('.graph-readout strong').length,2);
+ }
+
  const b=page({at:now+1500});
  await until(()=>b.root?.querySelector('[data-up-ladder]').textContent.includes('20–30 MW'),'second tab full cache');
  assert.equal(requests.length,2,'reloads and tabs reuse both API caches');

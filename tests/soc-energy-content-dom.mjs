@@ -13,7 +13,7 @@ const chart={canvas,width:600,height:250,chartArea:{left:0,right:600,top:0,botto
 w.Chart={register(){},getChart:x=>x==='soc-chart'||x===canvas?chart:null};
 const hook=`cfg={capacityMode:'kwh',capacityKwh:48.2};record={rows:Array.from({length:73},(_,i)=>[${start}+i*300000,82-18*i/72,1060.4]),manual:[{t:${start},soc:80,kind:'Voorbeeld'}]};register();compute();render();return;`;
 w.eval(src.replace('  register();compute();render();',hook));
-const chemical=w.document.querySelector('[data-chemical]');assert.equal(chemical.textContent,'32,2 kWh');
+const chemical=w.document.querySelector('[data-chemical]');assert.equal(chemical.textContent,'32,3 kWh');
 function normalize(color){const s=w.document.createElement('span');s.style.color=color;return s.style.color;}
 for(const width of [320,375,1024])for(const mode of ['light','bruingrijs','grafiet']){
  w.happyDOM.setWindowSize({width,height:800});w.BETheme.apply(mode!=='light',mode==='light'?'bruingrijs':mode);
@@ -23,7 +23,7 @@ for(const width of [320,375,1024])for(const mode of ['light','bruingrijs','grafi
  const color=w.getComputedStyle(chemical).color;
  assert.equal(normalize(color),normalize(w.BETheme.seriesColor('coulomb')),mode+' chemical value colour');
  const tip=w.document.querySelector('[data-be-soc-tooltip]'),values=[...tip.querySelectorAll('.be-soc-tooltip-value')];
- assert(values[0].textContent.includes('64% · 30,8 kWh'));assert(values[1].textContent.includes('67% · 32,2 kWh'));
+ assert(values[0].textContent.includes('64% · 30,8 kWh'));assert(values[1].textContent.includes('67% · 32,3 kWh'));
  assert.equal(normalize(w.getComputedStyle(values[1]).color),normalize(w.BETheme.seriesColor('coulomb')),mode+' tooltip Coulomb colour');
  const expectedNative=mode==='light'?'#69318d':w.BETheme.color('#69318d','text',true);
  assert.equal(normalize(w.getComputedStyle(values[0]).color),normalize(expectedNative),mode+' native tooltip colour');

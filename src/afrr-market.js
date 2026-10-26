@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.3.2. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.4. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -11,6 +11,7 @@
   let host,shadow,config={},state=null,molState=null,budgetState=null,bidState={},bidError='',coordinator,timer,busy=false,inFlight=false,localError='',destroyed=false;
   let bidDB,observedCustomer='',lastBidRead=0;
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
+  let emsRows=[],emsInstallation='',emsRevision=0,emsDB,lastEmsRead=0,graphDuration=1800000,graphSelection=null;
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
@@ -111,6 +112,23 @@
     return {label:reached?'Biedprijs bereikt in bronmeting':'Biedprijs nog niet bereikt',
       detail:(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
         ' '+number(volume)+' MW '+(direction==='up'?'opregelen.':'afregelen.'),position,tone:reached?'reached':'waiting'};
+  }
+  function powerRows(rows,now=Date.now()){
+    const map=new Map();
+    for(const r of rows||[]){
+      if(!Number.isFinite(r?.t)||r.t>now+10000||r.t<now-6*3600000||!Number.isFinite(r.po))continue;
+      const old=map.get(r.t),detail=r.detail===2?2:1;
+      if(!old||detail>=old.detail)map.set(r.t,{t:r.t,po:r.po,detail,...(Number.isFinite(r.bo)?{bo:r.bo}:{})});
+    }
+    const sorted=[...map.values()].sort((a,b)=>a.t-b.t),fine=sorted.filter(r=>r.detail===2),intervals=[];
+    for(let i=1;i<fine.length;i++)if(fine[i].t-fine[i-1].t<=300000)intervals.push([fine[i-1].t,fine[i].t]);
+    let i=0;
+    return sorted.filter(r=>{if(r.detail===2)return true;while(i<intervals.length&&intervals[i][1]<r.t)i++;
+      return !(i<intervals.length&&intervals[i][0]<=r.t&&r.t<=intervals[i][1]);});
+  }
+  function graphWindow(now,duration){
+    const span=[1800000,7200000,21600000].includes(Number(duration))?Number(duration):1800000;
+    return {start:now-span,end:now};
   }
   function marketFeature(row,bid,ladder,direction,rows){
     const d=direction==='up'?'export':'import',b=bid?.[d];
@@ -244,6 +262,10 @@
     }
     return {
       read:(id='live')=>transaction([id],r=>({value:r[id]})),
+      power:(customer,rows,now)=>transaction(['power:'+customer],r=>{
+        const id='power:'+customer,saved=powerRows([...(r[id]?.rows||[]),...rows],now);
+        return {write:rows.length?[{id,rows:saved}]:[],value:saved};
+      }),
       clear:()=>transaction(['live','mol'],()=>({write:['live','mol'].map(id=>({id,scope:'',nextAt:0})),value:null})),
       retry:(scope,id='live')=>transaction([id],r=>{
         const s=r[id];
@@ -296,8 +318,11 @@
           if(!loaded)error='Biedladder van het huidige kwartier nog niet gepubliceerd; maximaal drie pogingen per kwartier.';
         }else{
           const previous=s.good,advances=!previous||data.latest.end>previous.latest.end;
-          good=previous&&data.latest.end<previous.latest.end?{...previous,fetchedAt:now}:
-            {...data,fetchedAt:now,advancedAt:advances?now:previous.advancedAt};
+          const merged=new Map((previous?.rows||[]).map(p=>[p.start,p]));
+          data.rows.forEach(p=>merged.set(p.start,p));
+          const rows=[...merged.values()].filter(p=>p.end>now-6*3600000).sort((a,b)=>a.start-b.start).slice(-3600);
+          const latest=rows.at(-1)||data.latest;
+          good={rows,latest,fetchedAt:now,advancedAt:advances?now:previous.advancedAt};
           unchanged=advances?0:(s.unchanged||0)+1;
           // Duplicate/stalled publications do not justify 12-second polling.
           const interval=unchanged?Math.min(60000,INTERVAL*Math.pow(2,Math.min(3,unchanged))):INTERVAL;
@@ -378,6 +403,39 @@
       const id=link.pathname?.match(/^\/customer\/([^/]+)\/(?:results|account)(?:\/|$)/)?.[1];if(valid(id))return id;
     }
     return '';
+  }
+  function showPower(id,rows){
+    if(id!==customer())return;
+    emsInstallation=id;emsRows=rows;emsRevision++;renderGraph();
+  }
+  async function receivePower(event){
+    if(!panelEnabled()||!coordinator)return;
+    try{
+      const data=typeof event.detail==='string'?JSON.parse(event.detail):event.detail,id=customer();
+      if(!id||data?.installation!==id||!Array.isArray(data.rows))return;
+      showPower(id,await coordinator.power(id,powerRows(data.rows),Date.now()));
+    }catch(_){}
+  }
+  async function readPower(force=false){
+    const now=Date.now(),id=customer();if(!id)return;
+    if(id!==emsInstallation){emsInstallation=id;emsRows=[];lastEmsRead=0;emsRevision++;}
+    if(!force&&now-lastEmsRead<15000)return;lastEmsRead=now;
+    try{
+      showPower(id,await coordinator.power(id,[],now));
+      if(!emsDB)emsDB=new Promise((resolve,reject)=>{
+        const req=indexedDB.open('balansenergie-bronnen-v1',1);
+        req.onupgradeneeded=()=>req.result.createObjectStore('dagen');
+        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(Error());req.onblocked=()=>reject(Error());
+      });
+      const db=await emsDB,day=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+      const keys=[...new Set([day(now),day(now-6*3600000)])];
+      const rows=await new Promise((resolve,reject)=>{
+        const tx=db.transaction('dagen','readonly'),all=[];let left=keys.length;
+        for(const key of keys){const req=tx.objectStore('dagen').get(id+':'+key);
+          req.onsuccess=()=>{all.push(...(req.result?.rows||[]));if(--left===0)resolve(all);};req.onerror=()=>reject(Error());}
+      });
+      showPower(id,await coordinator.power(id,powerRows(rows,now),now));
+    }catch(_){} // The live public meter event remains available if the archive is unavailable.
   }
   async function readBids(force=false){
     const now=Date.now(),id=customer();
@@ -529,47 +587,80 @@
     }
   }
   function renderGraph(){
-    const details=shadow.querySelector('[data-power-graph]');if(!details?.open)return;
+    if(!panelEnabled()||!placementTarget())return;
+    const details=shadow?.querySelector('[data-power-graph]');if(!details?.open)return;
     const good=state?.scope===config.scope?state.good:null,container=shadow.querySelector('[data-power-plot]');
-    const signature=String(good?.fetchedAt||0);if(container.dataset.signature===signature)return;
+    const duration=graphDuration,now=Date.now();
+    const window=graphWindow(now,duration),min=window.start,max=window.end,range=max-min;
+    const rows=(good?.rows||[]).filter(r=>r.end>=min&&r.end<=max);
+    const own=(emsInstallation===customer()?emsRows:[]).filter(r=>r.t>=min&&r.t<=max);
+    const signature=JSON.stringify([good?.fetchedAt||0,duration,emsRevision,Math.floor(now/5000)]);
+    if(container.dataset.signature===signature)return;
     container.dataset.signature=signature;container.replaceChildren();
-    const rows=good?.rows||[];
-    if(!rows.length){text('[data-graph-readout]','Nog geen bronmetingen.');return;}
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
     function node(tag,attrs={},label){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(label!==undefined)el.textContent=label;svg.append(el);return el;}
-    const plotWidth=Math.max(300,Math.min(800,container.clientWidth||host.clientWidth||800));
-    svg.setAttribute('viewBox','0 0 '+plotWidth+' 190');svg.setAttribute('role','img');svg.setAttribute('aria-label','Regelvermogen in MW: opregelen boven, afregelen onder. Beide reeksen met dezelfde schaal.');
-    const min=rows[0].start,max=rows.at(-1).end,range=Math.max(12000,max-min),left=52,width=plotWidth-68;
-    const peak=Math.max(1,...rows.flatMap(r=>[r.up||0,r.down||0])),ceiling=Math.ceil(peak/10)*10;
-    const x=t=>left+width*(t-min)/range;
-    for(const [direction,label,base,color] of [['up','Opregelen',75,'var(--up)'],['down','Afregelen',155,'var(--down)']]){
-      node('text',{x:6,y:base-55,fill:color,'font-size':12},label);
-      for(const value of [0,ceiling]){const y=base-value/ceiling*45;
-        node('line',{x1:left,x2:plotWidth-16,y1:y,y2:y,stroke:'var(--line)','stroke-width':1});
-        node('text',{x:45,y:y+4,fill:'var(--muted)','text-anchor':'end','font-size':10},number(value,0));
-      }
+    const plotWidth=Math.max(300,container.clientWidth||host.clientWidth||800);
+    svg.setAttribute('viewBox','0 0 '+plotWidth+' 300');svg.setAttribute('role','img');
+    svg.setAttribute('data-window-start',String(min));svg.setAttribute('data-window-end',String(max));
+    svg.setAttribute('aria-label','TenneT-regelvermogen links in MW, jouw gemeten netexport boven en netimport onder rechts in kW. Beide richtingen met dezelfde schaal per bron.');
+    const left=36,right=plotWidth-36,width=right-left,x=t=>left+width*(t-min)/range;
+    const nice=value=>{const power=Math.pow(10,Math.floor(Math.log10(Math.max(1,value)))),n=value/power;return (n<=1?1:n<=2?2:n<=5?5:10)*power;};
+    const ceiling=nice(Math.max(1,...rows.flatMap(r=>[r.up||0,r.down||0])));
+    const ownCeiling=17;
+    const tickStep=duration===1800000?(plotWidth<420?900000:600000):duration===7200000?(plotWidth<420?3600000:1800000):(plotWidth<420?10800000:3600000);
+    const ticks=[min];for(let t=Math.ceil(min/tickStep)*tickStep;t<max;t+=tickStep)if(x(t)-left>32&&right-x(t)>32)ticks.push(t);ticks.push(max);
+    for(const t of ticks)node('line',{x1:x(t),x2:x(t),y1:37,y2:254,stroke:'var(--line)','stroke-width':1,opacity:.35,'stroke-dasharray':'2 5'});
+    function series(points,value,base,top,color,dashed,tag){
       let segment=[],last=null;
-      const flush=()=>{if(segment.length)node('polyline',{points:segment.join(' '),fill:'none',stroke:color,'stroke-width':1.8,'vector-effect':'non-scaling-stroke'});segment=[];};
-      for(const row of rows){
-        if(row[direction]===null){flush();last=null;continue;}
-        if(last&&row.start-last.end>0)flush();
-        segment.push(x(row.end).toFixed(2)+','+(base-row[direction]/ceiling*45).toFixed(2));last=row;
+      const flush=()=>{
+        if(segment.length){
+          if(dashed&&segment.length>1){const first=segment[0].split(',')[0],last=segment.at(-1).split(',')[0];node('polygon',{points:first+','+base+' '+segment.join(' ')+' '+last+','+base,fill:color,opacity:.07,'pointer-events':'none'});}
+          node('polyline',{points:segment.join(' '),fill:'none',stroke:color,'stroke-width':dashed?0.8:1.8,'stroke-dasharray':'none','stroke-linecap':'round','stroke-linejoin':'round','vector-effect':'non-scaling-stroke','data-series':tag});
+        }segment=[];
+      };
+      for(const point of points){
+        const v=value(point),t=point.end??point.t;
+        if(!Number.isFinite(v)){flush();last=null;continue;}
+        if(last&&(point.t?t-last.t>300000:point.start>last.end))flush();
+        segment.push(x(t).toFixed(2)+','+(base-v/top*78).toFixed(2));last=point;
       }
       flush();
     }
-    node('text',{x:8,y:12,fill:'var(--muted)','font-size':10},'MW');
-    for(const [t,anchor] of [[min,'start'],[(min+max)/2,'middle'],[max,'end']])node('text',{x:x(t),y:180,fill:'var(--muted)','text-anchor':anchor,'font-size':11},time(t).slice(0,5));
-    const cursor=node('line',{x1:0,x2:0,y1:20,y2:160,stroke:'var(--muted)','stroke-dasharray':'3 3',visibility:'hidden'});
-    const description='Opregelen en afregelen apart · dezelfde MW-schaal · bronvertraging blijft gelden.';
-    text('[data-graph-readout]',description);
-    svg.addEventListener('pointermove',event=>{
+    for(const [direction,label,base,color] of [['up','EXPORT · opregelen',119,'var(--up)'],['down','IMPORT · afregelen',249,'var(--down)']]){
+      node('text',{x:left,y:base-94,fill:color,'font-size':11,'font-weight':600},label);
+      for(const fraction of [0,.5,1]){
+        const y=base-fraction*78;
+        node('line',{x1:left,x2:right,y1:y,y2:y,stroke:'var(--line)','stroke-width':1,'stroke-dasharray':fraction?'3 4':'none',opacity:fraction?0.65:1});
+        node('text',{x:left-4,y:y+3,fill:'var(--muted)','text-anchor':'end','font-size':8.5},number(fraction*ceiling,ceiling<2?1:0));
+        node('text',{x:right+4,y:y+3,fill:'var(--ems-text)','text-anchor':'start','font-size':8.5},number(fraction*ownCeiling,Number.isInteger(fraction*ownCeiling)?0:1));
+      }
+      series(rows,r=>r[direction],base,ceiling,color,false,'tennet-'+direction);
+      series(own,r=>Math.max(0,direction==='up'?-r.po:r.po)/1000,base,ownCeiling,'var(--ems)',true,direction==='up'?'own-export':'own-import');
+    }
+    node('text',{x:left-4,y:32,fill:'var(--muted)','font-size':8,'text-anchor':'end'},'MW');
+    node('text',{x:right+4,y:32,fill:'var(--ems-text)','font-size':8,'text-anchor':'start'},'kW');
+    for(const t of ticks)node('text',{x:x(t),y:282,fill:'var(--muted)','text-anchor':t===min?'start':t===max?'end':'middle','font-size':10},time(t).slice(0,5));
+    const cursor=node('line',{x1:0,x2:0,y1:36,y2:255,stroke:'var(--muted)','stroke-dasharray':'3 3',visibility:'hidden'});
+    const coverage=(label,points,timeOf)=>label+': '+(points.length?time(timeOf(points[0])).slice(0,5)+'–'+time(timeOf(points.at(-1))).slice(0,5):'nog geen metingen');
+    text('[data-graph-coverage]',coverage('TenneT',rows,r=>r.end)+' · '+coverage('Jouw net',own,r=>r.t));
+    const nearest=(points,get,t,limit)=>{const p=points.reduce((a,b)=>!a||Math.abs(get(b)-t)<Math.abs(get(a)-t)?b:a,null);return p&&Math.abs(get(p)-t)<=limit?p:null;};
+    function readout(t,selected=false){
+      const national=nearest(rows,r=>r.end,t,24000),meter=nearest(own,r=>r.t,t,60000);
+      text('[data-graph-time]',time(t));
+      text('[data-graph-tn-value]',national?'Op '+number(national.up)+' · Af '+number(national.down)+' MW':'Geen bronpunt');
+      text('[data-graph-own-value]',meter?(meter.po>0?'Import ':meter.po<0?'Export ':'')+number(Math.abs(meter.po)/1000,2)+' kW':'Geen meetpunt');
+      cursor.setAttribute('x1',x(t));cursor.setAttribute('x2',x(t));cursor.setAttribute('visibility',selected?'visible':'hidden');
+    }
+    const restTime=rows.at(-1)?.end||own.at(-1)?.t||max;
+    if(graphSelection!==null&&(graphSelection<min||graphSelection>max))graphSelection=null;
+    readout(graphSelection??restTime,graphSelection!==null);
+    function inspect(event){
       const rect=svg.getBoundingClientRect();if(!rect.width)return;
-      const t=min+((event.clientX-rect.left)*plotWidth/rect.width-left)/width*range;
-      const row=rows.reduce((a,b)=>Math.abs(a.end-t)<=Math.abs(b.end-t)?a:b);
-      cursor.setAttribute('x1',x(row.end));cursor.setAttribute('x2',x(row.end));cursor.setAttribute('visibility','visible');
-      text('[data-graph-readout]',time(row.end)+' · op '+number(row.up)+' MW · af '+number(row.down)+' MW');
-    });
-    svg.addEventListener('pointerleave',()=>{cursor.setAttribute('visibility','hidden');text('[data-graph-readout]',description);});
+      const t=Math.max(min,Math.min(max,min+((event.clientX-rect.left)*plotWidth/rect.width-left)/width*range));
+      graphSelection=t;readout(t,true);
+    }
+    svg.addEventListener('pointermove',inspect);svg.addEventListener('pointerdown',inspect);
+    svg.addEventListener('pointerleave',()=>{graphSelection=null;readout(restTime);});
     container.append(svg);
   }
   function render(){
@@ -638,7 +729,7 @@
     try{
       config=await loadConfig();
       [state,molState,budgetState]=await Promise.all([coordinator.read(),coordinator.read('mol'),coordinator.read('budget')]);
-      await readBids();render();
+      await readBids();await readPower();render();
       for(const channel of ['live','mol']){
         config=await loadConfig();
         if(!panelEnabled()||!placementTarget()||!config.enabled||!config.key||document.hidden)break;
@@ -707,9 +798,9 @@
     host=document.createElement('section');host.id=ID;host.style.cssText='display:block;flex:0 0 100%;width:100%;min-width:0;margin:16px 0';
     shadow=host.attachShadow({mode:'closed'});
     shadow.innerHTML=`<style>
-      :host{--paper:#fff;--ink:#30263a;--muted:#6b6175;--line:#d9d1e1;--soft:#f7f4fa;--up:#277eae;--down:#b05274;--warn:#a35b12;font:13px/1.5 system-ui,-apple-system,sans-serif}
-      :host([data-theme="grafiet"]){--paper:#1c1f26;--ink:#f5f7fa;--muted:#b6c0cf;--line:#3c4351;--soft:#262a34;--up:#4398ff;--down:#ff8399;--warn:#ffc64a}
-      :host([data-theme="bruingrijs"]){--paper:#37322b;--ink:#f5f0e8;--muted:#c7beb0;--line:#675e4f;--soft:#454036;--up:#31adde;--down:#f681a0;--warn:#eca524}
+      :host{--paper:#fff;--ink:#30263a;--muted:#6b6175;--line:#d9d1e1;--soft:#f7f4fa;--up:#277eae;--down:#b05274;--warn:#a35b12;--ems:#79b79b;--ems-text:#287455;font:13px/1.5 system-ui,-apple-system,sans-serif}
+      :host([data-theme="grafiet"]){--paper:#1c1f26;--ink:#f5f7fa;--muted:#b6c0cf;--line:#3c4351;--soft:#262a34;--up:#4398ff;--down:#ff8399;--warn:#ffc64a;--ems:#9dceb4;--ems-text:#b0dec6}
+      :host([data-theme="bruingrijs"]){--paper:#37322b;--ink:#f5f0e8;--muted:#c7beb0;--line:#675e4f;--soft:#454036;--up:#31adde;--down:#f681a0;--warn:#eca524;--ems:#9dceb4;--ems-text:#b0dec6}
       *{box-sizing:border-box}.panel{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink)}
       header,.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}h3{font-size:15px;margin:0}header>span{font-size:11px;color:var(--muted)}header>[data-status]{margin:0 0 0 auto;flex:0 1 auto}header{column-gap:12px;row-gap:4px}
       p{margin:8px 0}[data-status]{margin-top:10px;color:var(--muted)}[data-warning="true"]{color:var(--warn)}
@@ -718,7 +809,12 @@
       .metric small{display:block;margin-top:5px;font-size:11px;font-variant-numeric:tabular-nums}.source{padding-bottom:10px;border-bottom:1px solid var(--line)}.source span{display:block;color:var(--muted);font-size:11px}
       .bids{border-top:1px solid var(--line);padding-top:12px}.bids h4{font-size:13px;margin:0}.bid-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:10px 0}.bid-card{padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:8px;min-width:0}.bid-card>strong{display:block;font-size:18px;font-variant-numeric:tabular-nums}.bid-card p{margin:6px 0;font-size:12px;overflow-wrap:anywhere}.bid-card small{display:block}.assessment{font-weight:650}[data-tone="reached"]{color:var(--up)}[data-tone="waiting"]{color:var(--warn)}[data-tone="muted"]{color:var(--muted)}
       .summary-grid{display:grid;gap:7px;margin:10px 0}.summary-card{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1fr) minmax(0,1.2fr);gap:12px;padding:10px 12px;background:var(--soft);border-radius:8px;min-width:0;align-items:start}.summary-card>div{min-width:0}.summary-card h4{font-size:11px;font-weight:500;color:var(--muted);margin:0 0 4px}.summary-card strong{display:block;font-size:14px;line-height:1.4;overflow-wrap:anywhere}.summary-card .mw{font-size:21px;font-variant-numeric:tabular-nums}.summary-card small{display:block;font-size:10px;margin-top:3px}.summary-card p{margin:3px 0 0;font-size:11px}.summary-note{padding:4px 0;font-size:11px;color:var(--muted)}[data-summary-source]{font-size:11px;color:var(--muted)}[data-summary-up-power]{color:var(--up)}[data-summary-down-power]{color:var(--down)}@media(max-width:540px){.summary-card{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.summary-effect{grid-column:1/-1;border-top:1px solid var(--line);padding-top:6px}.summary-effect h4{display:none}.summary-card .summary-effect strong{font-size:13px}}
-      [data-power-plot] svg{display:block;width:100%;height:auto;min-height:145px;touch-action:pan-y}[data-graph-readout]{font-variant-numeric:tabular-nums;min-height:1.4em}
+      [data-power-graph]>summary{display:flex;align-items:center;gap:8px;list-style:none;padding:12px 0;font-size:12px}[data-power-graph]>summary::-webkit-details-marker{display:none}[data-power-graph]>summary::before{content:'›';font-size:18px;line-height:1;color:var(--muted);transition:transform .15s}[data-power-graph][open]>summary::before{transform:rotate(90deg)}
+      .power-chart{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--paper);overflow:hidden}.graph-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.graph-heading{font-size:12px;font-weight:650}.graph-heading small{display:block;font-weight:400;font-size:10px;margin-top:2px}.period-control{display:inline-flex;gap:3px;padding:3px;background:var(--soft);border:1px solid var(--line);border-radius:10px;margin-left:auto}.period-control button{min-height:32px;min-width:51px;padding:4px 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);font-size:11px;line-height:1.3;white-space:nowrap;box-shadow:none}.period-control button:hover{color:var(--ink);background:var(--paper)}.period-control button[aria-pressed="true"]{background:var(--paper);color:var(--ink);border-color:var(--up);font-weight:650;box-shadow:0 1px 3px #00000015}
+      .graph-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin:12px 0 2px}.graph-legend>span{display:inline-flex;gap:6px;align-items:center}.graph-swatch{display:inline-block;width:20px;border-top:2px solid var(--muted)}.graph-swatch.meter{border-top:2px solid var(--ems)}.graph-legend>span:last-child{color:var(--ems-text);font-weight:550}
+      [data-power-plot] svg{display:block;width:100%;height:auto;min-height:230px;touch-action:pan-y;overflow:visible}[data-power-plot] text{font-family:system-ui,-apple-system,sans-serif;font-variant-numeric:tabular-nums;pointer-events:none}
+      .graph-readout{display:grid;grid-template-columns:55px minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;padding:10px;background:var(--soft);border-radius:8px;margin-top:4px;font-variant-numeric:tabular-nums}.graph-readout small{display:block;font-size:9px;margin-bottom:2px}.graph-readout strong{font-size:11px;font-weight:550;display:block;line-height:1.5}.graph-readout>[data-graph-time]{font-size:10px;color:var(--muted)}[data-graph-own-value]{color:var(--ems-text)}[data-graph-coverage]{font-size:9px!important;line-height:1.6;margin:7px 2px 0!important}
+      @media(max-width:440px){.power-chart{padding:10px}.period-control{width:100%;margin-left:0}.period-control button{flex:1;min-height:35px}.graph-readout{grid-template-columns:47px minmax(0,1fr) minmax(0,1fr);gap:7px;padding:8px}.graph-readout strong{font-size:10px}.graph-legend{gap:12px}}
       button,input,select{font:inherit;color:var(--ink);min-height:40px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}button{padding:6px 11px;cursor:pointer}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--up);outline-offset:2px}
       label{display:block;margin:10px 0 5px}input,select{width:100%;padding:8px}input{font-size:16px}.actions{margin:10px 0}summary{cursor:pointer;padding:8px 0;font-weight:550}small,.note{font-size:11px;color:var(--muted)}a{color:var(--up)}
       .table{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums}th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}
@@ -735,7 +831,7 @@
         <div class="summary-effect"><h4>Effect</h4><strong data-summary-down>Nog geen gegevens</strong><p data-summary-down-detail></p></div></section></div>
       <p data-summary-source></p>
       <p class="summary-note">Kale prijzen · Opregelen: regelprijs ≥ ontlaadbod. Afregelen: regelprijs ≤ laadbod. Afroep van jouw accu is niet bevestigd.</p>
-      <details data-power-graph><summary>Regelvermogen · grafiek</summary><div data-power-plot></div><p class="note" data-graph-readout></p></details>
+      <details data-power-graph><summary>Regelvermogen & jouw import/export</summary><div class="power-chart"><div class="graph-toolbar"><div class="graph-heading">Vermogen in de tijd<small>TenneT en jouw installatie</small></div><div class="period-control" role="group" aria-label="Tijdsbereik grafiek"><button type="button" data-graph-range="1800000" aria-pressed="true">30 min</button><button type="button" data-graph-range="7200000" aria-pressed="false">2 uur</button><button type="button" data-graph-range="21600000" aria-pressed="false">6 uur</button></div></div><div class="graph-legend"><span><i class="graph-swatch"></i>TenneT · MW links</span><span><i class="graph-swatch meter"></i>Jouw net · kW rechts</span></div><div data-power-plot></div><div class="graph-readout" data-graph-readout><span data-graph-time>—</span><span><small>TenneT</small><strong data-graph-tn-value>—</strong></span><span><small>Jouw net</small><strong data-graph-own-value>—</strong></span></div><p class="note" data-graph-coverage></p></div></details>
       <details data-advanced><summary>Details · marktgegevens en verbinding</summary>
       <div class="metrics"><div class="metric up"><span>aFRR opregelen</span><strong data-up>— MW</strong><small data-up-price>—</small></div><div class="metric down"><span>aFRR afregelen</span><strong data-down>— MW</strong><small data-down-price>—</small></div></div>
       <p data-signal>Nog geen meting.</p><p class="source"><span data-source></span><span data-quarter></span></p>
@@ -768,6 +864,11 @@
     shadow.querySelector('[data-forget]').addEventListener('click',forget);
     shadow.querySelector('[data-refresh]').addEventListener('click',tick);
     shadow.querySelector('[data-power-graph]').addEventListener('toggle',renderGraph);
+    try{const saved=Number(localStorage.getItem('be_cfg_afrr_graph_span'));if([1800000,7200000,21600000].includes(saved))graphDuration=saved;}catch(_){}
+    const rangeButtons=[...shadow.querySelectorAll('[data-graph-range]')];
+    function selectRange(value){graphDuration=value;graphSelection=null;rangeButtons.forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.graphRange)===value)));renderGraph();}
+    rangeButtons.forEach(button=>button.addEventListener('click',()=>{const value=Number(button.dataset.graphRange);selectRange(value);try{localStorage.setItem('be_cfg_afrr_graph_span',String(value));}catch(_){}}));
+    selectRange(graphDuration);
     mount();
   }
   async function boot(){
@@ -780,7 +881,8 @@
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
     document.addEventListener('be-afrr-source',receiveBids);
-    document.addEventListener('be-tarief-update',()=>{if(panelEnabled())readBids(true).then(render);});
+    document.addEventListener('be-installation-power',receivePower);
+    document.addEventListener('be-tarief-update',()=>{if(panelEnabled())Promise.all([readBids(true),readPower(true)]).then(render);});
     function settingChanged(){clearTimeout(timer);mount();if(panelEnabled())tick();}
     document.addEventListener('be-afrr-market-change',settingChanged);
     window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});

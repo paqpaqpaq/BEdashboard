@@ -4,19 +4,20 @@
   function resolve(value){
     const c=value&&typeof value==='object'?value:{};
     if(c.capacityMode==='fcc'){
-      const fccAh=numeric(c.fccAh),packCount=numeric(c.packCount),nominalVoltage=numeric(c.nominalVoltage);
-      if(!(fccAh>0&&Number.isInteger(packCount)&&packCount>=1&&packCount<=100&&nominalVoltage>=1&&nominalVoltage<=1000))return null;
-      const capacity=fccAh*packCount*nominalVoltage/1000;
-      return capacity>=.01&&capacity<=1000?{mode:'fcc',capacity,fccAh,packCount,nominalVoltage}:null;
+      const fccAh=Math.min(330,numeric(c.fccAh)),packCount=numeric(c.packCount);
+      if(!(fccAh>0&&Number.isInteger(packCount)&&packCount>=1&&packCount<=100))return null;
+      const capacityAh=fccAh*packCount,capacity=capacityAh*root.BEMeasuredVoltage.referenceVoltage/1000;
+      return capacity>=.01&&capacity<=1000?{mode:'fcc',capacity,capacityAh,fccAh,packCount}:null;
     }
     if(c.capacityMode&&c.capacityMode!=='kwh')return null;
     const capacity=numeric(c.capacityKwh??c.capacity);
-    return capacity>=.01&&capacity<=1000?{mode:'kwh',capacity}:null;
+    return capacity>=.01&&capacity<=1000?{mode:'kwh',capacity,capacityAh:capacity*1000/root.BEMeasuredVoltage.referenceVoltage}:null;
   }
   function readForm(form,previous={}){
-    const next={...previous,capacityMode:form.elements.capacityMode.value,
-      capacityKwh:numeric(form.elements.capacity.value),fccAh:numeric(form.elements.fccAh.value),
-      packCount:numeric(form.elements.packCount.value),nominalVoltage:numeric(form.elements.nominalVoltage.value)};
+    const {nominalVoltage,...retained}=previous;
+    const next={...retained,capacityMode:form.elements.capacityMode.value,
+      capacityKwh:numeric(form.elements.capacity.value),fccAh:Math.min(330,numeric(form.elements.fccAh.value)),
+      packCount:numeric(form.elements.packCount.value)};
     const resolved=resolve(next);return resolved?{...next,capacity:resolved.capacity}:null;
   }
   root.BECapacity={numeric,resolve,readForm};

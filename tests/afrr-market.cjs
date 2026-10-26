@@ -5,7 +5,7 @@ const source=fs.readFileSync(__dirname+'/../src/afrr-market.js','utf8');
 new vm.Script(source);
 const c={Intl,Date,Math,console,setTimeout,clearTimeout};vm.createContext(c);
 vm.runInContext(source.slice(source.indexOf('  const INTERVAL='),source.indexOf('  async function boot()'))+
- '\nglobalThis.test={numeric,parsePayload,parseMerit,ladderPosition,captureBid,comparison,trainingQuarter,historicalChance,marketFeature,publicationAfter,meritPath,retryAfter,failureDelay,createCoordinator,request,Fault};',c);
+ '\nglobalThis.test={powerRows,graphWindow,numeric,parsePayload,parseMerit,ladderPosition,captureBid,comparison,trainingQuarter,historicalChance,marketFeature,publicationAfter,meritPath,retryAfter,failureDelay,createCoordinator,request,Fault};',c);
 const core=c.test,now=Date.now(),start=now-120000,Q=900000;
 function payload(points){return {Response:{informationType:'BALANCE_DELTA_HIGH_RES',TimeSeries:[{quantity_Measurement_Unit_name:'MAW',currency_Unit_name:'EUR',Period:[{points}]}]}};}
 function point(i,extra={}){return {timeInterval_start:new Date(start+i*12000).toISOString(),timeInterval_end:new Date(start+(i+1)*12000).toISOString(),power_afrr_in:'25.5',power_afrr_out:'0.0',max_upw_regulation_price:'0.0',min_downw_regulation_price:null,...extra};}
@@ -30,6 +30,10 @@ const flat={...ladder,thresholds:[{capacity:10,up:100},{capacity:20,up:100},{cap
 assert.equal(core.ladderPosition(flat,100,'up').upper,20,'equal-price blocks retain an interval');
 assert.equal(core.ladderPosition({...ladder,thresholds:[{capacity:10,up:200},{capacity:20,up:100}]},150,'up'),null,'non-monotonic ladder is rejected');
 const raw={start:q,end:q+Q,afrrBidStatus:{export:'bid_fallback',import:'confirmed'},values:{afrr_export:.25,afrr_import:99}};
+const activeRow={start:q+120000,end:q+132000,up:50,upPrice:120};
+assert.equal(core.graphWindow(now,7200000).end-core.graphWindow(now,7200000).start,7200000);
+const net=core.powerRows([{t:now-30000,po:1000},{t:now-20000,po:-3000},{t:now+20000,po:5000},{t:now-7*3600000,po:2000}],now);
+assert.equal(net.length,2);assert.equal(net[1].po,-3000,'negative net power is export; positive is import');
 const bid=core.captureBid(raw,q+30000);assert.equal(bid.export.value,.25);assert.equal(bid.import,undefined,'confirmed quotes cannot become bids');
 assert.equal(core.captureBid(raw,q+120000),null,'live capture stops exactly at two minutes');
 assert.equal(core.captureBid({...raw,carried:true},q+30000),null,'carried data is never a fresh bid');
@@ -144,5 +148,10 @@ assert.equal(core.historicalChance(history,probe,bid,ladder,'up',samples,q+Q+120
  await assert.rejects(core.request({environment:'production',key:'LOCAL-TEST-KEY'}),e=>e.status===403&&!e.message.includes('LOCAL-TEST-KEY'));
  c.GM_xmlhttpRequest=options=>options.onload({status:429,responseHeaders:'Retry-After: 120'});
  await assert.rejects(core.request({environment:'production',key:'LOCAL-TEST-KEY'}),e=>e.status===429&&e.retryAt>Date.now()+110000);
+ const retained=core.createCoordinator(new IDBFactory(),'test-retain-six-hours');
+ await retained.reserve('s','a',now);await retained.success('s','a',{rows:[{...activeRow,start:now-7*3600000,end:now-7*3600000+12000},{...activeRow,start:now-3*3600000,end:now-3*3600000+12000}],latest:{end:now-3*3600000+12000}},now);
+ assert.equal((await retained.reserve('s','a',now+30000)).reserved,true);await retained.success('s','a',{rows:[{...activeRow,start:now-12000,end:now}],latest:{end:now}},now+30000);
+ assert.equal((await retained.read()).good.rows.length,2,'keep received history for six hours and discard older data');
+ await retained.power('a',[{t:now,po:-3000}],now);assert.equal((await retained.power('a',[],now))[0].po,-3000);assert.equal((await retained.power('b',[],now)).length,0,'net measurements stay installation scoped');
  console.log('PASS TenneT core: early BID capture, quarter isolation, raw price units, up/down ladders, dummy-energy guard, source-time features, independent historical cases with uncertainty, atomic shared budgets, 12-second publication alignment, adaptive backoff, quarter cache, permissions isolation and secret redaction.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

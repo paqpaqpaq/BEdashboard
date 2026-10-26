@@ -12,7 +12,8 @@
     const c={...defaults,...settings};if(!(c.capacity>0))throw Error('Ongeldige accucapaciteit');
     rows=[...new Map(rows.filter(valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
     const anchors=new Map(manual.filter(a=>Number.isFinite(a.t)&&rawValid(a.soc)).map(a=>[a.t,a]));
-    let stored=null,input=0,output=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
+    const voltage=c.voltageProfile&&root.BEMeasuredVoltage,ahMode=!!(voltage&&Number.isFinite(c.capacityAh)&&c.capacityAh>0);
+    let stored=null,input=0,output=0,inputAh=0,outputAh=0,gaps=0,uncertain=false,lastAnchor=null,lowMode='ready',lowMinimum=null,highMode='ready',highMaximum=null,lastRaw=null;
     const points=[],events=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i],prev=rows[i-1],raw=rawValid(r[1])?r[1]:null;let gap=false,change=null;
@@ -20,7 +21,12 @@
         const dt=r[0]-prev[0];
         if(Number.isFinite(prev[2])&&Number.isFinite(r[2])){
           const e=energy(prev[2],r[2],dt);input+=e.input;output+=e.output;change=e.input-e.output;
-          if(stored!==null)stored+=change;
+          if(ahMode){
+            const s0=rawValid(prev[1])?prev[1]:lastRaw??stored??50,s1=raw??s0;
+            const ah=voltage.integrate(prev[2],r[2],dt,s0,s1,c.capacityAh);
+            inputAh+=ah.input;outputAh+=ah.output;
+            if(stored!==null)stored+=100*(ah.input-ah.output)/c.capacityAh;
+          }else if(stored!==null)stored+=100*change/c.capacity;
           if(dt>c.maxGapMs){gap=true;gaps++;uncertain=true;}
         }else{gap=true;gaps++;uncertain=true;}
       }
@@ -72,8 +78,8 @@
       }
       if(raw!==null)lastRaw=raw;
       if(anchor){
-        const before=stored===null?null:stored/c.capacity*100;
-        stored=c.capacity*anchor.soc/100;if(!anchor.silent||raw===anchor.soc)uncertain=false;
+        const before=stored;
+        stored=anchor.soc;if(!anchor.silent||raw===anchor.soc)uncertain=false;
         if(anchor.statsReference){
           const saved=anchor.statsReference;
           lastAnchor={...saved.reference,input:input-saved.input,output:output-saved.output};
@@ -82,11 +88,11 @@
           if(!anchor.silent)events.push(lastAnchor);
         }
       }
-      points.push({t:r[0],raw,power:r[2],soc:stored===null?null:stored/c.capacity*100,input,output,gap,uncertain,anchor:anchor||null,
+      points.push({t:r[0],raw,power:r[2],soc:stored,input,output,inputAh,outputAh,gap,uncertain,anchor:anchor||null,
         lowState:{mode:lowMode,minimum:lowMinimum},highState:{mode:highMode,maximum:highMaximum},boundaryState:{lastRaw},reference:lastAnchor,
         sinceInput:lastAnchor?Math.max(0,input-lastAnchor.input):0,sinceOutput:lastAnchor?Math.max(0,output-lastAnchor.output):0});
     }
-    return {points,input,output,gaps,lastAnchor,events,uncertain};
+    return {points,input,output,inputAh,outputAh,gaps,lastAnchor,events,uncertain};
   }
   function at(points,t,maxGapMs=defaults.maxGapMs){
     let lo=0,hi=points.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(points[m].t<t)lo=m+1;else hi=m-1;}
