@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.3.2
+// @name         Balansenergie All-in v6.4
 // @namespace    paq.balansenergie
 // @version      6.4
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
