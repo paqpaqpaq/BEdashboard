@@ -3,7 +3,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const old=fs.readFileSync(root+'Balansenergie-All-in-v6.3.2.user.js','utf8');
 const update=fs.readFileSync(root+'Balansenergie-All-in.user.js','utf8');
 assert.match(update,/^\/\/ @name\s+Balansenergie All-in$/m);
-assert.match(update,/@version\s+6\.4\.1\n/);
+assert.match(update,/@version\s+6\.4\.2\n/);
 const config='be-afrr-market-settings-v1',backup='be_tennet_connection_v1';
 const filenames=['Balansenergie All-in v6.3.user.js','Balansenergie All-in v6.3.1.user.js','Balansenergie All-in v6.3.2.user.js','Balansenergie All-in v6.3.3.user.js','Balansenergie All-in v6.4.user.js','Balansenergie-All-in-v6.4-lokale-fix.user.js','existing-tampermonkey-script-id'];
 function instance(source,id,modern,stores,origin){

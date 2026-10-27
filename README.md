@@ -2,19 +2,21 @@
 
 Financieel overzicht, aanvullende prijzen en een eigen SOC-berekening voor het Balansenergie-dashboard.
 
-## Download — versie 6 (6.1.3, stabiel)
+## Download — versie 6.4.2 (stabiel)
 
 - **[Userscript installeren](https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js)** — Safari/Userscripts of Chrome/Edge/Tampermonkey.
-- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.1.3/BE_dashboard_6_1_3.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
-- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.1.3/Balansenergie-All-in-v6.1.3.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.1.3).
+- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.4.2/BE_dashboard_6_4_2.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
+- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.4.2/Balansenergie-All-in-v6.4.2.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.4.2).
 
 Vervang de bestaande versie en herlaad het dashboard. Gebruik één hoofdvariant tegelijk: schakel de versie 6-beta en losse SOC-, BID-, EPEX- en break-even-plugins uit wanneer je deze versie installeert. De beta gebruikt een apart installatiekanaal en wordt daardoor niet automatisch vervangen door de stabiele versie. Bestaande instellingen en lokaal bewaarde historie blijven behouden in dezelfde browser en voor dezelfde installatie.
+
+Gebruik bij een userscript de functie **Bijwerken** op je bestaande installatie. De vaste scriptnaam en sleutelopslag blijven behouden. Een bestaande TenneT-sleutel krijgt automatisch een lokale herstelkopie in dezelfde browser; een nieuwe sleutel aanmaken is voor een update niet nodig. Bij verbindingsproblemen staan onder **Details · marktgegevens en verbinding → Verbindingsinfo & aanvraaglimieten** de managernaam, versie en eventuele netwerkfoutdetails. Deel je API-sleutel niet bij een foutmelding.
 
 ## Wat verandert er van 5 naar 6?
 
 - **Een eigen Financieel-scherm:** maandstaat, stroomresultaten, gemiddelde import- en exporttarieven, voorschotten, vaste kosten, belastingen en saldo bij elkaar. Kies een maand, contractjaar of eigen periode en bekijk de prognose voor de resterende contractperiode. Het oorspronkelijke BE-resultatenscherm blijft beschikbaar.
 - **Coulombtelling in/uit:** een onafhankelijke blauwe SOC-lijn in Actueel en Forecast, berekend uit het accuvermogen op het BE-dashboard. Met bewaarde historie, handmatig herijken en automatische ijking rond 10% en 95%. De forecast blijft binnen 5–100%.
-- **Zelf de accucapaciteit bepalen:** vul kWh in, of gebruik gemiddelde FCC in Ah, het aantal accu’s en de nominale spanning. De capaciteit uit Account wordt niet automatisch overgenomen.
+- **Zelf de accucapaciteit bepalen:** vul kWh in, of gebruik gemiddelde FCC in Ah (maximaal 330 Ah per accu) en het aantal accu’s. De Coulombtelling gebruikt een gemeten spanningsprofiel. De capaciteit uit Account wordt niet automatisch overgenomen.
 - **BID-historie bewaren:** waargenomen biedingen blijven lokaal beschikbaar na herladen; beschikbare gemiste biedingen worden automatisch teruggezocht.
 - **Verbeterd gebruik op smartphones:** het dashboardmenu blijft bereikbaar vanuit Financieel en grafieken herstellen bij openen, draaien en terugkeren naar de pagina. SOC-lijnen hebben een gezamenlijke tijdsaanduiding bij aanwijzen.
 

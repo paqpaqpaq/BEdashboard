@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.4.2 — 27 oktober 2026
+
+- Aanpassing TenneT-verbinding en foutinformatie.
+- Subtiele achtergrondmarkering vanaf 500 MW.
+
 ## 6.1.9 — 22 oktober 2026
 
 - Duidelijkere schakelaars in dark mode, tijdelijke tariefcache en navigatie in Financieel.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.4.1
+// @version      6.4.2
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -407,7 +407,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.4.1'
+    '6.4.2'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11708,7 +11708,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.4.1' +
+        'Instellingen v6.4.2' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12154,7 +12154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.4.1. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.4.2. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12462,7 +12462,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.4.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.4.2</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13925,7 +13925,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.4.1. BE data only. */
+/* Coulombtelling in/uit — 6.4.2. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -14693,7 +14693,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.4.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.4.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14851,7 +14851,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.4.1. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.4.2. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -15184,14 +15184,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
           const interval=unchanged?Math.min(60000,INTERVAL*Math.pow(2,Math.min(3,unchanged))):INTERVAL;
           nextAt=publicationAfter(Math.max(s.lastAttempt+interval,now+1000));
         }
-        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false};
+        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false,errorKind:'',networkDetail:''};
         return {write:[next],value:next};
       }),
       failure:(scope,tab,error,now,id='live')=>transaction([id,'budget'],r=>{
         const s=r[id];
         if(!s||s.scope!==scope||s.owner!==tab)return {value:s};
         const failures=(s.failures||0)+1;
-        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,
+        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,errorKind:error.kind||'unknown',networkDetail:error.networkDetail||'',
           authBlocked:error.kind==='auth',nextAt:Math.max(s.nextAt||0,now+(id==='mol'?Math.max(60000,failureDelay(error,failures,now)):failureDelay(error,failures,now)))};
         const write=[next];
         if(error.status===429)write.push({...r.budget,id:'budget',nextAt:Math.max(r.budget?.nextAt||0,next.nextAt)});
@@ -15208,6 +15208,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       del:typeof GM_deleteValue==='function'?GM_deleteValue:modern.deleteValue?.bind(modern),
       request:typeof GM_xmlhttpRequest==='function'?GM_xmlhttpRequest:modern.xmlHttpRequest?.bind(modern)
     };
+  }
+  function managerDescription(){
+    if(globalThis.BEAfrrExtensionManager)return 'Chrome/Edge-extensie · private netwerkadapter';
+    const modern=typeof GM!=='undefined'?GM:{},info=typeof GM_info!=='undefined'?GM_info:modern.info;
+    const name=typeof info?.scriptHandler==='string'?info.scriptHandler:'onbekend';
+    const version=typeof info?.version==='string'?info.version:'onbekend';
+    return name+' '+version+' · '+(typeof GM_xmlhttpRequest==='function'?'GM_xmlhttpRequest':typeof modern.xmlHttpRequest==='function'?'GM.xmlHttpRequest':'geen netwerkfunctie');
   }
   function connectionRecord(value){
     if(!value||typeof value!=='object')return {};
@@ -15263,6 +15270,28 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       if(!fn){reject(new Fault('manager','Deze installatie biedt geen toegang tot de TenneT-API.'));return;}
       let settled=false;
       function failed(e){if(!settled){settled=true;reject(e);}}
+      function networkFailure(event,detail){
+        if(settled)return;
+        const status=Number(detail?.status)||0;
+        // Some managers include an actual HTTP rejection in the error callback.
+        if(status>=400&&status<=599){received(detail);return;}
+        const labels={onerror:'De netwerkfunctie kon geen bruikbaar TenneT-antwoord doorgeven.',
+          ontimeout:'TenneT reageerde niet binnen 10 seconden.',onabort:'Aanvraag afgebroken.',
+          promise:'De netwerkfunctie heeft de aanvraag afgewezen.',start:'De userscriptmanager kon de API-aanvraag niet starten.'};
+        const error=new Fault(event==='start'?'manager':'network',labels[event]||labels.onerror,status);
+        const fields=[event];
+        if(detail&&Number.isFinite(Number(detail.status)))fields.push('status '+Number(detail.status));
+        if(detail&&Number.isFinite(Number(detail.readyState)))fields.push('readyState '+Number(detail.readyState));
+        const messages=[detail?.name,detail?.code,detail?.message,detail?.error?.message,detail?.statusText,typeof detail==='string'?detail:'']
+          .filter(v=>typeof v==='string'||typeof v==='number').map(String).filter(Boolean);
+        let description=[...new Set(messages)].join(' · ');
+        // Error strings can contain request traces. Never persist or display keys.
+        if(c.key)description=description.split(c.key).join('[sleutel afgeschermd]');
+        description=description.replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/gi,'[afgeschermd]').replace(/[\r\n\t]+/g,' ').slice(0,240);
+        if(description)fields.push(description);
+        if(fields.length===1)fields.push('de manager gaf geen verdere foutdetails');
+        error.networkDetail=fields.join(' · ');failed(error);
+      }
       function received(r){
         if(settled)return;
         const status=Number(r.status)||0;
@@ -15279,12 +15308,15 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         }catch(e){const fault=e instanceof Fault?e:new Fault('format','De dataset kon niet worden verwerkt.');fault.status=200;failed(fault);}
       }
       try{
+        // Userscripts 4.8.6 stringifies omitted user/password/overrideMimeType as
+        // "undefined". Empty values become null credentials in its XHR bridge.
+        // Authentication is exclusively the user's existing apikey header.
         const handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
-          timeout:TIMEOUT,onload:received,onerror:()=>failed(new Fault('network','TenneT is vanaf deze browser niet bereikbaar.')),
-          ontimeout:()=>failed(new Fault('network','TenneT reageerde niet binnen 10 seconden.')),
-          onabort:()=>failed(new Fault('network','Aanvraag afgebroken.'))});
-        if(handle?.then)handle.then(r=>{if(r?.status!==undefined)received(r);},()=>failed(new Fault('network','De netwerkoproep is mislukt.')));
-      }catch(_){failed(new Fault('manager','De userscriptmanager kon de API-aanvraag niet starten.'));}
+          user:'',password:'',overrideMimeType:'',responseType:'text',
+          timeout:TIMEOUT,onload:received,onerror:r=>networkFailure('onerror',r),
+          ontimeout:r=>networkFailure('ontimeout',r),onabort:r=>networkFailure('onabort',r)});
+        if(handle?.then)handle.then(r=>{if(r?.status!==undefined)received(r);},e=>networkFailure('promise',e));
+      }catch(e){networkFailure('start',e);}
     });
   }
   const number=(n,d=1)=>Number.isFinite(n)?n.toLocaleString('nl-NL',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
@@ -15496,7 +15528,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     if(container.dataset.signature===signature)return;
     container.dataset.signature=signature;container.replaceChildren();
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
-    function node(tag,attrs={},label){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(label!==undefined)el.textContent=label;svg.append(el);return el;}
+    function node(tag,attrs={},label,parent=svg){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(label!==undefined)el.textContent=label;parent.append(el);return el;}
     const plotWidth=Math.max(300,container.clientWidth||host.clientWidth||800);
     svg.setAttribute('viewBox','0 0 '+plotWidth+' 300');svg.setAttribute('role','img');
     svg.setAttribute('data-window-start',String(min));svg.setAttribute('data-window-end',String(max));
@@ -15505,6 +15537,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const nice=value=>{const power=Math.pow(10,Math.floor(Math.log10(Math.max(1,value)))),n=value/power;return (n<=1?1:n<=2?2:n<=5?5:10)*power;};
     const ceiling=nice(Math.max(1,...rows.flatMap(r=>[r.up||0,r.down||0])));
     const ownCeiling=17,zero=146,amplitude=99;
+    const thresholdMW=500;
+    if(ceiling>thresholdMW){
+      const defs=node('defs');
+      for(const [direction,sign,color] of [['down',1,'var(--down)'],['up',-1,'var(--up)']]){
+        const thresholdY=zero-sign*thresholdMW/ceiling*amplitude,edgeY=zero-sign*amplitude;
+        const id='be-tn-500-'+direction+'-'+owner;
+        const gradient=node('linearGradient',{id,gradientUnits:'userSpaceOnUse',x1:0,x2:0,y1:thresholdY,y2:edgeY},undefined,defs);
+        for(const [offset,opacity] of [['0%',0],['55%',.035],['100%',.085]])
+          node('stop',{offset,'stop-color':color,'stop-opacity':opacity},undefined,gradient);
+        node('rect',{x:left,y:Math.min(thresholdY,edgeY),width,height:Math.abs(edgeY-thresholdY),fill:'url(#'+id+')','pointer-events':'none','data-threshold-mw':thresholdMW,'data-direction':direction});
+        node('line',{x1:left,x2:right,y1:thresholdY,y2:thresholdY,stroke:color,'stroke-width':.7,opacity:.18,'pointer-events':'none'});
+        if(ceiling*.5!==thresholdMW)
+          node('text',{x:left+5,y:thresholdY+(sign>0?-4:11),fill:'var(--muted)','font-size':8.5,opacity:.7,'pointer-events':'none'},'500 MW');
+      }
+      svg.setAttribute('aria-label',svg.getAttribute('aria-label')+' De gekleurde achtergrond begint bij 500 MW TenneT-regelvermogen.');
+    }
     const tickStep=duration===1800000?(plotWidth<420?900000:600000):duration===7200000?(plotWidth<420?3600000:1800000):(plotWidth<420?10800000:3600000);
     const ticks=[min];for(let t=Math.ceil(min/tickStep)*tickStep;t<max;t+=tickStep)if(x(t)-left>32&&right-x(t)>32)ticks.push(t);ticks.push(max);
     for(const t of ticks)node('line',{x1:x(t),x2:x(t),y1:37,y2:254,stroke:'var(--line)','stroke-width':1,opacity:.35,'stroke-dasharray':'2 5'});
@@ -15595,11 +15643,15 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
+      '\nDashboardversie: 6.4.2'+
+      '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
-      '\nHTTP-status: '+(s?.status||'nog geen antwoord')+'\nLaatste aanvraag: '+time(s?.lastAttempt)+
+      '\nHTTP-status: '+(s?.status||(s?.error?'geen HTTP-status ontvangen':'nog geen antwoord'))+
+      '\nFoutcategorie: '+(s?.errorKind||'—')+'\nNetwerkdetails: '+(s?.networkDetail||'—')+'\nLaatste aanvraag: '+time(s?.lastAttempt)+
       '\nLaatste geslaagde aanvraag: '+time(good?.fetchedAt)+'\nMeetpunten: '+(good?.rows.length||0)+
       '\nAanvragen Balance Delta laatste minuut: '+(s?.attempts||[]).filter(t=>t>now-60000).length+
       '\nBiedladder HTTP-status: '+(molState?.scope===config.scope?molState.status||'nog geen antwoord':'nog geen antwoord')+
+      '\nBiedladder netwerkdetails: '+(molState?.scope===config.scope?molState.networkDetail||'—':'—')+
       '\nLaatste aanvraag biedladder: '+time(molState?.lastAttempt)+
       '\nTotaal API-aanvragen laatste minuut: '+(budgetState?.attempts||[]).filter(t=>t>now-60000).length+' / 8'+
       '\nBiedladder-aanvragen laatste 24 uur: '+(budgetState?.molAttempts||[]).filter(t=>t>now-86400000).length+' / 500'+
