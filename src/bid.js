@@ -113,6 +113,44 @@
       }
       return out;
     }
+    // Resolve each series by time: price, BID and EPEX point counts differ.
+    function tariffItems(chart, event) {
+      const area = chart.chartArea, px = event.x;
+      if (!area || !Number.isFinite(px) || px < area.left || px > area.right ||
+          (Number.isFinite(event.y) && (event.y < area.top || event.y > area.bottom))) return [];
+      const t = chart.scales.x.getValueForPixel(px);
+      if (!Number.isFinite(t)) return [];
+      chart.$beTariefHoverTime = t;
+      const period = (chart.$beKwartieren || []).find(r => r.start <= t && t < r.end);
+      const items = [];
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        if (!chart.isDatasetVisible(datasetIndex)) return;
+        const data = dataset.data || [];
+        let lo = 0, hi = data.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (data[mid].x <= t) lo = mid + 1;
+          else hi = mid;
+        }
+        const index = lo - 1, point = data[index];
+        if (!point || !Number.isFinite(point.y)) return;
+        if (dataset.beBidDirection) {
+          if (!(point.bidStart <= t && t < point.bidEnd)) return;
+        } else if (dataset.beEpex) {
+          const next = data[index + 1];
+          if (!next || !Number.isFinite(next.y) || !(point.x <= t && t < next.x)) return;
+        } else {
+          if (!period || period.wacht || point.x < period.start || point.x >= period.end || t > data.at(-1).x) return;
+        }
+        const element = chart.getDatasetMeta(datasetIndex).data[index];
+        if (element && !element.skip) items.push({element, datasetIndex, index});
+      });
+      return items;
+    }
+    function atHoverTime(chart, items) {
+      const t = chart.$beTariefHoverTime;
+      return Number.isFinite(t) ? items.map(i => ({...i, parsed: {...i.parsed, x: t}})) : items;
+    }
     const plugin = {
       id: 'beAfrrBidOverlay01',
       beforeUpdate(chart) {
@@ -143,11 +181,25 @@
           dataset.borderColor=bidColour(direction);
           dataset.backgroundColor=dataset.borderColor;
         }
-        const callbacks = chart.options.plugins?.tooltip?.callbacks;
+        const options = chart.config.options;
+        options.interaction = {...options.interaction, mode: 'beTariefTime', axis: 'x', intersect: false};
+        options.plugins = options.plugins || {};
+        const tooltip = options.plugins.tooltip = options.plugins.tooltip || {};
+        tooltip.mode = 'beTariefTime';
+        const callbacks = tooltip.callbacks = tooltip.callbacks || {};
+        if (!callbacks.title?.beBidTimeWrapped) {
+          const original = callbacks.title;
+          const wrapped = function (items) {
+            const timed = atHoverTime(chart, items);
+            return original ? original.call(this, timed) : timed.length ? clock.format(timed[0].parsed.x) : '';
+          };
+          wrapped.beBidTimeWrapped = true;
+          callbacks.title = wrapped;
+        }
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
           const original = callbacks.afterBody;
           const wrapped = function (items) {
-            const regular = items.filter(i => !i.dataset.beBidDirection);
+            const regular = atHoverTime(chart, items.filter(i => !i.dataset.beBidDirection));
             const result = regular.length && original ? original.call(this, regular) : [];
             const lines = Array.isArray(result) ? result : result ? [result] : [];
             return items.some(i => i.dataset.beBidDirection)
@@ -178,7 +230,10 @@
     function refresh() {
       ensureUI();
       const C = window.Chart;
-      if (C?.register && library !== C) { C.register(plugin); library = C; }
+      if (C?.register && library !== C) {
+        C.Interaction.modes.beTariefTime = tariffItems;
+        C.register(plugin); library = C;
+      }
       const chart = C?.getChart?.('be-tarief-chart');
       if (chart) chart.update('none');
       if (!status) return;

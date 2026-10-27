@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Balansenergie All-in v6.3.2
+// @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.4
+// @version      6.4.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -407,7 +407,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.4'
+    '6.4.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11708,7 +11708,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.4' +
+        'Instellingen v6.4.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12154,7 +12154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.4. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.4.1. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12462,7 +12462,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.4</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.4.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13715,6 +13715,44 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
       return out;
     }
+    // Resolve each series by time: price, BID and EPEX point counts differ.
+    function tariffItems(chart, event) {
+      const area = chart.chartArea, px = event.x;
+      if (!area || !Number.isFinite(px) || px < area.left || px > area.right ||
+          (Number.isFinite(event.y) && (event.y < area.top || event.y > area.bottom))) return [];
+      const t = chart.scales.x.getValueForPixel(px);
+      if (!Number.isFinite(t)) return [];
+      chart.$beTariefHoverTime = t;
+      const period = (chart.$beKwartieren || []).find(r => r.start <= t && t < r.end);
+      const items = [];
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        if (!chart.isDatasetVisible(datasetIndex)) return;
+        const data = dataset.data || [];
+        let lo = 0, hi = data.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (data[mid].x <= t) lo = mid + 1;
+          else hi = mid;
+        }
+        const index = lo - 1, point = data[index];
+        if (!point || !Number.isFinite(point.y)) return;
+        if (dataset.beBidDirection) {
+          if (!(point.bidStart <= t && t < point.bidEnd)) return;
+        } else if (dataset.beEpex) {
+          const next = data[index + 1];
+          if (!next || !Number.isFinite(next.y) || !(point.x <= t && t < next.x)) return;
+        } else {
+          if (!period || period.wacht || point.x < period.start || point.x >= period.end || t > data.at(-1).x) return;
+        }
+        const element = chart.getDatasetMeta(datasetIndex).data[index];
+        if (element && !element.skip) items.push({element, datasetIndex, index});
+      });
+      return items;
+    }
+    function atHoverTime(chart, items) {
+      const t = chart.$beTariefHoverTime;
+      return Number.isFinite(t) ? items.map(i => ({...i, parsed: {...i.parsed, x: t}})) : items;
+    }
     const plugin = {
       id: 'beAfrrBidOverlay01',
       beforeUpdate(chart) {
@@ -13745,11 +13783,25 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
           dataset.borderColor=bidColour(direction);
           dataset.backgroundColor=dataset.borderColor;
         }
-        const callbacks = chart.options.plugins?.tooltip?.callbacks;
+        const options = chart.config.options;
+        options.interaction = {...options.interaction, mode: 'beTariefTime', axis: 'x', intersect: false};
+        options.plugins = options.plugins || {};
+        const tooltip = options.plugins.tooltip = options.plugins.tooltip || {};
+        tooltip.mode = 'beTariefTime';
+        const callbacks = tooltip.callbacks = tooltip.callbacks || {};
+        if (!callbacks.title?.beBidTimeWrapped) {
+          const original = callbacks.title;
+          const wrapped = function (items) {
+            const timed = atHoverTime(chart, items);
+            return original ? original.call(this, timed) : timed.length ? clock.format(timed[0].parsed.x) : '';
+          };
+          wrapped.beBidTimeWrapped = true;
+          callbacks.title = wrapped;
+        }
         if (callbacks && !callbacks.afterBody?.beBidWrapped) {
           const original = callbacks.afterBody;
           const wrapped = function (items) {
-            const regular = items.filter(i => !i.dataset.beBidDirection);
+            const regular = atHoverTime(chart, items.filter(i => !i.dataset.beBidDirection));
             const result = regular.length && original ? original.call(this, regular) : [];
             const lines = Array.isArray(result) ? result : result ? [result] : [];
             return items.some(i => i.dataset.beBidDirection)
@@ -13780,7 +13832,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     function refresh() {
       ensureUI();
       const C = window.Chart;
-      if (C?.register && library !== C) { C.register(plugin); library = C; }
+      if (C?.register && library !== C) {
+        C.Interaction.modes.beTariefTime = tariffItems;
+        C.register(plugin); library = C;
+      }
       const chart = C?.getChart?.('be-tarief-chart');
       if (chart) chart.update('none');
       if (!status) return;
@@ -13870,7 +13925,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.4. BE data only. */
+/* Coulombtelling in/uit — 6.4.1. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -14638,7 +14693,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.4.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14796,18 +14851,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.4. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.4.1. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
   const ID='be-tennet-standalone-test', CONFIG='be-afrr-market-settings-v1';
+  // Permanent, origin-local recovery copy. Never rename on a version change.
+  // GM storage is script-scoped; this copy also survives installing a new filename.
+  const CONNECTION_BACKUP='be_tennet_connection_v1';
   const PANEL_SETTING='be_cfg_afrr_market';
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
   const clock=new Intl.DateTimeFormat('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   let host,shadow,config={},state=null,molState=null,budgetState=null,bidState={},bidError='',coordinator,timer,busy=false,inFlight=false,localError='',destroyed=false;
-  let bidDB,observedCustomer='',lastBidRead=0;
+  let bidDB,observedCustomer='',lastBidRead=0,keyStorageWarning='';
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   let emsRows=[],emsInstallation='',emsRevision=0,emsDB,lastEmsRead=0,graphDuration=1800000,graphSelection=null;
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
@@ -15029,7 +15087,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     return error.kind==='no-data'?INTERVAL:Math.max(exponential,error.retryAt>now?error.retryAt-now:0);
   }
   // One atomic read/write transaction reserves each request across dashboard
-  // tabs. No key is written to IndexedDB; it stays in userscript-manager storage.
+  // tabs. The request scheduler stores no credentials in IndexedDB.
   function createCoordinator(indexedDB,name='be-tennet-standalone-v1'){
     let opened;
     function database(){
@@ -15151,11 +15209,53 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       request:typeof GM_xmlhttpRequest==='function'?GM_xmlhttpRequest:modern.xmlHttpRequest?.bind(modern)
     };
   }
+  function connectionRecord(value){
+    if(!value||typeof value!=='object')return {};
+    const key=typeof value.key==='string'?value.key.trim():'';
+    if(/[\r\n]/.test(key))return {};
+    return {key,scope:typeof value.scope==='string'?value.scope:'',enabled:value.enabled===true,
+      environment:value.environment==='acceptance'?'acceptance':'production',
+      revision:Number.isFinite(value.revision)?value.revision:0,deleted:value.deleted===true};
+  }
+  function readConnectionBackup(){
+    if(globalThis.BEAfrrExtensionManager)return {};
+    try{return connectionRecord(JSON.parse(localStorage.getItem(CONNECTION_BACKUP)||'null'));}
+    catch(_){return {};}
+  }
+  function writeConnectionBackup(value){
+    if(globalThis.BEAfrrExtensionManager)return;
+    try{
+      const serialized=JSON.stringify(value);
+      localStorage.setItem(CONNECTION_BACKUP,serialized);
+      if(localStorage.getItem(CONNECTION_BACKUP)!==serialized)throw Error('not saved');
+      keyStorageWarning='';
+      document.dispatchEvent(new Event('be-tennet-connection-change'));
+    }catch(_){keyStorageWarning='De lokale herstelkopie kon niet worden bewaard; behoud je bestaande scriptinstallatie.';}
+  }
+  async function saveConfig(value){
+    const m=manager(),saved=connectionRecord(await m.get(CONFIG,{})),backup=readConnectionBackup();
+    const next={...connectionRecord(value),revision:Math.max(Date.now(),(saved.revision||0)+1,(backup.revision||0)+1)};
+    await m.set(CONFIG,next);
+    writeConnectionBackup(next);
+    return next;
+  }
   async function loadConfig(){
     const m=manager();if(!m.get||!m.set)throw new Fault('manager','De opslag van je userscriptmanager is niet beschikbaar; er worden geen TenneT-aanvragen gestart.');
-    const c=await m.get(CONFIG,{});
-    return c&&typeof c==='object'?{key:typeof c.key==='string'?c.key:'',scope:c.scope||'',enabled:c.enabled===true,
-      environment:c.environment==='acceptance'?'acceptance':'production'}:{};
+    const saved=connectionRecord(await m.get(CONFIG,{}));
+    if(globalThis.BEAfrrExtensionManager)return saved;
+    const backup=readConnectionBackup();
+    if((backup.key||backup.deleted)&&(!(saved.key||saved.deleted)||(backup.revision||0)>=(saved.revision||0))){
+      // A deliberate deletion outranks older copies in another installed script.
+      if(JSON.stringify(saved)!==JSON.stringify(backup))await m.set(CONFIG,backup);
+      return backup;
+    }
+    if(saved.key||saved.deleted){
+      const migrated={...saved,scope:saved.scope||owner+'-'+Date.now(),revision:saved.revision||Date.now()};
+      if(JSON.stringify(saved)!==JSON.stringify(migrated))await m.set(CONFIG,migrated);
+      writeConnectionBackup(migrated);
+      return migrated;
+    }
+    return saved;
   }
   function request(c,channel='live',q=quarter(Date.now())){
     return new Promise((resolve,reject)=>{
@@ -15400,15 +15500,15 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const plotWidth=Math.max(300,container.clientWidth||host.clientWidth||800);
     svg.setAttribute('viewBox','0 0 '+plotWidth+' 300');svg.setAttribute('role','img');
     svg.setAttribute('data-window-start',String(min));svg.setAttribute('data-window-end',String(max));
-    svg.setAttribute('aria-label','TenneT-regelvermogen links in MW, jouw gemeten netexport boven en netimport onder rechts in kW. Beide richtingen met dezelfde schaal per bron.');
+    svg.setAttribute('aria-label','Spiegelgrafiek: import en afregelen boven de nullijn, export en opregelen onder de nullijn. TenneT links in MW, jouw gemeten netvermogen rechts in kW, maximaal 17 kW per richting.');
     const left=36,right=plotWidth-36,width=right-left,x=t=>left+width*(t-min)/range;
     const nice=value=>{const power=Math.pow(10,Math.floor(Math.log10(Math.max(1,value)))),n=value/power;return (n<=1?1:n<=2?2:n<=5?5:10)*power;};
     const ceiling=nice(Math.max(1,...rows.flatMap(r=>[r.up||0,r.down||0])));
-    const ownCeiling=17;
+    const ownCeiling=17,zero=146,amplitude=99;
     const tickStep=duration===1800000?(plotWidth<420?900000:600000):duration===7200000?(plotWidth<420?3600000:1800000):(plotWidth<420?10800000:3600000);
     const ticks=[min];for(let t=Math.ceil(min/tickStep)*tickStep;t<max;t+=tickStep)if(x(t)-left>32&&right-x(t)>32)ticks.push(t);ticks.push(max);
     for(const t of ticks)node('line',{x1:x(t),x2:x(t),y1:37,y2:254,stroke:'var(--line)','stroke-width':1,opacity:.35,'stroke-dasharray':'2 5'});
-    function series(points,value,base,top,color,dashed,tag){
+    function series(points,value,base,top,color,dashed,tag,sign){
       let segment=[],last=null;
       const flush=()=>{
         if(segment.length){
@@ -15420,21 +15520,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         const v=value(point),t=point.end??point.t;
         if(!Number.isFinite(v)){flush();last=null;continue;}
         if(last&&(point.t?t-last.t>300000:point.start>last.end))flush();
-        segment.push(x(t).toFixed(2)+','+(base-v/top*78).toFixed(2));last=point;
+        segment.push(x(t).toFixed(2)+','+(base-sign*Math.min(v,top)/top*amplitude).toFixed(2));last=point;
       }
       flush();
     }
-    for(const [direction,label,base,color] of [['up','EXPORT · opregelen',119,'var(--up)'],['down','IMPORT · afregelen',249,'var(--down)']]){
-      node('text',{x:left,y:base-94,fill:color,'font-size':11,'font-weight':600},label);
-      for(const fraction of [0,.5,1]){
-        const y=base-fraction*78;
+    for(const [direction,label,sign,color] of [['down','IMPORT · afregelen',1,'var(--down)'],['up','EXPORT · opregelen',-1,'var(--up)']]){
+      node('text',{x:left,y:sign>0?25:265,fill:color,'font-size':11,'font-weight':600},label);
+      for(const fraction of [.5,1]){
+        const y=zero-sign*fraction*amplitude;
         node('line',{x1:left,x2:right,y1:y,y2:y,stroke:'var(--line)','stroke-width':1,'stroke-dasharray':fraction?'3 4':'none',opacity:fraction?0.65:1});
         node('text',{x:left-4,y:y+3,fill:'var(--muted)','text-anchor':'end','font-size':8.5},number(fraction*ceiling,ceiling<2?1:0));
         node('text',{x:right+4,y:y+3,fill:'var(--ems-text)','text-anchor':'start','font-size':8.5},number(fraction*ownCeiling,Number.isInteger(fraction*ownCeiling)?0:1));
       }
-      series(rows,r=>r[direction],base,ceiling,color,false,'tennet-'+direction);
-      series(own,r=>Math.max(0,direction==='up'?-r.po:r.po)/1000,base,ownCeiling,'var(--ems)',true,direction==='up'?'own-export':'own-import');
+      series(rows,r=>r[direction],zero,ceiling,color,false,'tennet-'+direction,sign);
+      series(own,r=>Math.max(0,direction==='up'?-r.po:r.po)/1000,zero,ownCeiling,'var(--ems)',true,direction==='up'?'own-export':'own-import',sign);
     }
+    node('line',{x1:left,x2:right,y1:zero,y2:zero,stroke:'var(--muted)','stroke-width':1.2,'data-zero-line':'true'});
+    node('text',{x:left-4,y:zero+3,fill:'var(--muted)','text-anchor':'end','font-size':8.5},'0');
+    node('text',{x:right+4,y:zero+3,fill:'var(--ems-text)','text-anchor':'start','font-size':8.5},'0');
     node('text',{x:left-4,y:32,fill:'var(--muted)','font-size':8,'text-anchor':'end'},'MW');
     node('text',{x:right+4,y:32,fill:'var(--ems-text)','font-size':8,'text-anchor':'start'},'kW');
     for(const t of ticks)node('text',{x:x(t),y:282,fill:'var(--muted)','text-anchor':t===min?'start':t===max?'end':'middle','font-size':10},time(t).slice(0,5));
@@ -15445,7 +15548,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     function readout(t,selected=false){
       const national=nearest(rows,r=>r.end,t,24000),meter=nearest(own,r=>r.t,t,60000);
       text('[data-graph-time]',time(t));
-      text('[data-graph-tn-value]',national?'Op '+number(national.up)+' · Af '+number(national.down)+' MW':'Geen bronpunt');
+      text('[data-graph-tn-value]',national?'Af '+number(national.down)+' · Op '+number(national.up)+' MW':'Geen bronpunt');
       text('[data-graph-own-value]',meter?(meter.po>0?'Import ':meter.po<0?'Export ':'')+number(Math.abs(meter.po)/1000,2)+' kW':'Geen meetpunt');
       cursor.setAttribute('x1',x(t));cursor.setAttribute('x2',x(t));cursor.setAttribute('visibility',selected?'visible':'hidden');
     }
@@ -15472,7 +15575,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       (stale?'Laatste meting is verouderd.':config.enabled?'Verbonden · automatisch verversen':'Gepauzeerd · laatste meting zichtbaar'):
       config.key?'Sleutel opgeslagen · klaar om te testen':'Vul je production-sleutel voor Balance Delta High Res in.'));
     shadow.querySelector('[data-status]').dataset.warning=String(Boolean(localError||s?.error||stale));
-    text('[data-key-state]',config.key?'Sleutel opgeslagen · wordt automatisch gebruikt bij herladen.':'Voer je sleutel één keer in en kies Test & start.');
+    text('[data-key-state]',(config.key?'Sleutel opgeslagen · blijft bewaard bij herladen en toekomstige updates.':'Nog geen sleutel in deze installatie. Werk bij overstappen de bestaande installatie bij waarin je sleutel is opgeslagen.')+(keyStorageWarning?' '+keyStorageWarning:''));
     text('[data-key-label]',config.key?'Nieuwe API-sleutel (optioneel)':'TenneT API-sleutel');
     text('[data-settings-title]',config.key?'Verbinding · sleutel opgeslagen':'API-sleutel instellen');
     shadow.querySelector('[data-key]').placeholder=config.key?'Laat leeg om de opgeslagen sleutel te behouden':'Vul je eigen API-sleutel in';
@@ -15572,7 +15675,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       const environment=shadow.querySelector('[data-env-select]').value;
       const same=old.key===key&&old.environment===environment;
       const next={key,environment,enabled:true,scope:same&&old.scope?old.scope:owner+'-'+Date.now()};
-      await manager().set(CONFIG,next);
+      await saveConfig(next);
       config=await loadConfig();
       if(config.key!==key||config.scope!==next.scope)throw new Fault('storage','De userscriptmanager heeft de sleutel niet bewaard. Controleer de opslagtoegang.');
       input.value='';
@@ -15582,12 +15685,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }catch(e){localError=e instanceof Fault?e.message:'De sleutel kon niet worden opgeslagen.';render();}
   }
   async function pause(){
-    try{config={...await loadConfig(),enabled:false};await manager().set(CONFIG,config);await tick();}
+    try{config={...await loadConfig(),enabled:false};await saveConfig(config);await tick();}
     catch(_){localError='Pauzeren kon niet worden opgeslagen.';render();}
   }
   async function forget(){
     try{
-      const m=manager();if(m.del)await m.del(CONFIG);else await m.set(CONFIG,{});
+      await saveConfig({key:'',scope:'',enabled:false,environment:'production',deleted:true});
       await coordinator.clear();config={};state=null;molState=null;marketHistory=[];learnedSignature='';shadow.querySelector('[data-key]').value='';shadow.querySelector('[data-settings]').open=true;
       localError='';await tick();
     }catch(_){localError='De opgeslagen sleutel kon niet worden gewist.';render();}
@@ -15649,7 +15752,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         <label for="tn-env">Omgeving</label><select id="tn-env" data-env-select><option value="production">Production — actuele marktgegevens</option><option value="acceptance">Acceptance — TenneT-testomgeving</option></select>
         <label for="tn-key" data-key-label>TenneT API-sleutel</label><input id="tn-key" data-key type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Vul je eigen API-sleutel in">
         <div class="actions"><button data-connect type="submit">Test & start</button><button data-forget type="button">Sleutel wissen</button></div>
-        <small>Je sleutel heeft toegang nodig tot <a href="https://developer.tennet.eu/specs/v1/balance-delta-high-res" target="_blank" rel="noopener noreferrer">Balance Delta High Res</a> en <a href="https://developer.tennet.eu/specs/v1/merit-order-list" target="_blank" rel="noopener noreferrer">Merit Order List</a>. De sleutel blijft in de userscriptmanager en gaat alleen naar de gekozen TenneT-omgeving.</small>
+        <small>Je sleutel heeft toegang nodig tot <a href="https://developer.tennet.eu/specs/v1/balance-delta-high-res" target="_blank" rel="noopener noreferrer">Balance Delta High Res</a> en <a href="https://developer.tennet.eu/specs/v1/merit-order-list" target="_blank" rel="noopener noreferrer">Merit Order List</a>. De sleutel blijft lokaal in ${globalThis.BEAfrrExtensionManager?'je extensie':'je userscriptmanager, met een herstelkopie in de browseropslag van dit dashboard'}, en wordt alleen naar de gekozen TenneT-omgeving verstuurd.</small>
       </form></details>
       <details><summary>Laatste 10 bronmetingen</summary><div class="table"><table><thead><tr><th>Tijd</th><th>Op MW</th><th>Af MW</th><th>Op €/MWh</th><th>Af €/MWh</th></tr></thead><tbody></tbody></table></div></details>
       <p class="note">Metingen maximaal iedere 12 s, één seconde na de bronpublicatie; bij stilstand minder vaak. Biedladder één keer per kwartier zodra beschikbaar; bij ontbrekende publicatie maximaal drie pogingen. Tabbladen delen aanvragen en cache. Verborgen tabbladen starten geen aanvragen. De publicatievertraging van TenneT zelf blijft bestaan.</p>
@@ -15670,9 +15773,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     mount();
   }
   async function boot(){
+    // Even a second installation can migrate its own legacy GM key before the
+    // shared panel guard. Only the first instance mounts UI and starts requests.
+    let initialConfig,initialError;
+    try{initialConfig=await loadConfig();}catch(e){initialError=e;}
     if(document.getElementById(ID))return;
     coordinator=createCoordinator(globalThis.indexedDB);createPanel();
-    try{config=await loadConfig();shadow.querySelector('[data-env-select]').value=config.environment||'production';shadow.querySelector('[data-settings]').open=!config.key;}
+    try{if(initialError)throw initialError;config=initialConfig;shadow.querySelector('[data-env-select]').value=config.environment||'production';shadow.querySelector('[data-settings]').open=!config.key;}
     catch(e){localError=e.message;render();return;}
     // The native dashboard owns its page tree. A broad childList observer
     // can otherwise reinsert this panel during a navigation teardown loop.
@@ -15683,7 +15790,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     document.addEventListener('be-tarief-update',()=>{if(panelEnabled())Promise.all([readBids(true),readPower(true)]).then(render);});
     function settingChanged(){clearTimeout(timer);mount();if(panelEnabled())tick();}
     document.addEventListener('be-afrr-market-change',settingChanged);
-    window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===null)settingChanged();});
+    document.addEventListener('be-tennet-connection-change',()=>{if(!busy)tick();});
+    window.addEventListener('storage',event=>{if(event.key===PANEL_SETTING||event.key===CONNECTION_BACKUP||event.key===null)settingChanged();});
     window.addEventListener('pagehide',()=>{destroyed=true;clearTimeout(timer);});
     window.addEventListener('pageshow',()=>{destroyed=false;tick();});
     window.addEventListener('popstate',()=>{mount();if(placementTarget())tick();});
