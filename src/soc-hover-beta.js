@@ -38,7 +38,7 @@
       const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
-        energyKwh:finite(sampled.value)&&finite(capacity)&&capacity>0?sampled.value*capacity/100:null,
+        energyKwh:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
@@ -51,7 +51,7 @@
   }
   function format(row){
     if(!finite(row.value))return '—';
-    const energy=finite(row.energyKwh)?row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
+    const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
   function hide(state){

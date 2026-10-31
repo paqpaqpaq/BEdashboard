@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.4.2
+// @version      6.5
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -407,7 +407,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.4.2'
+    '6.5'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11708,7 +11708,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.4.2' +
+        'Instellingen v6.5' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12154,7 +12154,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.4.2. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.5. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12462,7 +12462,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.4.2</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.5</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13602,7 +13602,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   function main() {
 (async function () {
     if (window.__beAfrrBid01) return;
-    const QUARTER = 900000;
+    const QUARTER = 900000, DAY = 86400000, ARCHIVE_DAYS = 7;
     const directions = ['import', 'export'];
     const colours = {import: '#b65c72', export: '#73b9a1'};
     function bidColour(direction) {
@@ -13610,12 +13610,16 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     const bids = new Map();
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
-    let lastSuccess = 0, ui, button, status, recovery='', recovering=false, archiveReady=false, dbPromise, storageError='';
+    let lastSuccess = 0, lastLiveQuarter = null, ui, button, status, recovering=false, archiveReady=false, dbPromise, storageError='';
+    let recoveryTimer, rateRetryUntil = 0, archiveRead, recoveryMemory={};
+    try{enabled=localStorage.getItem('be_afrr_bid_enabled_v1')!=='uit';}catch(_){}
     let customer=(location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/)||[])[1];
     if(!customer||/^(account|current-prices|current-history|results)$/.test(customer))customer=await window.BEInstallation?.wait();
     if(!customer||window.__beAfrrBid01)return;
     window.__beAfrrBid01 = true;
     const cachePrefix=customer+':';
+    const recoveryKey='be_bid_recovery_v1:'+customer;
+    const RECOVERY_REVISION='reconstructed-bids-v1';
     const clock = new Intl.DateTimeFormat('nl-NL', {
       timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit'
     });
@@ -13627,25 +13631,87 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     function quarter(now) { return Math.floor(now / QUARTER) * QUARTER; }
 
     // API schema/semantics checked against RaginValdr/Balans-energie-Home-assistant-app.
-    // Only bid_fallback contains a bid. confirmed is a trade quote, never a new bid.
+    // Explicit bids have priority. Confirmed quotes may only supply a separately
+    // labelled, uncertain reconstruction; never silently turn them into observations.
     function mergeRecord(old, incoming){
       const r={start:incoming.start,end:incoming.end,states:Object.assign({},old?.states,incoming.states)};
+      if(old?.quote||incoming.quote)r.quote=!old?.quote?incoming.quote:!incoming.quote?old.quote:
+        incoming.quote.seenAt>=old.quote.seenAt?incoming.quote:old.quote;
+      const reconstruction={};
       for(const d of directions){
-        const a=old?.[d],b=incoming[d];
+        const a=old?.reconstruction?.[d],b=incoming.reconstruction?.[d];
+        if(a||b)reconstruction[d]=!a?b:!b?a:b.at>=a.at?b:a;
+      }
+      if(Object.keys(reconstruction).length)r.reconstruction=reconstruction;
+      for(const d of directions){
+        const verdict=reconstruction[d];
+        const allowed=value=>!value?.estimated||!verdict||verdict.at<value.observedAt||
+          verdict.value!==null&&Math.abs(verdict.value-value.value)<1e-8;
+        const a=allowed(old?.[d])?old?.[d]:null,b=allowed(incoming[d])?incoming[d]:null;
+        if(a?.estimated&&!b&&incoming.states?.[d]==='missing_bid')continue;
         if(!a&&!b)continue;
-        const newest=!a?b:!b?a:b.observedAt>=a.observedAt?b:a;
-        const observations=[...(a?.observations|| (a?[{value:a.value,observedAt:a.observedAt}]:[])),...(b?.observations|| (b?[{value:b.value,observedAt:b.observedAt}]:[]))];
-        const seen=new Map();observations.forEach(o=>{if(Number.isFinite(o.value)&&Number.isFinite(o.observedAt))seen.set(o.observedAt+':'+o.value,{value:o.value,observedAt:o.observedAt});});
+        const newest=!a?b:!b?a:!!a.estimated!==!!b.estimated?(a.estimated?b:a):b.observedAt>=a.observedAt?b:a;
+        const observations=[a,b].filter(Boolean).flatMap(v=>v.observations||[{value:v.value,observedAt:v.observedAt,...(v.estimated?{estimated:true}:{})}]);
+        const seen=new Map();observations.forEach(o=>{
+          if(Number.isFinite(o.value)&&Number.isFinite(o.observedAt)&&!!o.estimated===!!newest.estimated)
+            seen.set(o.observedAt+':'+o.value,{value:o.value,observedAt:o.observedAt,...(o.estimated?{estimated:true}:{})});
+        });
         r[d]=Object.assign({},newest,{observations:[...seen.values()].sort((x,y)=>x.observedAt-y.observedAt)});
       }
       return r;
+    }
+    function quoteSignature(quote){
+      return JSON.stringify([quote.values,quote.states,quote.discovery,quote.available]);
+    }
+    function reconstructionCandidate(record,direction){
+      const quote=record.quote,discovery=quote?.discovery;
+      if(!quote||quote.available===false||record.states?.[direction]==='missing_bid'||quote.states?.[direction]!=='confirmed'||discovery?.complete!==true||
+        !Number.isFinite(discovery.observedUntil)||discovery.observedUntil<record.start+120000||
+        !Array.isArray(discovery.directions)||!Array.isArray(discovery.controlDirections)||
+        discovery.directions.includes(direction)||discovery.controlDirections.includes(direction))return null;
+      const value=quote.values?.['afrr_'+direction],buy=quote.values?.onbalans_import,sell=quote.values?.onbalans_export;
+      if(![value,buy,sell].every(Number.isFinite)||Math.abs(value*100-Math.round(value*100))>1e-7)return null;
+      const outside=direction==='import'?value<Math.min(buy,sell)-1e-8:value>Math.max(buy,sell)+1e-8;
+      if(!outside)return null;
+      const known=record[direction];
+      if(known&&!known.estimated&&Math.abs(known.value-value)>1e-8)return null;
+      return value;
+    }
+    function reconstruct(now){
+      const records=[...bids.values()],candidates={import:[],export:[]},anchors={import:[],export:[]};
+      for(const record of records)for(const direction of directions){
+        const known=record[direction],value=reconstructionCandidate(record,direction);
+        if(known&&!known.estimated)anchors[direction].push({start:record.start,value:known.value});
+        if(value!==null)candidates[direction].push({start:record.start,value});
+      }
+      for(const record of records){
+        const incoming={start:record.start,end:record.end,states:{},reconstruction:{}};
+        for(const direction of directions){
+          const previous=record[direction];
+          if(previous&&!previous.estimated)continue;
+          const value=reconstructionCandidate(record,direction);
+          // Require another independent quarter nearby, never an earlier estimate.
+          const repeated=value!==null&&[...candidates[direction],...anchors[direction]].some(other=>
+            other.start!==record.start&&Math.abs(other.start-record.start)<=2*3600000&&Math.abs(other.value-value)<1e-8);
+          if(!repeated){
+            if(previous?.estimated)incoming.reconstruction[direction]={at:now,value:null};
+            continue;
+          }
+          incoming[direction]=previous?.estimated&&previous.value===value?previous:
+            {value,observedAt:now,source:'gereconstrueerd uit API-prijsgrens',estimated:true};
+          if(record.reconstruction?.[direction]?.value!==value)incoming.reconstruction[direction]={at:now,value};
+        }
+        if(!directions.some(d=>incoming[d])&&!Object.keys(incoming.reconstruction).length)continue;
+        const merged=mergeRecord(record,incoming);
+        if(JSON.stringify(record)!==JSON.stringify(merged)){bids.set(record.start,merged);persist(merged);}
+      }
     }
     function database(){
       if(!dbPromise)dbPromise=new Promise((resolve,reject)=>{const req=indexedDB.open('balansenergie-bids-v1',1);req.onupgradeneeded=()=>req.result.createObjectStore('kwartieren',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error('BID-archief geblokkeerd'));});
       return dbPromise;
     }
     async function persist(record){
-      if(!directions.some(d=>record[d]))return;
+      if(!directions.some(d=>record[d])&&!record.quote)return;
       try{
         const db=await database();await new Promise((resolve,reject)=>{
           const tx=db.transaction('kwartieren','readwrite'),store=tx.objectStore('kwartieren'),id=cachePrefix+record.start,req=store.get(id);
@@ -13654,10 +13720,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         });storageError='';
       }catch(e){storageError='BID-cache niet opgeslagen: '+e.message;}
     }
+    function readArchive(){
+      if(archiveRead)return archiveRead;
+      archiveRead=(async()=>{
+        const db=await database();
+        const rows=await new Promise((resolve,reject)=>{
+          const tx=db.transaction('kwartieren','readonly');
+          const req=tx.objectStore('kwartieren').getAll(IDBKeyRange.bound(cachePrefix+(quarter(Date.now())-ARCHIVE_DAYS*DAY),cachePrefix+'9999999999999'));
+          req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+        });
+        rows.forEach(r=>{if(r.customer===customer&&Number.isFinite(r.start)&&r.end===r.start+QUARTER)bids.set(r.start,mergeRecord(r,bids.get(r.start)||r));});
+      })().finally(()=>{archiveRead=null;});
+      return archiveRead;
+    }
     async function hydrate(){
       try{
-        const db=await database();const rows=await new Promise((resolve,reject)=>{const tx=db.transaction('kwartieren','readonly'),req=tx.objectStore('kwartieren').getAll(IDBKeyRange.bound(cachePrefix+(quarter(Date.now())-7*86400000),cachePrefix+'9999999999999'));req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
-        rows.forEach(r=>{if(r.customer===customer&&Number.isFinite(r.start)&&r.end===r.start+QUARTER)bids.set(r.start,mergeRecord(r,bids.get(r.start)||r));});
+        await readArchive();
       }catch(e){storageError='BID-cache niet leesbaar: '+e.message;}
       // Oude bronresponsen kunnen nog expliciet gemarkeerde biedprijzen bevatten.
       try{
@@ -13665,23 +13743,33 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         const saved=await new Promise((resolve,reject)=>{const req=db.transaction('dagen','readonly').objectStore('dagen').get(customer+':prijzen');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();
         if(saved?.rows)ingest({prices:saved.rows},Date.now(),true);
       }catch(_){}
-      archiveReady=true;refresh();poll();
+      reconstruct(Date.now());archiveReady=true;refresh();poll();scheduleRecovery();
     }
     function ingest(payload, now, historical=false) {
       if (!payload || !Array.isArray(payload.prices)) throw Error('Onbekend API-antwoord');
       if(!historical)unavailable = payload.afrrAvailable === false;
+      const discovery=new Map((payload.afrrDiscovery||[]).map(row=>[row.start,row]));
       let added=0;
       for(const r of payload.prices){
       const start=r.start;
       if(!Number.isFinite(start)||start%QUARTER!==0||r.end!==start+QUARTER||start>now||r.carried)continue;
       const old=bids.get(start),record={start,end:r.end,states:{}};
+      const discovered=discovery.get(start);
+      if(discovered){
+        const seenAt=Number.isFinite(r.checkedAt)?r.checkedAt:Number.isFinite(payload.generatedAt)?payload.generatedAt:now;
+        const quote={values:{...r.values},states:{...r.afrrBidStatus},available:payload.afrrAvailable,
+          discovery:{complete:discovered.complete,observedUntil:discovered.observedUntil,
+            directions:discovered.directions,controlDirections:discovered.controlDirections},seenAt};
+        if(!old?.quote||seenAt>=old.quote.seenAt)
+          record.quote=old?.quote&&quoteSignature(old.quote)===quoteSignature(quote)?old.quote:quote;
+      }
       for (const direction of directions) {
         const state = r.afrrBidStatus?.[direction];
         const value = r.values?.['afrr_' + direction];
-        record.states[direction] = state;
+        if(typeof state==='string')record.states[direction] = state;
         if (state === 'bid_fallback' && Number.isFinite(value)) {
           const previous=old?.[direction];
-          record[direction] = previous&&previous.value===value?previous:{value, observedAt: now,source:historical?'historische bron':'live'};
+          record[direction] = previous&&!previous.estimated&&previous.value===value?previous:{value, observedAt: now,source:historical?'historische bron':'live'};
           if(!previous)added++;
         }
         // A subsequent confirmed quote must not replace the captured bid.
@@ -13690,7 +13778,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(JSON.stringify(old)!==JSON.stringify(merged))persist(merged);
       }
       // Alleen de werkset in geheugen begrenzen; opgeslagen BIDs worden niet verwijderd.
-      for (const key of bids.keys()) if (key < quarter(now) - 7 * 86400000) bids.delete(key);
+      for (const key of bids.keys()) if (key < quarter(now) - ARCHIVE_DAYS * DAY) bids.delete(key);
+      reconstruct(now);
       return added;
     }
     function displayPrice(value, direction, tariff, settings) {
@@ -13709,7 +13798,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         const y = displayPrice(r[direction].value, direction, tariff, settings);
         if (!Number.isFinite(y)) continue;
         // Explicit gaps: no interpolation or carrying a bid into another quarter.
-        const extra = {bidStart: r.start, bidEnd: r.end, observedAt: r[direction].observedAt};
+        const extra = {bidStart: r.start, bidEnd: r.end, observedAt: r[direction].observedAt,estimated:r[direction].estimated===true};
         out.push({x: r.start, y: null}, {x: r.start, y, ...extra},
           {x: r.end, y, ...extra}, {x: r.end, y: null});
       }
@@ -13769,10 +13858,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
               pointHitRadius: 8, fill: false, tension: 0, spanGaps: false,
               stepped: false, order: -5,
               tooltip: {callbacks: {
-                label: context => 'BID ' + direction + ': ' + euro(context.parsed.y) + ' / kWh',
+                label: context => 'BID ' + direction + (context.raw?.estimated?' (gereconstrueerd): ~ ':': ') + euro(context.parsed.y) + ' / kWh',
                 afterLabel: context => {
                   const r = context.raw;
-                  return r?.bidStart == null ? '' : clock.format(r.bidStart) + '–' + clock.format(r.bidEnd) + ' · biedprijs';
+                  return r?.bidStart == null ? '' : clock.format(r.bidStart) + '–' + clock.format(r.bidEnd) +
+                    (r.estimated?' · gereconstrueerde biedgrens, onzeker':' · waargenomen biedprijs');
                 }
               }}
             };
@@ -13804,8 +13894,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
             const regular = atHoverTime(chart, items.filter(i => !i.dataset.beBidDirection));
             const result = regular.length && original ? original.call(this, regular) : [];
             const lines = Array.isArray(result) ? result : result ? [result] : [];
-            return items.some(i => i.dataset.beBidDirection)
-              ? lines.concat('BID = bod; geen bevestigde handelsprijs.') : lines;
+            if(!items.some(i=>i.dataset.beBidDirection))return lines;
+            return lines.concat(items.some(i=>i.dataset.beBidDirection&&i.raw?.estimated)?
+              'Gereconstrueerd = vermoedelijke biedgrens; niet rechtstreeks als bod waargenomen.':
+              'BID = bod; geen bevestigde handelsprijs.');
           };
           wrapped.beBidWrapped = true;
           callbacks.afterBody = wrapped;
@@ -13815,19 +13907,46 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     function ensureUI() {
       const row = document.getElementById('be-tarief-row');
       if (!row) return;
+      if (!document.getElementById('be-afrr-bid-style')) {
+        const style = document.createElement('style');
+        style.id = 'be-afrr-bid-style';
+        style.textContent = `
+          #be-afrr-bid-status{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:nowrap;width:100%;box-sizing:border-box;font:11px/1.5 system-ui,sans-serif;margin:6px 0;color:inherit}
+          #be-afrr-bid-status>[role="status"]{flex:0 1 auto;min-width:0;max-width:100%;text-align:right;overflow-wrap:anywhere}
+          #be-afrr-bid-switch{appearance:none;display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;border:0;padding:3px 2px;background:transparent;color:inherit;font:500 11px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:nowrap;cursor:pointer;box-shadow:none;margin:0;min-height:24px}
+          #be-afrr-bid-switch:focus-visible{outline:2px solid #429ee8;outline-offset:4px;border-radius:4px}
+          #be-afrr-bid-switch .be-afrr-bid-track{position:relative;width:34px;height:18px;flex:none;border-radius:10px;background:#868892;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+          #be-afrr-bid-switch .be-afrr-bid-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:transform .15s}
+          #be-afrr-bid-switch[aria-checked="true"] .be-afrr-bid-track{background:#287dbb}
+          #be-afrr-bid-switch[aria-checked="true"] .be-afrr-bid-thumb{transform:translateX(16px)}
+          #be-afrr-bid-switch .be-afrr-bid-state{min-width:24px;font-size:10px;font-weight:700;letter-spacing:.02em}
+          html[data-be-dark="aan"] #be-afrr-bid-switch .be-afrr-bid-track{background:#65615b!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)!important}
+          html[data-be-dark="aan"] #be-afrr-bid-switch[aria-checked="true"] .be-afrr-bid-track{background:#287dbb!important}
+          html[data-be-dark="aan"] #be-afrr-bid-switch .be-afrr-bid-thumb{background:#fff!important;box-shadow:0 1px 3px #0004!important}
+          @media(max-width:700px){#be-afrr-bid-switch{border-left:0}}
+          @media(prefers-reduced-motion:reduce){#be-afrr-bid-switch .be-afrr-bid-thumb{transition:none}}
+        `;
+        document.documentElement.appendChild(style);
+      }
       if (ui?.isConnected && ui.parentElement === row) return;
       ui?.remove();
       ui = document.createElement('div');
       ui.id = 'be-afrr-bid-status';
-      ui.style.cssText = 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font:12px system-ui,sans-serif;margin:6px 0;color:inherit;line-height:1.5';
       button = document.createElement('button');
+      button.id = 'be-afrr-bid-switch';
       button.type = 'button';
-      button.style.cssText = 'font:600 12px system-ui,sans-serif;padding:3px 8px;border:1px solid #9274bb;border-radius:7px;background:transparent;color:inherit;cursor:pointer';
-      button.onclick = () => {enabled = !enabled; refresh(); if (enabled) poll();};
+      button.setAttribute('role', 'switch');
+      button.setAttribute('aria-label', 'aFRR-biedlijnen');
+      button.innerHTML = '<span>aFRR BID</span><span class="be-afrr-bid-track" aria-hidden="true"><span class="be-afrr-bid-thumb"></span></span><span class="be-afrr-bid-state" aria-hidden="true"></span>';
+      button.title = 'aFRR-biedlijnen tonen of verbergen. Vastgelegde biedingen blijven bewaard.';
+      button.onclick = () => {
+        enabled = !enabled;
+        try { localStorage.setItem('be_afrr_bid_enabled_v1', enabled ? 'aan' : 'uit'); } catch (_) {}
+        refresh();
+      };
       status = document.createElement('span');
-      status.style.cssText = 'flex:1 1 220px;min-width:0;overflow-wrap:anywhere';
       status.setAttribute('role', 'status');
-      ui.append(button,status); row.appendChild(ui);
+      ui.append(status,button); row.appendChild(ui);
     }
     function refresh() {
       ensureUI();
@@ -13839,37 +13958,49 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       const chart = C?.getChart?.('be-tarief-chart');
       if (chart) chart.update('none');
       if (!status) return;
-      button.textContent = 'aFRR BID ' + (enabled ? 'aan' : 'uit');
-      button.setAttribute('aria-pressed', String(enabled));
+      button.setAttribute('aria-checked', String(enabled));
+      button.querySelector('.be-afrr-bid-state').textContent = enabled ? 'AAN' : 'UIT';
       const now = Date.now(), start = quarter(now), record = bids.get(start);
       const tariff = read('be-tarief-data'), settings = read('be-actueel-allin-data');
-      if (!enabled) {status.textContent = 'Biedlijnen uitgeschakeld.'; return;}
       const prefix = clock.format(start) + '–' + clock.format(start + QUARTER) + ' · ';
       const labels = directions.map(direction => {
         const bid = record?.[direction];
         if (bid) {
           const value = displayPrice(bid.value, direction, tariff, settings);
-          return direction + ' ' + (Number.isFinite(value) ? euro(value) + '/kWh' : 'all-in instellingen ontbreken');
+          return direction + ' ' + (Number.isFinite(value) ? (bid.estimated?'~ ':'')+euro(value) + '/kWh' : 'all-in instellingen ontbreken');
         }
         if (record?.states[direction] === 'missing_bid') return direction + ' geen bod';
         return direction + (now - start < 120000 ? ' wachten op bod' : ' bod niet waargenomen');
       });
       status.textContent = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
-        ' · '+[...bids.values()].filter(r=>directions.some(d=>r[d])).length+' kwartieren in cache (laatste 7 dagen)' +
-        (recovery?' · '+recovery:'')+(storageError?' · '+storageError:'')+(error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
-      ui.title = 'Dunne biedlijnen: waargenomen biedprijzen, geen handelsprijzen. ' +
-        'Biedprijzen worden meestal alleen de eerste twee minuten van het kwartier aangeboden. ' +
-        'Waarnemingen blijven lokaal bewaard na herladen, zonder automatische verwijdering. De grafiek laadt de laatste 7 dagen. ' +
-        'Beschikbare biedhistorie wordt automatisch gecontroleerd; uitsluitend expliciete BID-bronprijzen tellen mee. ' +
+        (storageError?' · '+storageError:'')+(error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
+      ui.title = 'BID = biedprijs; ~ betekent een onzekere reconstructie uit historische prijsgrenzen. Rechtstreeks waargenomen biedingen hebben voorrang. ' +
         (tariff?.allin ? 'All-in, volgens de instellingen van de hoofdplugin.' : 'Kale bedragen.');
+    }
+    function apiRetryUntil(){
+      try{const shared=Number(localStorage.getItem('be_api_retry_until')||0);if(Number.isFinite(shared))rateRetryUntil=Math.max(rateRetryUntil,shared);}catch(_){}
+      return rateRetryUntil;
     }
     function request(url) {
       return new Promise((resolve, reject) => {
+        if(Date.now()<apiRetryUntil()){
+          const failure=Error('API vraagt om even te wachten');failure.status=429;reject(failure);return;
+        }
         // Own same-origin read request, unaffected by the main plugin's fetch/cache wrappers.
         const xhr = new XMLHttpRequest();
         xhr.open('GET', url); xhr.timeout = 12000;
         xhr.onload = () => {
-          if (xhr.status !== 200) return reject(Error('API HTTP ' + xhr.status));
+          if (xhr.status !== 200) {
+            const failure=Error('API HTTP '+xhr.status);
+            failure.status=xhr.status;
+            if(xhr.status===429){
+              const header=xhr.getResponseHeader('Retry-After'),seconds=Number(header);
+              const retry=header?(Number.isFinite(seconds)?Date.now()+seconds*1000:Date.parse(header)):NaN;
+              rateRetryUntil=Math.max(apiRetryUntil(),Number.isFinite(retry)?Math.max(Date.now()+1000,retry):Date.now()+60000);
+              try{localStorage.setItem('be_api_retry_until',String(rateRetryUntil));}catch(_){}
+            }
+            return reject(failure);
+          }
           if (!/json/i.test(xhr.getResponseHeader('content-type') || '')) return reject(Error('API niet beschikbaar; controleer login'));
           try { resolve(JSON.parse(xhr.responseText)); } catch (_) { reject(Error('Ongeldig API-antwoord')); }
         };
@@ -13883,34 +14014,107 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       clearTimeout(timer);
       busy = true;
       try {
-        // Keep collecting in hidden tabs too. Safari may still throttle or suspend timers.
-        if (archiveReady&&enabled && read('be-tarief-data')?.aan && document.getElementById('be-tarief-chart')) {
+        // Collection is independent of chart visibility, page and the BID switch.
+        // Reuse fresh native price responses; closed/suspended browsers cannot poll.
+        if (archiveReady && Date.now()>=apiRetryUntil()) {
           const now = Date.now();
-          const payload = await request('/customer/current-prices/api/?start=' + quarter(now) + '&end=' + now);
-          ingest(payload, Date.now()); lastSuccess = Date.now(); error = '';recover(false);
+          const freshFor=now-quarter(now)<120000?15000:55000;
+          if(lastLiveQuarter!==quarter(now)||now-lastSuccess>=freshFor){
+            const payload = await request('/customer/current-prices/api/?start=' + quarter(now) + '&end=' + now);
+            ingest(payload, Date.now());
+            if(payload.prices.some(r=>r.start===quarter(Date.now()))){
+              const changed=lastLiveQuarter!==quarter(Date.now());
+              lastSuccess=Date.now();lastLiveQuarter=quarter(lastSuccess);
+              if(changed)scheduleRecovery(Math.max(4000,lastLiveQuarter+120000-Date.now()));
+            }
+            error = '';
+          }
         }
       } catch (e) { error = e.message; }
       finally {
         busy = false;
         refresh();
         const pos = Date.now() % QUARTER;
-        const delay = pos < 120000 ? 15000 - pos % 15000 : Math.min(60000, QUARTER - pos);
+        const delay = Math.max(apiRetryUntil()-Date.now(),pos < 120000 ? 15000 - pos % 15000 : Math.min(60000, QUARTER - pos));
         timer = setTimeout(poll, Math.max(1000, delay));
       }
     }
-    let lastRecovery=0;
-    async function recover(manual){
-      if(recovering||!archiveReady||(!manual&&Date.now()-lastRecovery<3600000))return;
-      recovering=true;lastRecovery=Date.now();recovery='';refresh();
-      try{const payload=await request('/customer/current-prices/api/'),count=ingest(payload,Date.now(),true);recovery=count?count+' gemiste biedrichtingen teruggevonden':'Geen extra BIDs in beschikbare prijshistorie';}
-      catch(e){recovery='Terugzoeken mislukt: '+e.message;}
-      finally{recovering=false;refresh();}
+    function scheduleRecovery(delay=4000){
+      clearTimeout(recoveryTimer);recoveryTimer=setTimeout(recover,Math.max(1000,delay));
     }
-    document.addEventListener('be-afrr-source',e=>{try{ingest(e.detail,Date.now());refresh();}catch(_){}});
+    function latestMissing(from,to){
+      for(let t=quarter(to);t>=from;t-=QUARTER){
+        if(t>=to)continue;
+        const row=bids.get(t);
+        if(directions.some(d=>(!row?.[d]||row[d].estimated)&&row?.states?.[d]!=='missing_bid'))return t;
+      }
+      return null;
+    }
+    function recoveryState(){
+      try{
+        const saved=JSON.parse(localStorage.getItem(recoveryKey)||'{}');
+        if(saved&&typeof saved==='object'&&!Array.isArray(saved))for(const [key,value] of Object.entries(saved)){
+          if(value&&Number.isFinite(value.checkedAt)&&value.checkedAt>(recoveryMemory[key]?.checkedAt||0))recoveryMemory[key]=value;
+        }
+      }catch(_){}
+      return {...recoveryMemory};
+    }
+    function saveRecovery(saved,now){
+      for(const key of Object.keys(saved))if(Number(key)<quarter(now)-ARCHIVE_DAYS*DAY-DAY)delete saved[key];
+      recoveryMemory=saved;
+      try{localStorage.setItem(recoveryKey,JSON.stringify(saved));}catch(_){}
+    }
+    async function recover(){
+      if(recovering||!archiveReady)return;
+      const now=Date.now(),position=now%QUARTER;
+      // Reserve the first two minutes for collecting the live bid, not backfill.
+      if(position<120000||now<apiRetryUntil()){scheduleRecovery(Math.max(120000-position,apiRetryUntil()-now));return;}
+      recovering=true;let delay=4000;
+      try{
+        const work=async()=>{
+          try{await readArchive();}catch(_){} // API recovery still works if local storage is unavailable.
+          const at=Date.now(),today=Math.floor(at/DAY)*DAY,horizon=quarter(at)-ARCHIVE_DAYS*DAY,saved=recoveryState();
+          let range;
+          for(let day=today;day+DAY>horizon;day-=DAY){
+            const from=Math.max(day,horizon),to=Math.min(day+DAY,at),missing=latestMissing(from,to),previous=saved[day];
+            if(missing===null||previous?.revision===RECOVERY_REVISION&&previous.nextAt>at&&previous.until>missing)continue;
+            range={day,from,to};break;
+          }
+          if(!range){delay=3600000;return;}
+          try{
+            const payload=await request('/customer/current-prices/api/?start='+range.from+'&end='+range.to);
+            ingest(payload,Date.now(),true);
+            saved[range.day]={revision:RECOVERY_REVISION,until:range.to,checkedAt:Date.now(),nextAt:Date.now()+(range.day===today?3600000:DAY)};
+          }catch(failure){
+            delay=Math.max(300000,apiRetryUntil()-Date.now());
+            saved[range.day]={revision:RECOVERY_REVISION,until:range.to,checkedAt:Date.now(),nextAt:Date.now()+delay};
+          }
+          saveRecovery(saved,Date.now());
+        };
+        // Tabs share recovery metadata and, where supported, the request lock.
+        if(globalThis.navigator?.locks?.request)await navigator.locks.request('be-bid-recovery:'+customer,{ifAvailable:true},lock=>lock?work():undefined);
+        else await work();
+      }catch(_){delay=300000;}
+      finally{recovering=false;refresh();scheduleRecovery(delay);}
+    }
+    document.addEventListener('be-afrr-source',e=>{try{
+      const now=Date.now();ingest(e.detail,now);
+      if(e.detail.prices.some(r=>r.start===quarter(now))){
+        const changed=lastLiveQuarter!==quarter(now);
+        lastSuccess=now;lastLiveQuarter=quarter(now);error='';
+        if(changed)scheduleRecovery(Math.max(4000,lastLiveQuarter+120000-now));
+      }
+      refresh();
+    }catch(_){}});
     document.addEventListener('be-tarief-update', refresh);
     document.addEventListener('be-actueel-allin-update', refresh);
     document.addEventListener('be-dark-change', refresh);
-    document.addEventListener('visibilitychange', () => {if (!document.hidden) poll();});
+    async function resume(){
+      try{await readArchive();}catch(_){}
+      reconstruct(Date.now());refresh();poll();scheduleRecovery();
+    }
+    document.addEventListener('visibilitychange', () => {if (!document.hidden) resume();});
+    window.addEventListener('pageshow',resume);
     hydrate();
 })();
 
@@ -13925,7 +14129,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.4.2. BE data only. */
+/* Coulombtelling in/uit — 6.5. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -13982,6 +14186,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   // Mean of the measured charge/discharge curves, integrated over SOC.
   // Used only for kWh/Ah capacity display; actual counting uses varying voltage.
   const referenceVoltage=(()=>{let total=0;for(let s=0;s<100;s+=.5)total+=(base('charge',s+.25)+base('discharge',s+.25))*.25;return total/100;})();
+  // Ah-SOC is not an energy percentage. Integrate the same reference curve
+  // over the remaining charge; this estimates energy without changing SOC.
+  // Keep the existing measured range and its uncertainty at the bottom.
+  const energyCurve=(()=>{const values=[0];for(let s=0;s<100;s+=.5)
+    values.push(values.at(-1)+(base('charge',s+.25)+base('discharge',s+.25))*.25);
+    return values.map(v=>v/values.at(-1));})();
+  function energyKwh(soc,capacity){
+    if(!finite(soc)||!finite(capacity)||capacity<=0)return null;
+    const position=clamp(soc,0,100)*2,index=Math.floor(position);
+    const fraction=index===200?1:energyCurve[index]+(energyCurve[index+1]-energyCurve[index])*(position-index);
+    return capacity*fraction;
+  }
   function current(powerOut,soc,capacityAh){
     if(!finite(powerOut)||!finite(capacityAh)||capacityAh<=0)return null;
     if(powerOut===0)return 0;
@@ -13999,7 +14215,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     if(a===null||b===null)return null;
     const ah=(a+b)*.5*ms/3600000;return {input:Math.max(0,ah),output:Math.max(0,-ah)};
   }
-  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate};
+  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate,energyKwh};
 })(typeof window!=='undefined'?window:globalThis);
 
 /* BE-only energy balance. Positive bo is battery output in W. */
@@ -14180,7 +14396,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
-        energyKwh:finite(sampled.value)&&finite(capacity)&&capacity>0?sampled.value*capacity/100:null,
+        energyKwh:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
@@ -14193,7 +14409,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   }
   function format(row){
     if(!finite(row.value))return '—';
-    const energy=finite(row.energyKwh)?row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
+    const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
   function hide(state){
@@ -14513,7 +14729,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
     const soc=shown?number(visualSoc(shown),1)+'%':'—';
     const compactSoc=shown?number(visualSoc(shown),0)+'%':'—';
-    const chemicalContent=shown?number(visualSoc(shown)*shown.capacity/100,1)+' kWh':'— kWh';
+    const chemicalKwh=shown?window.BEMeasuredVoltage.energyKwh(visualSoc(shown),shown.capacity):null;
+    const chemicalContent=Number.isFinite(chemicalKwh)?'~ '+number(chemicalKwh,1)+' kWh':'— kWh';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -14643,7 +14860,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite">— kWh</strong></div><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
+    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite" title="Geschatte resterende energie uit coulombtelling en het gemeten spanningsprofiel. Geen directe energiemeting; bij lage SOC is de onzekerheid groter.">— kWh</strong></div><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
   <div class="be-capacity-title">Accucapaciteit</div>
   <label class="be-capacity-method">Invoermethode
     <select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select>
@@ -14663,7 +14880,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
@@ -14693,7 +14910,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.4.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14851,7 +15068,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.4.2. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.5. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -14863,11 +15080,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
+  const REQUEST_REVISION='connection-check-v1';
   const clock=new Intl.DateTimeFormat('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   let host,shadow,config={},state=null,molState=null,budgetState=null,bidState={},bidError='',coordinator,timer,busy=false,inFlight=false,localError='',destroyed=false;
   let bidDB,observedCustomer='',lastBidRead=0,keyStorageWarning='';
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   let emsRows=[],emsInstallation='',emsRevision=0,emsDB,lastEmsRead=0,graphDuration=1800000,graphSelection=null;
+  let connectionCheck=null,checkMessage='';
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
@@ -14938,35 +15157,64 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }
     return {lower,upper:null};
   }
+  function bidObservation(value,start,now){
+    if(value?.estimated)return null; // Tariff-chart reconstructions are not observed EMS bids.
+    if(!Number.isFinite(value?.value)||!Number.isFinite(value.observedAt)||value.observedAt<start||value.observedAt>now)return null;
+    return {value:value.value,observedAt:value.observedAt};
+  }
+  function mergeBidDirection(previous,incoming,start,now){
+    const a=bidObservation(previous,start,now),b=bidObservation(incoming,start,now);
+    let latest=!a?b:!b?a:b.observedAt>=a.observedAt?b:a;
+    // Re-reading the same bid does not turn its first observation into a late one.
+    if(a&&b&&a.value===b.value)latest=a.observedAt<=b.observedAt?a:b;
+    let early=null;
+    for(const value of [previous?.early,incoming?.early,a,b]){
+      const observed=bidObservation(value,start,now);
+      if(observed&&observed.observedAt<start+120000&&(!early||observed.observedAt>=early.observedAt))early=observed;
+    }
+    return latest?{...latest,...(early?{early}:{})}:early?{...early,early}:null;
+  }
   function captureBid(record,now){
     if(!record||!Number.isFinite(record.start)||quarter(record.start)!==record.start||record.end!==record.start+QUARTER||record.carried||record.start>now)return null;
     const result={start:record.start,end:record.end};
     for(const direction of ['import','export']){
       const saved=record[direction];
-      const observations=saved?.observations||(saved?[saved]:[]);
-      const early=observations.filter(o=>Number.isFinite(o.value)&&Number.isFinite(o.observedAt)&&o.observedAt>=record.start&&o.observedAt<record.start+120000&&o.observedAt<=now)
-        .sort((a,b)=>b.observedAt-a.observedAt)[0];
-      if(early)result[direction]={value:early.value,observedAt:early.observedAt};
-      if(record.afrrBidStatus?.[direction]==='bid_fallback'&&now>=record.start&&now<record.start+120000){
+      let captured=mergeBidDirection(null,saved,record.start,now);
+      for(const observed of Array.isArray(saved?.observations)?saved.observations:[])captured=mergeBidDirection(captured,observed,record.start,now);
+      // Only an explicit bid_fallback quote is a bid; confirmed trade quotes are not.
+      if(record.afrrBidStatus?.[direction]==='bid_fallback'){
         const value=numeric(record.values?.['afrr_'+direction]);
-        if(value!==null)result[direction]={value,observedAt:now};
+        if(value!==null)captured=mergeBidDirection(captured,{value,observedAt:now},record.start,now);
       }
+      if(captured)result[direction]=captured;
     }
     return result.import||result.export?result:null;
   }
+  function trainingBid(bid){
+    if(!bid)return null;
+    const result={start:bid.start,end:bid.end};
+    for(const direction of ['import','export']){
+      const observed=bidObservation(bid[direction]?.early||bid[direction],bid.start,bid.end);
+      if(observed&&observed.observedAt<bid.start+120000)result[direction]=observed;
+    }
+    return result.import||result.export?result:null;
+  }
+  const lateBid=(bid,start)=>Number.isFinite(bid?.observedAt)&&bid.observedAt>=start+120000;
+  const bidStamp=(bid,start)=>(lateBid(bid,start)?'Later opgehaald ':'Vastgelegd ')+time(bid.observedAt);
   function comparison(row,bid,ladder,direction,stale=false){
     if(stale)return {label:'Bron verouderd',detail:'Geen actuele afroepindicatie.',tone:'muted'};
     if(!row)return {label:'Wachten op bronmeting',detail:'Nog geen TenneT-meting beschikbaar.',tone:'muted'};
     const d=direction==='up'?'export':'import';
     if(!bid?.[d]||bid.start!==quarter(row.start))return {label:'BID ontbreekt voor bronkwartier',detail:'Een BID uit een ander kwartier wordt niet gebruikt.',tone:'muted'};
     const value=bid[d].value*1000,volume=row[direction],price=row[direction+'Price'];
+    const observedLabel=lateBid(bid[d],bid.start)?bidStamp(bid[d],bid.start)+' · ':'';
     const position=ladderPosition(ladder,value,direction);
-    if(volume===null)return {label:'Regelvermogen onbekend',detail:'Een ontbrekende waarde is geen nul.',position,tone:'muted'};
-    if(volume===0)return {label:'Geen regelvolume zichtbaar',detail:'In deze bronmeting staat 0 MW; dit voorspelt de rest van het kwartier niet.',position,tone:'muted'};
-    if(price===null)return {label:'Activatie niet bevestigd',detail:'Er staat vermogen zonder bijbehorende activatieprijs in de bron.',position,tone:'muted'};
+    if(volume===null)return {label:'Regelvermogen onbekend',detail:observedLabel+'Een ontbrekende waarde is geen nul.',position,tone:'muted'};
+    if(volume===0)return {label:'Geen regelvolume zichtbaar',detail:observedLabel+'In deze bronmeting staat 0 MW; dit voorspelt de rest van het kwartier niet.',position,tone:'muted'};
+    if(price===null)return {label:'Activatie niet bevestigd',detail:observedLabel+'Er staat vermogen zonder bijbehorende activatieprijs in de bron.',position,tone:'muted'};
     const reached=direction==='up'?price>=value:price<=value;
     return {label:reached?'Biedprijs bereikt in bronmeting':'Biedprijs nog niet bereikt',
-      detail:(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
+      detail:observedLabel+(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
         ' '+number(volume)+' MW '+(direction==='up'?'opregelen.':'afregelen.'),position,tone:reached?'reached':'waiting'};
   }
   function powerRows(rows,now=Date.now()){
@@ -14999,6 +15247,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     return {ratio:volume/scale,trend,hit};
   }
   function trainingQuarter(rows,bid,ladder,lag){
+    // Display may recover a real bid later; training uses only observations
+    // actually available in the first two minutes of that quarter.
+    bid=trainingBid(bid);
     if(!bid||!ladder||!Number.isFinite(lag)||lag<0||lag>300000)return null;
     const q=bid.start,points=rows.filter(r=>r.start>=q&&r.end<=q+QUARTER);
     // A partial quarter or a missing 12-second point may never become a
@@ -15070,7 +15321,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     if(!row)return 'Nog geen meting ontvangen.';
     if(row.up===null||row.down===null)return 'Het regelvolume is niet volledig ingevuld in de bron.';
     const up=row.up>0&&row.upPrice!==null,down=row.down>0&&row.downPrice!==null;
-    if(up&&down)return 'Op- én afregelactivatie zichtbaar in deze bronmeting.';
+    if(up&&down)return 'Af- én opregelactivatie zichtbaar in deze bronmeting.';
     if(up)return 'Opregelactivatie zichtbaar · richting ontladen / export.';
     if(down)return 'Afregelactivatie zichtbaar · richting laden / import.';
     if(row.up>0||row.down>0)return 'Volume gemeld zonder bijbehorende activatieprijs; activatie niet bevestigd.';
@@ -15126,15 +15377,27 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       retry:(scope,id='live')=>transaction([id],r=>{
         const s=r[id];
         if(!s||s.scope!==scope)return {value:s};
-        // A manual retry never bypasses publication cadence or Retry-After.
-        const next={...s,authBlocked:false};return {write:[next],value:next};
+        // Reset only a local network-error backoff. Server cooldowns, leases,
+        // minimum request spacing and all rolling budgets remain authoritative.
+        const networkWait=!s.status&&!!s.error;
+        const next={...s,authBlocked:false,...(networkWait?{
+          nextAt:Math.max(Date.now(),(s.lastAttempt||0)+1100,s.cooldownUntil||0),failures:0
+        }:{})};return {write:[next],value:next};
+      }),
+      probeResult:(scope,tab,result,now)=>transaction(['live'],r=>{
+        const s=r.live;if(!s||s.scope!==scope||s.owner!==tab)return {value:s};
+        const next={...s,owner:'',leaseUntil:0,connectionCheck:{...result,at:now},nextAt:Math.max(s.nextAt||0,now+60000)};
+        return {write:[next],value:next};
       }),
       bids:(customer,records,now)=>transaction(['bids:'+customer],r=>{
         const id='bids:'+customer,rows={...(r[id]?.rows||{})};
         for(const incoming of records){
           const row=captureBid(incoming,now);if(!row)continue;
           const old=rows[row.start]||{start:row.start,end:row.end};
-          for(const d of ['import','export'])if(row[d]&&(!old[d]||row[d].observedAt>=old[d].observedAt))old[d]=row[d];
+          for(const d of ['import','export']){
+            const merged=mergeBidDirection(old[d],row[d],row.start,now);
+            if(merged)old[d]=merged;
+          }
           rows[row.start]=old;
         }
         for(const key of Object.keys(rows))if(Number(key)<quarter(now)-7*86400000)delete rows[key];
@@ -15147,7 +15410,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         return {write:records.length?[{id,quarters}]:[],value:quarters};
       }),
       reserve:(scope,tab,now,id='live')=>transaction([id,'budget'],r=>{
-        const saved=r[id],s=saved?.scope===scope?saved:{id,scope,nextAt:0,attempts:[],failures:0};
+        const saved=r[id];let s=saved?.scope===scope?saved:{id,scope,nextAt:0,attempts:[],failures:0};
+        // A changed request implementation gets one fresh attempt instead of
+        // inheriting up to fifteen minutes of an older transport failure.
+        if(s.requestRevision!==REQUEST_REVISION&&!s.status&&s.error){
+          s={...s,nextAt:Math.max((s.lastAttempt||0)+1100,s.cooldownUntil||0),failures:0};
+        }
         const q=quarter(now),budget=r.budget||{id:'budget',attempts:[],molAttempts:[]};
         const attempts=(s.attempts||[]).filter(t=>t>now-60000);
         const all=(budget.attempts||[]).filter(t=>t>now-60000),daily=(budget.molAttempts||[]).filter(t=>t>now-86400000);
@@ -15157,7 +15425,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         const alreadyLoaded=id==='mol'&&s.good?.quarters.some(p=>p.start===q);
         const exhausted=id==='mol'&&s.target===q&&s.tries>=3;
         if(s.authBlocked||blocked>now||alreadyLoaded||exhausted)return {value:{reserved:false,state:s,retryAt:alreadyLoaded||exhausted?q+QUARTER+1000:blocked}};
-        const next={...s,owner:tab,leaseUntil:now+LEASE,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+60000,
+        const next={...s,owner:tab,leaseUntil:now+LEASE,requestRevision:REQUEST_REVISION,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+60000,
           lastAttempt:now,attempts:[...attempts,now],target:q,tries:s.target===q?(s.tries||0)+1:1};
         const nextBudget={id:'budget',nextAt:now+1100,attempts:[...all,now],molAttempts:id==='mol'?[...daily,now]:daily};
         return {write:[next,nextBudget],value:{reserved:true,state:next}};
@@ -15184,14 +15452,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
           const interval=unchanged?Math.min(60000,INTERVAL*Math.pow(2,Math.min(3,unchanged))):INTERVAL;
           nextAt=publicationAfter(Math.max(s.lastAttempt+interval,now+1000));
         }
-        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false,errorKind:'',networkDetail:''};
+        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false,errorKind:'',networkDetail:'',connectionCheck:null,cooldownUntil:0};
         return {write:[next],value:next};
       }),
       failure:(scope,tab,error,now,id='live')=>transaction([id,'budget'],r=>{
         const s=r[id];
         if(!s||s.scope!==scope||s.owner!==tab)return {value:s};
         const failures=(s.failures||0)+1;
-        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,errorKind:error.kind||'unknown',networkDetail:error.networkDetail||'',
+        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,errorKind:error.kind||'unknown',networkDetail:error.networkDetail||'',cooldownUntil:error.retryAt||0,
           authBlocked:error.kind==='auth',nextAt:Math.max(s.nextAt||0,now+(id==='mol'?Math.max(60000,failureDelay(error,failures,now)):failureDelay(error,failures,now)))};
         const write=[next];
         if(error.status===429)write.push({...r.budget,id:'budget',nextAt:Math.max(r.budget?.nextAt||0,next.nextAt)});
@@ -15268,8 +15536,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     return new Promise((resolve,reject)=>{
       const fn=manager().request;
       if(!fn){reject(new Fault('manager','Deze installatie biedt geen toegang tot de TenneT-API.'));return;}
-      let settled=false;
-      function failed(e){if(!settled){settled=true;reject(e);}}
+      let settled=false,handle,watchdog,lastEvent='aanroep gestart';
+      function failed(e){if(!settled){settled=true;clearTimeout(watchdog);reject(e);}}
       function networkFailure(event,detail){
         if(settled)return;
         const status=Number(detail?.status)||0;
@@ -15277,9 +15545,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         if(status>=400&&status<=599){received(detail);return;}
         const labels={onerror:'De netwerkfunctie kon geen bruikbaar TenneT-antwoord doorgeven.',
           ontimeout:'TenneT reageerde niet binnen 10 seconden.',onabort:'Aanvraag afgebroken.',
-          promise:'De netwerkfunctie heeft de aanvraag afgewezen.',start:'De userscriptmanager kon de API-aanvraag niet starten.'};
+          promise:'De netwerkfunctie heeft de aanvraag afgewezen.',start:'De userscriptmanager kon de API-aanvraag niet starten.',
+          watchdog:'De userscriptmanager gaf geen eindantwoord terug.',onloadend:'De netwerkfunctie sloot af zonder HTTP-status.'};
         const error=new Fault(event==='start'?'manager':'network',labels[event]||labels.onerror,status);
-        const fields=[event];
+        const fields=[event,'laatste fase: '+lastEvent];
         if(detail&&Number.isFinite(Number(detail.status)))fields.push('status '+Number(detail.status));
         if(detail&&Number.isFinite(Number(detail.readyState)))fields.push('readyState '+Number(detail.readyState));
         const messages=[detail?.name,detail?.code,detail?.message,detail?.error?.message,detail?.statusText,typeof detail==='string'?detail:'']
@@ -15289,12 +15558,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         if(c.key)description=description.split(c.key).join('[sleutel afgeschermd]');
         description=description.replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/gi,'[afgeschermd]').replace(/[\r\n\t]+/g,' ').slice(0,240);
         if(description)fields.push(description);
-        if(fields.length===1)fields.push('de manager gaf geen verdere foutdetails');
         error.networkDetail=fields.join(' · ');failed(error);
       }
       function received(r){
         if(settled)return;
         const status=Number(r.status)||0;
+        if(!status){networkFailure('onloadend',r);return;}
         if(status!==200){
           const messages={401:'Geen geldige sleutel voor deze omgeving of API (HTTP 401).',
             403:'Toegang geweigerd (HTTP 403). Controleer omgeving en API-toegang; ook een verbindingsblokkade is mogelijk.',
@@ -15304,20 +15573,44 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         try{
           if(typeof r.responseText!=='string'||r.responseText.length>4000000)throw new Fault('format','Onbruikbaar of te groot API-antwoord.');
           let body;try{body=JSON.parse(r.responseText);}catch(_){throw new Fault('format','TenneT gaf geen JSON-dataset terug (HTTP 200).');}
-          const parsed=channel==='mol'?parseMerit(body):parsePayload(body);settled=true;resolve(parsed);
+          const parsed=channel==='mol'?parseMerit(body):parsePayload(body);settled=true;clearTimeout(watchdog);resolve(parsed);
         }catch(e){const fault=e instanceof Fault?e:new Fault('format','De dataset kon niet worden verwerkt.');fault.status=200;failed(fault);}
       }
       try{
         // Userscripts 4.8.6 stringifies omitted user/password/overrideMimeType as
         // "undefined". Empty values become null credentials in its XHR bridge.
         // Authentication is exclusively the user's existing apikey header.
-        const handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
+        watchdog=setTimeout(()=>{
+          networkFailure('watchdog');try{handle?.abort?.();}catch(_){}
+        },TIMEOUT+1500);
+        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
           user:'',password:'',overrideMimeType:'',responseType:'text',
+          onloadstart:()=>{lastEvent='onloadstart';},
+          onreadystatechange:r=>{lastEvent='readyState '+r.readyState;},
           timeout:TIMEOUT,onload:received,onerror:r=>networkFailure('onerror',r),
-          ontimeout:r=>networkFailure('ontimeout',r),onabort:r=>networkFailure('onabort',r)});
+          ontimeout:r=>networkFailure('ontimeout',r),onabort:r=>networkFailure('onabort',r),
+          onloadend:r=>{if(!settled)received(r);}});
         if(handle?.then)handle.then(r=>{if(r?.status!==undefined)received(r);},e=>networkFailure('promise',e));
       }catch(e){networkFailure('start',e);}
     });
+  }
+  async function browserReachability(environment){
+    // No API key, cookies, response-body access or proxy. This probe occupies
+    // a normal shared request reservation and therefore also counts in budgets.
+    if(typeof fetch!=='function'||typeof AbortController!=='function')return {
+      outcome:'unavailable',summary:'De browser biedt geen aparte verbindingscontrole. De userscript-aanvraag blijft mislukken.'};
+    const controller=new AbortController();let policy='';
+    const blocked=event=>{if(String(event.blockedURI||'').startsWith(HOSTS[environment]))policy=event.effectiveDirective||event.violatedDirective||'CSP';};
+    document.addEventListener('securitypolicyviolation',blocked);
+    const timer=setTimeout(()=>controller.abort(),6000);
+    try{
+      const response=await fetch(HOSTS[environment]+PATH,{method:'GET',mode:'no-cors',credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer',signal:controller.signal});
+      if(response.type==='error')throw Error('NetworkError');
+      return {outcome:'browser-reachable',summary:'TenneT is via de gewone browseraanvraag bereikbaar, maar via de userscriptmanager komt geen HTTP-antwoord terug. Controleer de TenneT-websiterechten of een blokkade van die aanvraag. Deze aparte controle valideert de sleutel niet.'};
+    }catch(e){
+      return policy?{outcome:'policy-blocked',summary:'Het dashboardbeleid blokkeert de aparte browsercontrole ('+policy+'). De oorzaak van de userscript-fout is nog niet vastgesteld.'}:
+        {outcome:'browser-unreachable',summary:'Ook de gewone browseraanvraag naar TenneT mislukt. Dit past bij een netwerk-, DNS-, TLS- of browserblokkade; de precieze oorzaak is nog niet vastgesteld.',event:e?.name==='AbortError'?'timeout':'network-error'};
+    }finally{clearTimeout(timer);document.removeEventListener('securitypolicyviolation',blocked);}
   }
   const number=(n,d=1)=>Number.isFinite(n)?n.toLocaleString('nl-NL',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
   const time=t=>Number.isFinite(t)?clock.format(t):'—';
@@ -15429,11 +15722,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const mol=molState?.scope===config.scope?molState.good:null;
     const ladder=mol?.quarters.find(p=>p.start===sourceQuarter);
     text('[data-bid-quarter]','Jouw BID · '+time(q).slice(0,5)+'–'+time(q+QUARTER).slice(0,5));
-    for(const [direction,d] of [['up','export'],['down','import']]){
+    for(const [direction,d] of [['down','import'],['up','export']]){
       const bid=current?.[d];
       text('[data-'+direction+'-bid]',bid?'€ '+number(bid.value*1000,2)+' / MWh':'—');
-      text('[data-'+direction+'-bid-time]',bid?'Vastgelegd '+time(bid.observedAt)+' · kale prijs':
-        now-q<120000?'Wachten op BID in eerste twee minuten…':'Geen BID in de eerste twee minuten waargenomen.');
+      text('[data-'+direction+'-bid-time]',bid?bidStamp(bid,q)+' · kale prijs':'Nog geen expliciete BID voor dit kwartier ontvangen.');
       const result=comparison(row,source,ladder,direction,stale);
       const label=shadow.querySelector('[data-'+direction+'-comparison]');label.dataset.tone=result.tone;
       text('[data-'+direction+'-comparison]',result.label);
@@ -15459,7 +15751,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         chance.p===undefined?'Historische kansindicatie: '+chance.n+'/30 vergelijkbare kwartieren verzameld.':
         'Historische trefkans biedniveau: '+number(chance.p*100,0)+'% · 95%-band '+number(chance.lower*100,0)+'–'+number(chance.upper*100,0)+'% · '+chance.n+' kwartieren.');
     }
-    text('[data-bid-source]',bidError||'BID uit het lokale archief van de hoofdplugin; geen extra Balansenergie-aanvragen.');
+    text('[data-bid-source]',bidError||'Expliciete BIDs uit het lokale archief van de hoofdplugin, ook later opgehaald; geen extra Balansenergie-aanvragen.');
     text('[data-comparison-quarter]',sourceQuarter===null?'Wachten op TenneT.':
       'Vergelijking hoort bij '+time(sourceQuarter).slice(0,5)+'–'+time(sourceQuarter+QUARTER).slice(0,5)+
       (sourceQuarter!==q?' · vorig bronkwartier; de nieuwe BIDs hierboven worden hiervoor niet gebruikt.':'.'));
@@ -15492,19 +15784,20 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const q=quarter(now),bid=bidState[q];
     text('[data-summary-quarter]','Dit kwartier · '+time(q).slice(0,5)+'–'+time(q+QUARTER).slice(0,5));
     text('[data-summary-source]',row?'Bron '+time(row.end)+' · '+age(now-row.end)+' vertraagd'+(quarter(row.start)!==q?' · vorig kwartier':'')+'.':'Wachten op TenneT.');
-    for(const [direction,d] of [['up','export'],['down','import']]){
+    for(const [direction,d] of [['down','import'],['up','export']]){
       let label,detail,tone='muted';
       text('[data-summary-'+direction+'-power]',number(row?.[direction])+' MW');
       const price=row?.[direction+'Price'];
       text('[data-summary-'+direction+'-price]',price==null?'Prijs onbekend':'TenneT-regelprijs € '+number(price/1000,3)+'/kWh');
       text('[data-summary-'+direction+'-bid]',bid?.[d]?(direction==='up'?'≥ ':'≤ ')+'€ '+number(bid[d].value,3)+'/kWh':'BID ontbreekt');
+      text('[data-summary-'+direction+'-bid-time]',lateBid(bid?.[d],q)?bidStamp(bid[d],q):'');
       if(!row){label='Nog geen gegevens';detail='Wachten op TenneT.';}
       else if(stale){label='Bron verouderd';detail='Geen actuele vergelijking.';}
       else if(quarter(row.start)!==q){label='Wachten op dit kwartier';detail='TenneT toont nog metingen van het vorige kwartier.';}
       else if(row[direction]===0){label='Geen regelvolume';detail='Geen inzet in deze richting gemeld.';}
       else if(!bid?.[d]){
         label='BID nog niet bekend';
-        detail=now-q<120000?'Laat Actueel open; het bod wordt vastgelegd.':'Laat Actueel open bij de volgende kwartierwisseling.';
+        detail='Nog geen expliciete BID voor dit kwartier ontvangen.';
       }else{
         const result=comparison(row,bid,null,direction);
         tone=result.tone;
@@ -15526,7 +15819,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const own=(emsInstallation===customer()?emsRows:[]).filter(r=>r.t>=min&&r.t<=max);
     const signature=JSON.stringify([good?.fetchedAt||0,duration,emsRevision,Math.floor(now/5000)]);
     if(container.dataset.signature===signature)return;
-    container.dataset.signature=signature;container.replaceChildren();
+    // Keep the current SVG in place while measuring and constructing its update.
+    // An empty plot followed by a layout read can clamp the page scroll position.
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
     function node(tag,attrs={},label,parent=svg){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(label!==undefined)el.textContent=label;parent.append(el);return el;}
     const plotWidth=Math.max(300,container.clientWidth||host.clientWidth||800);
@@ -15610,7 +15904,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }
     svg.addEventListener('pointermove',inspect);svg.addEventListener('pointerdown',inspect);
     svg.addEventListener('pointerleave',()=>{graphSelection=null;readout(restTime);});
-    container.append(svg);
+    container.replaceChildren(svg);container.dataset.signature=signature;
   }
   function render(){
     if(!shadow)return;
@@ -15622,6 +15916,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     text('[data-status]',localError||s?.error||(inFlight?'Metingen ophalen…':good?
       (stale?'Laatste meting is verouderd.':config.enabled?'Verbonden · automatisch verversen':'Gepauzeerd · laatste meting zichtbaar'):
       config.key?'Sleutel opgeslagen · klaar om te testen':'Vul je production-sleutel voor Balance Delta High Res in.'));
+    text('[data-connection-check]',checkMessage);
+    shadow.querySelector('[data-connection-check]').hidden=!checkMessage;
     shadow.querySelector('[data-status]').dataset.warning=String(Boolean(localError||s?.error||stale));
     text('[data-key-state]',(config.key?'Sleutel opgeslagen · blijft bewaard bij herladen en toekomstige updates.':'Nog geen sleutel in deze installatie. Werk bij overstappen de bestaande installatie bij waarin je sleutel is opgeslagen.')+(keyStorageWarning?' '+keyStorageWarning:''));
     text('[data-key-label]',config.key?'Nieuwe API-sleutel (optioneel)':'TenneT API-sleutel');
@@ -15643,11 +15939,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.4.2'+
+      '\nDashboardversie: 6.5'+
+      '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
       '\nHTTP-status: '+(s?.status||(s?.error?'geen HTTP-status ontvangen':'nog geen antwoord'))+
       '\nFoutcategorie: '+(s?.errorKind||'—')+'\nNetwerkdetails: '+(s?.networkDetail||'—')+'\nLaatste aanvraag: '+time(s?.lastAttempt)+
+      '\nVerbindingscontrole: '+(s?.connectionCheck?time(s.connectionCheck.at)+' · '+s.connectionCheck.summary:checkMessage||'nog niet uitgevoerd')+
       '\nLaatste geslaagde aanvraag: '+time(good?.fetchedAt)+'\nMeetpunten: '+(good?.rows.length||0)+
       '\nAanvragen Balance Delta laatste minuut: '+(s?.attempts||[]).filter(t=>t>now-60000).length+
       '\nBiedladder HTTP-status: '+(molState?.scope===config.scope?molState.status||'nog geen antwoord':'nog geen antwoord')+
@@ -15655,7 +15953,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       '\nLaatste aanvraag biedladder: '+time(molState?.lastAttempt)+
       '\nTotaal API-aanvragen laatste minuut: '+(budgetState?.attempts||[]).filter(t=>t>now-60000).length+' / 8'+
       '\nBiedladder-aanvragen laatste 24 uur: '+(budgetState?.molAttempts||[]).filter(t=>t>now-86400000).length+' / 500'+
-      '\nBID-bron: lokaal archief · vastleggen eerste 120 seconden'+
+      '\nBID-bron: lokaal archief · expliciete biedingen, ook later opgehaald; kansmodel gebruikt afzonderlijk bewaarde waarnemingen uit de eerste 120 seconden'+
       '\nPlanner: maximaal 5 Balance Delta-aanvragen/min; biedladder uit kwartiercache.'+
       '\nOngewijzigde bron: '+(s?.unchanged||0)+' opeenvolgende antwoorden; planner vertraagt dan automatisch.');
     shadow.querySelector('[data-refresh]').disabled=!config.key||inFlight||wait>0||s?.authBlocked;
@@ -15667,7 +15965,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       tbody.dataset.signature=signature;tbody.replaceChildren();
       for(const p of (good?.rows||[]).slice(-10).reverse()){
         const tr=document.createElement('tr');
-        for(const value of [time(p.start),number(p.up),number(p.down),number(p.upPrice,2),number(p.downPrice,2)]){
+        for(const value of [time(p.start),number(p.down),number(p.up),number(p.downPrice,2),number(p.upPrice,2)]){
           const td=document.createElement('td');td.textContent=value;tr.append(td);
         }
         tbody.append(tr);
@@ -15683,24 +15981,46 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       config=await loadConfig();
       [state,molState,budgetState]=await Promise.all([coordinator.read(),coordinator.read('mol'),coordinator.read('budget')]);
       await readBids();await readPower();render();
-      for(const channel of ['live','mol']){
+      if(connectionCheck&&connectionCheck.scope!==config.scope)connectionCheck=null;
+      for(const channel of (connectionCheck?['live']:['live','mol'])){
         config=await loadConfig();
         if(!panelEnabled()||!placementTarget()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
-        if(!reservation.reserved)continue;
+        if(!reservation.reserved){
+          if(connectionCheck)checkMessage=reservation.retryAt>Date.now()?
+            'De verbindingscontrole wacht op de gedeelde aanvraagplanner tot '+time(reservation.retryAt)+'. Aanvraaglimieten en serverwachttijden blijven gelden.':
+            'De verbindingscontrole wacht op een vrije aanvraag.';
+          continue;
+        }
         if(!panelEnabled()||!placementTarget())break;
         inFlight=true;render();
         try{
-          const data=await request(c,channel,reservation.state.target);
-          const result=await coordinator.success(c.scope,owner,data,Date.now(),channel);
-          if(channel==='live')state=result;else molState=result;
+          if(connectionCheck?.phase==='browser'&&channel==='live'){
+            checkMessage='Browserbereikbaarheid controleren zonder API-sleutel…';render();
+            const result=await browserReachability(c.environment);
+            state=await coordinator.probeResult(c.scope,owner,result,Date.now());
+            checkMessage=result.summary;connectionCheck=null;
+          }else{
+            const checking=!!connectionCheck;
+            const data=await request(c,channel,reservation.state.target);
+            const result=await coordinator.success(c.scope,owner,data,Date.now(),channel);
+            if(channel==='live')state=result;else molState=result;
+            if(checking||(channel==='live'&&checkMessage)){checkMessage='Verbinding geslaagd: TenneT geeft HTTP 200 en bruikbare metingen terug.';connectionCheck=null;}
+          }
         }catch(e){
           const error=e instanceof Fault?e:new Fault('network','De aanvraag kon niet worden voltooid.');
           const result=await coordinator.failure(c.scope,owner,error,Date.now(),channel);
           if(channel==='live')state=result;else molState=result;
+          if(connectionCheck&&channel==='live'){
+            if(!error.status&&(error.kind==='network'||error.kind==='manager')&&connectionCheck.phase==='manager'){
+              connectionCheck.phase='browser';
+              checkMessage='De userscript-aanvraag mislukte. De gewone browserverbinding wordt nu apart gecontroleerd…';
+              await coordinator.retry(c.scope);
+            }else{checkMessage=error.message;connectionCheck=null;}
+          }else if(channel==='live')checkMessage='';
         }finally{inFlight=false;}
         const s=channel==='live'?state:molState;
         if(s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
@@ -15733,6 +16053,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       input.value='';
       if(same){await coordinator.retry(config.scope);await coordinator.retry(config.scope,'mol');}
       if(!same){marketHistory=[];learnedSignature='';historyReadAt=0;}
+      connectionCheck={scope:config.scope,phase:'manager'};checkMessage='Verbinding controleren…';
       localError='';shadow.querySelector('[data-settings]').open=false;await tick();
     }catch(e){localError=e instanceof Fault?e.message:'De sleutel kon niet worden opgeslagen.';render();}
   }
@@ -15748,9 +16069,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     }catch(_){localError='De opgeslagen sleutel kon niet worden gewist.';render();}
   }
   function createPanel(){
-    host=document.createElement('section');host.id=ID;host.style.cssText='display:block;flex:0 0 100%;width:100%;min-width:0;margin:16px 0';
+    host=document.createElement('section');host.id=ID;host.style.cssText='display:block;flex:0 0 100%;width:100%;min-width:0;margin:16px 0;overflow-anchor:none';
     shadow=host.attachShadow({mode:'closed'});
     shadow.innerHTML=`<style>
+      .summary-card h4 small{display:inline;font-size:inherit;line-height:inherit;margin:0;white-space:nowrap}
       :host{--paper:#fff;--ink:#30263a;--muted:#6b6175;--line:#d9d1e1;--soft:#f7f4fa;--up:#277eae;--down:#b05274;--warn:#a35b12;--ems:#79b79b;--ems-text:#287455;font:13px/1.5 system-ui,-apple-system,sans-serif}
       :host([data-theme="grafiet"]){--paper:#1c1f26;--ink:#f5f7fa;--muted:#b6c0cf;--line:#3c4351;--soft:#262a34;--up:#4398ff;--down:#ff8399;--warn:#ffc64a;--ems:#9dceb4;--ems-text:#b0dec6}
       :host([data-theme="bruingrijs"]){--paper:#37322b;--ink:#f5f0e8;--muted:#c7beb0;--line:#675e4f;--soft:#454036;--up:#31adde;--down:#f681a0;--warn:#eca524;--ems:#9dceb4;--ems-text:#b0dec6}
@@ -15772,33 +16094,33 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       label{display:block;margin:10px 0 5px}input,select{width:100%;padding:8px}input{font-size:16px}.actions{margin:10px 0}summary{cursor:pointer;padding:8px 0;font-weight:550}small,.note{font-size:11px;color:var(--muted)}a{color:var(--up)}
       .table{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums}th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}
       [data-diagnostic],[data-poll]{overflow-wrap:anywhere}[data-diagnostic]{white-space:pre-wrap;padding:10px;background:var(--soft);border-radius:6px}details{border-top:1px solid var(--line);margin-top:8px}@media(max-width:540px){.bid-grid{grid-template-columns:1fr}}@media(max-width:420px){.panel{padding:12px}.metric{padding:10px}.metric strong{font-size:21px}.actions{gap:7px}.actions button{flex:1 1 auto}}
-    </style><div class="panel"><header><h3>Regelvermogen & biedingen</h3><span data-status role="status" aria-live="polite">Regelvermogen laden…</span><span data-environment>Production</span></header>
+    </style><div class="panel"><header><h3>Regelvermogen & biedingen</h3><span data-status role="status" aria-live="polite">Regelvermogen laden…</span><span data-environment>Production</span></header><p class="note" data-connection-check role="status" aria-live="polite" hidden></p>
 
       <p class="note" data-summary-quarter></p>
       <div class="summary-grid"><section class="summary-card">
-        <div><h4>TenneT · opregelen</h4><strong class="mw" data-summary-up-power>— MW</strong><small data-summary-up-price></small></div>
-        <div><h4>EMS · ontladen</h4><strong data-summary-up-bid>—</strong></div>
-        <div class="summary-effect"><h4>Effect</h4><strong data-summary-up>Nog geen gegevens</strong><p data-summary-up-detail></p></div></section>
-        <section class="summary-card"><div><h4>TenneT · afregelen</h4><strong class="mw" data-summary-down-power>— MW</strong><small data-summary-down-price></small></div>
-        <div><h4>EMS · laden</h4><strong data-summary-down-bid>—</strong></div>
-        <div class="summary-effect"><h4>Effect</h4><strong data-summary-down>Nog geen gegevens</strong><p data-summary-down-detail></p></div></section></div>
+        <div><h4>TenneT · afregelen · <small>import</small></h4><strong class="mw" data-summary-down-power>— MW</strong><small data-summary-down-price></small></div>
+        <div><h4>EMS · laden</h4><strong data-summary-down-bid>—</strong><small data-summary-down-bid-time></small></div>
+        <div class="summary-effect"><h4>Effect</h4><strong data-summary-down>Nog geen gegevens</strong><p data-summary-down-detail></p></div></section>
+        <section class="summary-card"><div><h4>TenneT · opregelen · <small>export</small></h4><strong class="mw" data-summary-up-power>— MW</strong><small data-summary-up-price></small></div>
+        <div><h4>EMS · ontladen</h4><strong data-summary-up-bid>—</strong><small data-summary-up-bid-time></small></div>
+        <div class="summary-effect"><h4>Effect</h4><strong data-summary-up>Nog geen gegevens</strong><p data-summary-up-detail></p></div></section></div>
       <p data-summary-source></p>
-      <p class="summary-note">Kale prijzen · Opregelen: regelprijs ≥ ontlaadbod. Afregelen: regelprijs ≤ laadbod. Afroep van jouw accu is niet bevestigd.</p>
+      <p class="summary-note">Kale prijzen · Afregelen: regelprijs ≤ laadbod. Opregelen: regelprijs ≥ ontlaadbod. Afroep van jouw accu is niet bevestigd.</p>
       <details data-power-graph><summary>Regelvermogen & jouw import/export</summary><div class="power-chart"><div class="graph-toolbar"><div class="graph-heading">Vermogen in de tijd<small>TenneT en jouw installatie</small></div><div class="period-control" role="group" aria-label="Tijdsbereik grafiek"><button type="button" data-graph-range="1800000" aria-pressed="true">30 min</button><button type="button" data-graph-range="7200000" aria-pressed="false">2 uur</button><button type="button" data-graph-range="21600000" aria-pressed="false">6 uur</button></div></div><div class="graph-legend"><span><i class="graph-swatch"></i>TenneT · MW links</span><span><i class="graph-swatch meter"></i>Jouw net · kW rechts</span></div><div data-power-plot></div><div class="graph-readout" data-graph-readout><span data-graph-time>—</span><span><small>TenneT</small><strong data-graph-tn-value>—</strong></span><span><small>Jouw net</small><strong data-graph-own-value>—</strong></span></div><p class="note" data-graph-coverage></p></div></details>
       <details data-advanced><summary>Details · marktgegevens en verbinding</summary>
-      <div class="metrics"><div class="metric up"><span>aFRR opregelen</span><strong data-up>— MW</strong><small data-up-price>—</small></div><div class="metric down"><span>aFRR afregelen</span><strong data-down>— MW</strong><small data-down-price>—</small></div></div>
+      <div class="metrics"><div class="metric down"><span>aFRR afregelen</span><strong data-down>— MW</strong><small data-down-price>—</small></div><div class="metric up"><span>aFRR opregelen</span><strong data-up>— MW</strong><small data-up-price>—</small></div></div>
       <p data-signal>Nog geen meting.</p><p class="source"><span data-source></span><span data-quarter></span></p>
       <section class="bids"><h4 data-bid-quarter>Jouw BID</h4>
-        <div class="bid-grid"><div class="bid-card"><small>Ontladen · export · opregelen</small><strong data-up-bid>—</strong><small data-up-bid-time></small>
-          <p class="assessment" data-up-comparison></p><p data-up-detail></p><p data-up-ladder></p><small data-up-trend></small><p data-up-chance></p></div>
-        <div class="bid-card"><small>Laden · import · afregelen</small><strong data-down-bid>—</strong><small data-down-bid-time></small>
-          <p class="assessment" data-down-comparison></p><p data-down-detail></p><p data-down-ladder></p><small data-down-trend></small><p data-down-chance></p></div></div>
+        <div class="bid-grid"><div class="bid-card"><small>Laden · import · afregelen</small><strong data-down-bid>—</strong><small data-down-bid-time></small>
+          <p class="assessment" data-down-comparison></p><p data-down-detail></p><p data-down-ladder></p><small data-down-trend></small><p data-down-chance></p></div>
+        <div class="bid-card"><small>Ontladen · export · opregelen</small><strong data-up-bid>—</strong><small data-up-bid-time></small>
+          <p class="assessment" data-up-comparison></p><p data-up-detail></p><p data-up-ladder></p><small data-up-trend></small><p data-up-chance></p></div></div>
         <p class="note" data-comparison-quarter></p><p class="note" data-bid-source></p><p class="note" data-mol-status></p>
         <details><summary>Hoe wordt de kansindicatie bepaald?</summary><p class="note" data-history-status></p><p class="note">De historische trefkans telt hoe vaak de gepubliceerde prijs na het vergelijkingsmoment en vóór kwartiereinde nog jouw biedniveau bereikte, met positief regelvolume. Alleen complete bronkwartieren tellen mee, met een in de eerste twee minuten vastgelegd BID. De gemeten publicatievertraging wordt nagebootst bij de vergelijking. Dit is een experimentele historische frequentie; het model is nog niet getoetst op nieuwe kwartieren en voorspelt geen bevestigde afroep van jouw accu.</p></details>
         <p class="note">Dit is een marktindicatie voor jouw biedniveau. De NL-biedladder bevat prijsgebieden; internationale uitwisseling, rampsnelheid en de verdeling door jouw aanbieder kunnen de afroep beïnvloeden. Een bereikt biedniveau bevestigt geen afroep van jouw accu.</p>
       </section>
       <div class="actions"><button type="button" data-refresh>Ververs</button><button type="button" data-pause>Pauzeer</button></div>
-      <p class="note">TenneT-regelprijs: hoogste geactiveerde opregelbiedprijs / laagste geactiveerde afregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
+      <p class="note">TenneT-regelprijs: laagste geactiveerde afregelbiedprijs / hoogste geactiveerde opregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
       <details data-settings open><summary data-settings-title>API-sleutel instellen</summary><p class="note" data-key-state></p><form data-form>
         <p class="note"><a href="https://developer.tennet.eu/" target="_blank" rel="noopener noreferrer">API-sleutel aanvragen bij TenneT</a>. Kies Production en vraag toegang tot Balance Delta High Res en Merit Order List aFRR & mFRRsa.</p>
         <label for="tn-env">Omgeving</label><select id="tn-env" data-env-select><option value="production">Production — actuele marktgegevens</option><option value="acceptance">Acceptance — TenneT-testomgeving</option></select>
@@ -15806,7 +16128,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         <div class="actions"><button data-connect type="submit">Test & start</button><button data-forget type="button">Sleutel wissen</button></div>
         <small>Je sleutel heeft toegang nodig tot <a href="https://developer.tennet.eu/specs/v1/balance-delta-high-res" target="_blank" rel="noopener noreferrer">Balance Delta High Res</a> en <a href="https://developer.tennet.eu/specs/v1/merit-order-list" target="_blank" rel="noopener noreferrer">Merit Order List</a>. De sleutel blijft lokaal in ${globalThis.BEAfrrExtensionManager?'je extensie':'je userscriptmanager, met een herstelkopie in de browseropslag van dit dashboard'}, en wordt alleen naar de gekozen TenneT-omgeving verstuurd.</small>
       </form></details>
-      <details><summary>Laatste 10 bronmetingen</summary><div class="table"><table><thead><tr><th>Tijd</th><th>Op MW</th><th>Af MW</th><th>Op €/MWh</th><th>Af €/MWh</th></tr></thead><tbody></tbody></table></div></details>
+      <details><summary>Laatste 10 bronmetingen</summary><div class="table"><table><thead><tr><th>Tijd</th><th>Af MW</th><th>Op MW</th><th>Af €/MWh</th><th>Op €/MWh</th></tr></thead><tbody></tbody></table></div></details>
       <p class="note">Metingen maximaal iedere 12 s, één seconde na de bronpublicatie; bij stilstand minder vaak. Biedladder één keer per kwartier zodra beschikbaar; bij ontbrekende publicatie maximaal drie pogingen. Tabbladen delen aanvragen en cache. Verborgen tabbladen starten geen aanvragen. De publicatievertraging van TenneT zelf blijft bestaan.</p>
       </details>
     </div>`;

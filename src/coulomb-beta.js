@@ -13,6 +13,18 @@
   // Mean of the measured charge/discharge curves, integrated over SOC.
   // Used only for kWh/Ah capacity display; actual counting uses varying voltage.
   const referenceVoltage=(()=>{let total=0;for(let s=0;s<100;s+=.5)total+=(base('charge',s+.25)+base('discharge',s+.25))*.25;return total/100;})();
+  // Ah-SOC is not an energy percentage. Integrate the same reference curve
+  // over the remaining charge; this estimates energy without changing SOC.
+  // Keep the existing measured range and its uncertainty at the bottom.
+  const energyCurve=(()=>{const values=[0];for(let s=0;s<100;s+=.5)
+    values.push(values.at(-1)+(base('charge',s+.25)+base('discharge',s+.25))*.25);
+    return values.map(v=>v/values.at(-1));})();
+  function energyKwh(soc,capacity){
+    if(!finite(soc)||!finite(capacity)||capacity<=0)return null;
+    const position=clamp(soc,0,100)*2,index=Math.floor(position);
+    const fraction=index===200?1:energyCurve[index]+(energyCurve[index+1]-energyCurve[index])*(position-index);
+    return capacity*fraction;
+  }
   function current(powerOut,soc,capacityAh){
     if(!finite(powerOut)||!finite(capacityAh)||capacityAh<=0)return null;
     if(powerOut===0)return 0;
@@ -30,7 +42,7 @@
     if(a===null||b===null)return null;
     const ah=(a+b)*.5*ms/3600000;return {input:Math.max(0,ah),output:Math.max(0,-ah)};
   }
-  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate};
+  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate,energyKwh};
 })(typeof window!=='undefined'?window:globalThis);
 
 /* BE-only energy balance. Positive bo is battery output in W. */
@@ -211,7 +223,7 @@
       const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
       const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
-        energyKwh:finite(sampled.value)&&finite(capacity)&&capacity>0?sampled.value*capacity/100:null,
+        energyKwh:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
@@ -224,7 +236,7 @@
   }
   function format(row){
     if(!finite(row.value))return '—';
-    const energy=finite(row.energyKwh)?row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
+    const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
   function hide(state){
@@ -544,7 +556,8 @@
     const shown=lastDisplay,stale=shown&&Date.now()-shown.t>120000;
     const soc=shown?number(visualSoc(shown),1)+'%':'—';
     const compactSoc=shown?number(visualSoc(shown),0)+'%':'—';
-    const chemicalContent=shown?number(visualSoc(shown)*shown.capacity/100,1)+' kWh':'— kWh';
+    const chemicalKwh=shown?window.BEMeasuredVoltage.energyKwh(visualSoc(shown),shown.capacity):null;
+    const chemicalContent=Number.isFinite(chemicalKwh)?'~ '+number(chemicalKwh,1)+' kWh':'— kWh';
     const energy=shown?.reference?'Sinds ijkpunt '+date(shown.reference.t)+': in '+number(shown.sinceInput,2)+' kWh · uit '+number(shown.sinceOutput,2)+' kWh':'';
     const history=shown?'Bewaarde historie: in '+number(shown.input,2)+' kWh · uit '+number(shown.output,2)+' kWh'+(Number.isFinite(shown.start)?' sinds '+date(shown.start):''):'';
     let state=shown?(current?'Bijgewerkt t/m ':'Laatste geldige berekening: ')+date(shown.t):'Wachten op eerste geldige meting';
@@ -674,7 +687,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite">— kWh</strong></div><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
+    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite" title="Geschatte resterende energie uit coulombtelling en het gemeten spanningsprofiel. Geen directe energiemeting; bij lage SOC is de onzekerheid groter.">— kWh</strong></div><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
   <div class="be-capacity-title">Accucapaciteit</div>
   <label class="be-capacity-method">Invoermethode
     <select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select>
@@ -694,7 +707,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
@@ -724,7 +737,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.4.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }

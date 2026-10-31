@@ -1,12 +1,12 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=__dirname+'/../',full=fs.readFileSync(root+'Balansenergie-All-in.user.js','utf8');
 new vm.Script(full);
-assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.4.2.user.js','utf8'));
-assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.4.2.txt','utf8'));
+assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.5.user.js','utf8'));
+assert.equal(full,fs.readFileSync(root+'Balansenergie-All-in-v6.5.txt','utf8'));
 const meta=fs.readFileSync(root+'Balansenergie-All-in.meta.js','utf8');
 assert.equal(meta,full.slice(0,full.indexOf('// ==/UserScript==')+'// ==/UserScript=='.length)+'\n');
 assert.match(meta,/@namespace\s+paq\.balansenergie\n/);
-assert.match(meta,/@version\s+6\.4\.2\n/);
+assert.match(meta,/@version\s+6\.5\n/);
 const previous=fs.readFileSync(root+'Balansenergie-All-in-v6.3.2.user.js','utf8');
 assert.match(meta,/^\/\/ @name\s+Balansenergie All-in$/m,'permanent version-independent name');
 assert.equal(meta.match(/^\/\/ @namespace\s+(.+)$/m)[1],previous.match(/^\/\/ @namespace\s+(.+)$/m)[1]);

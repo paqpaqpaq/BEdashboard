@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.4.2. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.5. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -10,11 +10,13 @@
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
+  const REQUEST_REVISION='connection-check-v1';
   const clock=new Intl.DateTimeFormat('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   let host,shadow,config={},state=null,molState=null,budgetState=null,bidState={},bidError='',coordinator,timer,busy=false,inFlight=false,localError='',destroyed=false;
   let bidDB,observedCustomer='',lastBidRead=0,keyStorageWarning='';
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   let emsRows=[],emsInstallation='',emsRevision=0,emsDB,lastEmsRead=0,graphDuration=1800000,graphSelection=null;
+  let connectionCheck=null,checkMessage='';
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
@@ -85,35 +87,64 @@
     }
     return {lower,upper:null};
   }
+  function bidObservation(value,start,now){
+    if(value?.estimated)return null; // Tariff-chart reconstructions are not observed EMS bids.
+    if(!Number.isFinite(value?.value)||!Number.isFinite(value.observedAt)||value.observedAt<start||value.observedAt>now)return null;
+    return {value:value.value,observedAt:value.observedAt};
+  }
+  function mergeBidDirection(previous,incoming,start,now){
+    const a=bidObservation(previous,start,now),b=bidObservation(incoming,start,now);
+    let latest=!a?b:!b?a:b.observedAt>=a.observedAt?b:a;
+    // Re-reading the same bid does not turn its first observation into a late one.
+    if(a&&b&&a.value===b.value)latest=a.observedAt<=b.observedAt?a:b;
+    let early=null;
+    for(const value of [previous?.early,incoming?.early,a,b]){
+      const observed=bidObservation(value,start,now);
+      if(observed&&observed.observedAt<start+120000&&(!early||observed.observedAt>=early.observedAt))early=observed;
+    }
+    return latest?{...latest,...(early?{early}:{})}:early?{...early,early}:null;
+  }
   function captureBid(record,now){
     if(!record||!Number.isFinite(record.start)||quarter(record.start)!==record.start||record.end!==record.start+QUARTER||record.carried||record.start>now)return null;
     const result={start:record.start,end:record.end};
     for(const direction of ['import','export']){
       const saved=record[direction];
-      const observations=saved?.observations||(saved?[saved]:[]);
-      const early=observations.filter(o=>Number.isFinite(o.value)&&Number.isFinite(o.observedAt)&&o.observedAt>=record.start&&o.observedAt<record.start+120000&&o.observedAt<=now)
-        .sort((a,b)=>b.observedAt-a.observedAt)[0];
-      if(early)result[direction]={value:early.value,observedAt:early.observedAt};
-      if(record.afrrBidStatus?.[direction]==='bid_fallback'&&now>=record.start&&now<record.start+120000){
+      let captured=mergeBidDirection(null,saved,record.start,now);
+      for(const observed of Array.isArray(saved?.observations)?saved.observations:[])captured=mergeBidDirection(captured,observed,record.start,now);
+      // Only an explicit bid_fallback quote is a bid; confirmed trade quotes are not.
+      if(record.afrrBidStatus?.[direction]==='bid_fallback'){
         const value=numeric(record.values?.['afrr_'+direction]);
-        if(value!==null)result[direction]={value,observedAt:now};
+        if(value!==null)captured=mergeBidDirection(captured,{value,observedAt:now},record.start,now);
       }
+      if(captured)result[direction]=captured;
     }
     return result.import||result.export?result:null;
   }
+  function trainingBid(bid){
+    if(!bid)return null;
+    const result={start:bid.start,end:bid.end};
+    for(const direction of ['import','export']){
+      const observed=bidObservation(bid[direction]?.early||bid[direction],bid.start,bid.end);
+      if(observed&&observed.observedAt<bid.start+120000)result[direction]=observed;
+    }
+    return result.import||result.export?result:null;
+  }
+  const lateBid=(bid,start)=>Number.isFinite(bid?.observedAt)&&bid.observedAt>=start+120000;
+  const bidStamp=(bid,start)=>(lateBid(bid,start)?'Later opgehaald ':'Vastgelegd ')+time(bid.observedAt);
   function comparison(row,bid,ladder,direction,stale=false){
     if(stale)return {label:'Bron verouderd',detail:'Geen actuele afroepindicatie.',tone:'muted'};
     if(!row)return {label:'Wachten op bronmeting',detail:'Nog geen TenneT-meting beschikbaar.',tone:'muted'};
     const d=direction==='up'?'export':'import';
     if(!bid?.[d]||bid.start!==quarter(row.start))return {label:'BID ontbreekt voor bronkwartier',detail:'Een BID uit een ander kwartier wordt niet gebruikt.',tone:'muted'};
     const value=bid[d].value*1000,volume=row[direction],price=row[direction+'Price'];
+    const observedLabel=lateBid(bid[d],bid.start)?bidStamp(bid[d],bid.start)+' · ':'';
     const position=ladderPosition(ladder,value,direction);
-    if(volume===null)return {label:'Regelvermogen onbekend',detail:'Een ontbrekende waarde is geen nul.',position,tone:'muted'};
-    if(volume===0)return {label:'Geen regelvolume zichtbaar',detail:'In deze bronmeting staat 0 MW; dit voorspelt de rest van het kwartier niet.',position,tone:'muted'};
-    if(price===null)return {label:'Activatie niet bevestigd',detail:'Er staat vermogen zonder bijbehorende activatieprijs in de bron.',position,tone:'muted'};
+    if(volume===null)return {label:'Regelvermogen onbekend',detail:observedLabel+'Een ontbrekende waarde is geen nul.',position,tone:'muted'};
+    if(volume===0)return {label:'Geen regelvolume zichtbaar',detail:observedLabel+'In deze bronmeting staat 0 MW; dit voorspelt de rest van het kwartier niet.',position,tone:'muted'};
+    if(price===null)return {label:'Activatie niet bevestigd',detail:observedLabel+'Er staat vermogen zonder bijbehorende activatieprijs in de bron.',position,tone:'muted'};
     const reached=direction==='up'?price>=value:price<=value;
     return {label:reached?'Biedprijs bereikt in bronmeting':'Biedprijs nog niet bereikt',
-      detail:(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
+      detail:observedLabel+(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
         ' '+number(volume)+' MW '+(direction==='up'?'opregelen.':'afregelen.'),position,tone:reached?'reached':'waiting'};
   }
   function powerRows(rows,now=Date.now()){
@@ -146,6 +177,9 @@
     return {ratio:volume/scale,trend,hit};
   }
   function trainingQuarter(rows,bid,ladder,lag){
+    // Display may recover a real bid later; training uses only observations
+    // actually available in the first two minutes of that quarter.
+    bid=trainingBid(bid);
     if(!bid||!ladder||!Number.isFinite(lag)||lag<0||lag>300000)return null;
     const q=bid.start,points=rows.filter(r=>r.start>=q&&r.end<=q+QUARTER);
     // A partial quarter or a missing 12-second point may never become a
@@ -217,7 +251,7 @@
     if(!row)return 'Nog geen meting ontvangen.';
     if(row.up===null||row.down===null)return 'Het regelvolume is niet volledig ingevuld in de bron.';
     const up=row.up>0&&row.upPrice!==null,down=row.down>0&&row.downPrice!==null;
-    if(up&&down)return 'Op- én afregelactivatie zichtbaar in deze bronmeting.';
+    if(up&&down)return 'Af- én opregelactivatie zichtbaar in deze bronmeting.';
     if(up)return 'Opregelactivatie zichtbaar · richting ontladen / export.';
     if(down)return 'Afregelactivatie zichtbaar · richting laden / import.';
     if(row.up>0||row.down>0)return 'Volume gemeld zonder bijbehorende activatieprijs; activatie niet bevestigd.';
@@ -273,15 +307,27 @@
       retry:(scope,id='live')=>transaction([id],r=>{
         const s=r[id];
         if(!s||s.scope!==scope)return {value:s};
-        // A manual retry never bypasses publication cadence or Retry-After.
-        const next={...s,authBlocked:false};return {write:[next],value:next};
+        // Reset only a local network-error backoff. Server cooldowns, leases,
+        // minimum request spacing and all rolling budgets remain authoritative.
+        const networkWait=!s.status&&!!s.error;
+        const next={...s,authBlocked:false,...(networkWait?{
+          nextAt:Math.max(Date.now(),(s.lastAttempt||0)+1100,s.cooldownUntil||0),failures:0
+        }:{})};return {write:[next],value:next};
+      }),
+      probeResult:(scope,tab,result,now)=>transaction(['live'],r=>{
+        const s=r.live;if(!s||s.scope!==scope||s.owner!==tab)return {value:s};
+        const next={...s,owner:'',leaseUntil:0,connectionCheck:{...result,at:now},nextAt:Math.max(s.nextAt||0,now+60000)};
+        return {write:[next],value:next};
       }),
       bids:(customer,records,now)=>transaction(['bids:'+customer],r=>{
         const id='bids:'+customer,rows={...(r[id]?.rows||{})};
         for(const incoming of records){
           const row=captureBid(incoming,now);if(!row)continue;
           const old=rows[row.start]||{start:row.start,end:row.end};
-          for(const d of ['import','export'])if(row[d]&&(!old[d]||row[d].observedAt>=old[d].observedAt))old[d]=row[d];
+          for(const d of ['import','export']){
+            const merged=mergeBidDirection(old[d],row[d],row.start,now);
+            if(merged)old[d]=merged;
+          }
           rows[row.start]=old;
         }
         for(const key of Object.keys(rows))if(Number(key)<quarter(now)-7*86400000)delete rows[key];
@@ -294,7 +340,12 @@
         return {write:records.length?[{id,quarters}]:[],value:quarters};
       }),
       reserve:(scope,tab,now,id='live')=>transaction([id,'budget'],r=>{
-        const saved=r[id],s=saved?.scope===scope?saved:{id,scope,nextAt:0,attempts:[],failures:0};
+        const saved=r[id];let s=saved?.scope===scope?saved:{id,scope,nextAt:0,attempts:[],failures:0};
+        // A changed request implementation gets one fresh attempt instead of
+        // inheriting up to fifteen minutes of an older transport failure.
+        if(s.requestRevision!==REQUEST_REVISION&&!s.status&&s.error){
+          s={...s,nextAt:Math.max((s.lastAttempt||0)+1100,s.cooldownUntil||0),failures:0};
+        }
         const q=quarter(now),budget=r.budget||{id:'budget',attempts:[],molAttempts:[]};
         const attempts=(s.attempts||[]).filter(t=>t>now-60000);
         const all=(budget.attempts||[]).filter(t=>t>now-60000),daily=(budget.molAttempts||[]).filter(t=>t>now-86400000);
@@ -304,7 +355,7 @@
         const alreadyLoaded=id==='mol'&&s.good?.quarters.some(p=>p.start===q);
         const exhausted=id==='mol'&&s.target===q&&s.tries>=3;
         if(s.authBlocked||blocked>now||alreadyLoaded||exhausted)return {value:{reserved:false,state:s,retryAt:alreadyLoaded||exhausted?q+QUARTER+1000:blocked}};
-        const next={...s,owner:tab,leaseUntil:now+LEASE,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+60000,
+        const next={...s,owner:tab,leaseUntil:now+LEASE,requestRevision:REQUEST_REVISION,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+60000,
           lastAttempt:now,attempts:[...attempts,now],target:q,tries:s.target===q?(s.tries||0)+1:1};
         const nextBudget={id:'budget',nextAt:now+1100,attempts:[...all,now],molAttempts:id==='mol'?[...daily,now]:daily};
         return {write:[next,nextBudget],value:{reserved:true,state:next}};
@@ -331,14 +382,14 @@
           const interval=unchanged?Math.min(60000,INTERVAL*Math.pow(2,Math.min(3,unchanged))):INTERVAL;
           nextAt=publicationAfter(Math.max(s.lastAttempt+interval,now+1000));
         }
-        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false,errorKind:'',networkDetail:''};
+        const next={...s,good,nextAt,unchanged,owner:'',leaseUntil:0,error,status:200,failures:0,authBlocked:false,errorKind:'',networkDetail:'',connectionCheck:null,cooldownUntil:0};
         return {write:[next],value:next};
       }),
       failure:(scope,tab,error,now,id='live')=>transaction([id,'budget'],r=>{
         const s=r[id];
         if(!s||s.scope!==scope||s.owner!==tab)return {value:s};
         const failures=(s.failures||0)+1;
-        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,errorKind:error.kind||'unknown',networkDetail:error.networkDetail||'',
+        const next={...s,owner:'',leaseUntil:0,error:error.message,status:error.status||0,failures,errorKind:error.kind||'unknown',networkDetail:error.networkDetail||'',cooldownUntil:error.retryAt||0,
           authBlocked:error.kind==='auth',nextAt:Math.max(s.nextAt||0,now+(id==='mol'?Math.max(60000,failureDelay(error,failures,now)):failureDelay(error,failures,now)))};
         const write=[next];
         if(error.status===429)write.push({...r.budget,id:'budget',nextAt:Math.max(r.budget?.nextAt||0,next.nextAt)});
@@ -415,8 +466,8 @@
     return new Promise((resolve,reject)=>{
       const fn=manager().request;
       if(!fn){reject(new Fault('manager','Deze installatie biedt geen toegang tot de TenneT-API.'));return;}
-      let settled=false;
-      function failed(e){if(!settled){settled=true;reject(e);}}
+      let settled=false,handle,watchdog,lastEvent='aanroep gestart';
+      function failed(e){if(!settled){settled=true;clearTimeout(watchdog);reject(e);}}
       function networkFailure(event,detail){
         if(settled)return;
         const status=Number(detail?.status)||0;
@@ -424,9 +475,10 @@
         if(status>=400&&status<=599){received(detail);return;}
         const labels={onerror:'De netwerkfunctie kon geen bruikbaar TenneT-antwoord doorgeven.',
           ontimeout:'TenneT reageerde niet binnen 10 seconden.',onabort:'Aanvraag afgebroken.',
-          promise:'De netwerkfunctie heeft de aanvraag afgewezen.',start:'De userscriptmanager kon de API-aanvraag niet starten.'};
+          promise:'De netwerkfunctie heeft de aanvraag afgewezen.',start:'De userscriptmanager kon de API-aanvraag niet starten.',
+          watchdog:'De userscriptmanager gaf geen eindantwoord terug.',onloadend:'De netwerkfunctie sloot af zonder HTTP-status.'};
         const error=new Fault(event==='start'?'manager':'network',labels[event]||labels.onerror,status);
-        const fields=[event];
+        const fields=[event,'laatste fase: '+lastEvent];
         if(detail&&Number.isFinite(Number(detail.status)))fields.push('status '+Number(detail.status));
         if(detail&&Number.isFinite(Number(detail.readyState)))fields.push('readyState '+Number(detail.readyState));
         const messages=[detail?.name,detail?.code,detail?.message,detail?.error?.message,detail?.statusText,typeof detail==='string'?detail:'']
@@ -436,12 +488,12 @@
         if(c.key)description=description.split(c.key).join('[sleutel afgeschermd]');
         description=description.replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/gi,'[afgeschermd]').replace(/[\r\n\t]+/g,' ').slice(0,240);
         if(description)fields.push(description);
-        if(fields.length===1)fields.push('de manager gaf geen verdere foutdetails');
         error.networkDetail=fields.join(' · ');failed(error);
       }
       function received(r){
         if(settled)return;
         const status=Number(r.status)||0;
+        if(!status){networkFailure('onloadend',r);return;}
         if(status!==200){
           const messages={401:'Geen geldige sleutel voor deze omgeving of API (HTTP 401).',
             403:'Toegang geweigerd (HTTP 403). Controleer omgeving en API-toegang; ook een verbindingsblokkade is mogelijk.',
@@ -451,20 +503,44 @@
         try{
           if(typeof r.responseText!=='string'||r.responseText.length>4000000)throw new Fault('format','Onbruikbaar of te groot API-antwoord.');
           let body;try{body=JSON.parse(r.responseText);}catch(_){throw new Fault('format','TenneT gaf geen JSON-dataset terug (HTTP 200).');}
-          const parsed=channel==='mol'?parseMerit(body):parsePayload(body);settled=true;resolve(parsed);
+          const parsed=channel==='mol'?parseMerit(body):parsePayload(body);settled=true;clearTimeout(watchdog);resolve(parsed);
         }catch(e){const fault=e instanceof Fault?e:new Fault('format','De dataset kon niet worden verwerkt.');fault.status=200;failed(fault);}
       }
       try{
         // Userscripts 4.8.6 stringifies omitted user/password/overrideMimeType as
         // "undefined". Empty values become null credentials in its XHR bridge.
         // Authentication is exclusively the user's existing apikey header.
-        const handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
+        watchdog=setTimeout(()=>{
+          networkFailure('watchdog');try{handle?.abort?.();}catch(_){}
+        },TIMEOUT+1500);
+        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
           user:'',password:'',overrideMimeType:'',responseType:'text',
+          onloadstart:()=>{lastEvent='onloadstart';},
+          onreadystatechange:r=>{lastEvent='readyState '+r.readyState;},
           timeout:TIMEOUT,onload:received,onerror:r=>networkFailure('onerror',r),
-          ontimeout:r=>networkFailure('ontimeout',r),onabort:r=>networkFailure('onabort',r)});
+          ontimeout:r=>networkFailure('ontimeout',r),onabort:r=>networkFailure('onabort',r),
+          onloadend:r=>{if(!settled)received(r);}});
         if(handle?.then)handle.then(r=>{if(r?.status!==undefined)received(r);},e=>networkFailure('promise',e));
       }catch(e){networkFailure('start',e);}
     });
+  }
+  async function browserReachability(environment){
+    // No API key, cookies, response-body access or proxy. This probe occupies
+    // a normal shared request reservation and therefore also counts in budgets.
+    if(typeof fetch!=='function'||typeof AbortController!=='function')return {
+      outcome:'unavailable',summary:'De browser biedt geen aparte verbindingscontrole. De userscript-aanvraag blijft mislukken.'};
+    const controller=new AbortController();let policy='';
+    const blocked=event=>{if(String(event.blockedURI||'').startsWith(HOSTS[environment]))policy=event.effectiveDirective||event.violatedDirective||'CSP';};
+    document.addEventListener('securitypolicyviolation',blocked);
+    const timer=setTimeout(()=>controller.abort(),6000);
+    try{
+      const response=await fetch(HOSTS[environment]+PATH,{method:'GET',mode:'no-cors',credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer',signal:controller.signal});
+      if(response.type==='error')throw Error('NetworkError');
+      return {outcome:'browser-reachable',summary:'TenneT is via de gewone browseraanvraag bereikbaar, maar via de userscriptmanager komt geen HTTP-antwoord terug. Controleer de TenneT-websiterechten of een blokkade van die aanvraag. Deze aparte controle valideert de sleutel niet.'};
+    }catch(e){
+      return policy?{outcome:'policy-blocked',summary:'Het dashboardbeleid blokkeert de aparte browsercontrole ('+policy+'). De oorzaak van de userscript-fout is nog niet vastgesteld.'}:
+        {outcome:'browser-unreachable',summary:'Ook de gewone browseraanvraag naar TenneT mislukt. Dit past bij een netwerk-, DNS-, TLS- of browserblokkade; de precieze oorzaak is nog niet vastgesteld.',event:e?.name==='AbortError'?'timeout':'network-error'};
+    }finally{clearTimeout(timer);document.removeEventListener('securitypolicyviolation',blocked);}
   }
   const number=(n,d=1)=>Number.isFinite(n)?n.toLocaleString('nl-NL',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
   const time=t=>Number.isFinite(t)?clock.format(t):'—';
@@ -576,11 +652,10 @@
     const mol=molState?.scope===config.scope?molState.good:null;
     const ladder=mol?.quarters.find(p=>p.start===sourceQuarter);
     text('[data-bid-quarter]','Jouw BID · '+time(q).slice(0,5)+'–'+time(q+QUARTER).slice(0,5));
-    for(const [direction,d] of [['up','export'],['down','import']]){
+    for(const [direction,d] of [['down','import'],['up','export']]){
       const bid=current?.[d];
       text('[data-'+direction+'-bid]',bid?'€ '+number(bid.value*1000,2)+' / MWh':'—');
-      text('[data-'+direction+'-bid-time]',bid?'Vastgelegd '+time(bid.observedAt)+' · kale prijs':
-        now-q<120000?'Wachten op BID in eerste twee minuten…':'Geen BID in de eerste twee minuten waargenomen.');
+      text('[data-'+direction+'-bid-time]',bid?bidStamp(bid,q)+' · kale prijs':'Nog geen expliciete BID voor dit kwartier ontvangen.');
       const result=comparison(row,source,ladder,direction,stale);
       const label=shadow.querySelector('[data-'+direction+'-comparison]');label.dataset.tone=result.tone;
       text('[data-'+direction+'-comparison]',result.label);
@@ -606,7 +681,7 @@
         chance.p===undefined?'Historische kansindicatie: '+chance.n+'/30 vergelijkbare kwartieren verzameld.':
         'Historische trefkans biedniveau: '+number(chance.p*100,0)+'% · 95%-band '+number(chance.lower*100,0)+'–'+number(chance.upper*100,0)+'% · '+chance.n+' kwartieren.');
     }
-    text('[data-bid-source]',bidError||'BID uit het lokale archief van de hoofdplugin; geen extra Balansenergie-aanvragen.');
+    text('[data-bid-source]',bidError||'Expliciete BIDs uit het lokale archief van de hoofdplugin, ook later opgehaald; geen extra Balansenergie-aanvragen.');
     text('[data-comparison-quarter]',sourceQuarter===null?'Wachten op TenneT.':
       'Vergelijking hoort bij '+time(sourceQuarter).slice(0,5)+'–'+time(sourceQuarter+QUARTER).slice(0,5)+
       (sourceQuarter!==q?' · vorig bronkwartier; de nieuwe BIDs hierboven worden hiervoor niet gebruikt.':'.'));
@@ -639,19 +714,20 @@
     const q=quarter(now),bid=bidState[q];
     text('[data-summary-quarter]','Dit kwartier · '+time(q).slice(0,5)+'–'+time(q+QUARTER).slice(0,5));
     text('[data-summary-source]',row?'Bron '+time(row.end)+' · '+age(now-row.end)+' vertraagd'+(quarter(row.start)!==q?' · vorig kwartier':'')+'.':'Wachten op TenneT.');
-    for(const [direction,d] of [['up','export'],['down','import']]){
+    for(const [direction,d] of [['down','import'],['up','export']]){
       let label,detail,tone='muted';
       text('[data-summary-'+direction+'-power]',number(row?.[direction])+' MW');
       const price=row?.[direction+'Price'];
       text('[data-summary-'+direction+'-price]',price==null?'Prijs onbekend':'TenneT-regelprijs € '+number(price/1000,3)+'/kWh');
       text('[data-summary-'+direction+'-bid]',bid?.[d]?(direction==='up'?'≥ ':'≤ ')+'€ '+number(bid[d].value,3)+'/kWh':'BID ontbreekt');
+      text('[data-summary-'+direction+'-bid-time]',lateBid(bid?.[d],q)?bidStamp(bid[d],q):'');
       if(!row){label='Nog geen gegevens';detail='Wachten op TenneT.';}
       else if(stale){label='Bron verouderd';detail='Geen actuele vergelijking.';}
       else if(quarter(row.start)!==q){label='Wachten op dit kwartier';detail='TenneT toont nog metingen van het vorige kwartier.';}
       else if(row[direction]===0){label='Geen regelvolume';detail='Geen inzet in deze richting gemeld.';}
       else if(!bid?.[d]){
         label='BID nog niet bekend';
-        detail=now-q<120000?'Laat Actueel open; het bod wordt vastgelegd.':'Laat Actueel open bij de volgende kwartierwisseling.';
+        detail='Nog geen expliciete BID voor dit kwartier ontvangen.';
       }else{
         const result=comparison(row,bid,null,direction);
         tone=result.tone;
@@ -673,7 +749,8 @@
     const own=(emsInstallation===customer()?emsRows:[]).filter(r=>r.t>=min&&r.t<=max);
     const signature=JSON.stringify([good?.fetchedAt||0,duration,emsRevision,Math.floor(now/5000)]);
     if(container.dataset.signature===signature)return;
-    container.dataset.signature=signature;container.replaceChildren();
+    // Keep the current SVG in place while measuring and constructing its update.
+    // An empty plot followed by a layout read can clamp the page scroll position.
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
     function node(tag,attrs={},label,parent=svg){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(label!==undefined)el.textContent=label;parent.append(el);return el;}
     const plotWidth=Math.max(300,container.clientWidth||host.clientWidth||800);
@@ -757,7 +834,7 @@
     }
     svg.addEventListener('pointermove',inspect);svg.addEventListener('pointerdown',inspect);
     svg.addEventListener('pointerleave',()=>{graphSelection=null;readout(restTime);});
-    container.append(svg);
+    container.replaceChildren(svg);container.dataset.signature=signature;
   }
   function render(){
     if(!shadow)return;
@@ -769,6 +846,8 @@
     text('[data-status]',localError||s?.error||(inFlight?'Metingen ophalen…':good?
       (stale?'Laatste meting is verouderd.':config.enabled?'Verbonden · automatisch verversen':'Gepauzeerd · laatste meting zichtbaar'):
       config.key?'Sleutel opgeslagen · klaar om te testen':'Vul je production-sleutel voor Balance Delta High Res in.'));
+    text('[data-connection-check]',checkMessage);
+    shadow.querySelector('[data-connection-check]').hidden=!checkMessage;
     shadow.querySelector('[data-status]').dataset.warning=String(Boolean(localError||s?.error||stale));
     text('[data-key-state]',(config.key?'Sleutel opgeslagen · blijft bewaard bij herladen en toekomstige updates.':'Nog geen sleutel in deze installatie. Werk bij overstappen de bestaande installatie bij waarin je sleutel is opgeslagen.')+(keyStorageWarning?' '+keyStorageWarning:''));
     text('[data-key-label]',config.key?'Nieuwe API-sleutel (optioneel)':'TenneT API-sleutel');
@@ -790,11 +869,13 @@
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.4.2'+
+      '\nDashboardversie: 6.5'+
+      '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
       '\nHTTP-status: '+(s?.status||(s?.error?'geen HTTP-status ontvangen':'nog geen antwoord'))+
       '\nFoutcategorie: '+(s?.errorKind||'—')+'\nNetwerkdetails: '+(s?.networkDetail||'—')+'\nLaatste aanvraag: '+time(s?.lastAttempt)+
+      '\nVerbindingscontrole: '+(s?.connectionCheck?time(s.connectionCheck.at)+' · '+s.connectionCheck.summary:checkMessage||'nog niet uitgevoerd')+
       '\nLaatste geslaagde aanvraag: '+time(good?.fetchedAt)+'\nMeetpunten: '+(good?.rows.length||0)+
       '\nAanvragen Balance Delta laatste minuut: '+(s?.attempts||[]).filter(t=>t>now-60000).length+
       '\nBiedladder HTTP-status: '+(molState?.scope===config.scope?molState.status||'nog geen antwoord':'nog geen antwoord')+
@@ -802,7 +883,7 @@
       '\nLaatste aanvraag biedladder: '+time(molState?.lastAttempt)+
       '\nTotaal API-aanvragen laatste minuut: '+(budgetState?.attempts||[]).filter(t=>t>now-60000).length+' / 8'+
       '\nBiedladder-aanvragen laatste 24 uur: '+(budgetState?.molAttempts||[]).filter(t=>t>now-86400000).length+' / 500'+
-      '\nBID-bron: lokaal archief · vastleggen eerste 120 seconden'+
+      '\nBID-bron: lokaal archief · expliciete biedingen, ook later opgehaald; kansmodel gebruikt afzonderlijk bewaarde waarnemingen uit de eerste 120 seconden'+
       '\nPlanner: maximaal 5 Balance Delta-aanvragen/min; biedladder uit kwartiercache.'+
       '\nOngewijzigde bron: '+(s?.unchanged||0)+' opeenvolgende antwoorden; planner vertraagt dan automatisch.');
     shadow.querySelector('[data-refresh]').disabled=!config.key||inFlight||wait>0||s?.authBlocked;
@@ -814,7 +895,7 @@
       tbody.dataset.signature=signature;tbody.replaceChildren();
       for(const p of (good?.rows||[]).slice(-10).reverse()){
         const tr=document.createElement('tr');
-        for(const value of [time(p.start),number(p.up),number(p.down),number(p.upPrice,2),number(p.downPrice,2)]){
+        for(const value of [time(p.start),number(p.down),number(p.up),number(p.downPrice,2),number(p.upPrice,2)]){
           const td=document.createElement('td');td.textContent=value;tr.append(td);
         }
         tbody.append(tr);
@@ -830,24 +911,46 @@
       config=await loadConfig();
       [state,molState,budgetState]=await Promise.all([coordinator.read(),coordinator.read('mol'),coordinator.read('budget')]);
       await readBids();await readPower();render();
-      for(const channel of ['live','mol']){
+      if(connectionCheck&&connectionCheck.scope!==config.scope)connectionCheck=null;
+      for(const channel of (connectionCheck?['live']:['live','mol'])){
         config=await loadConfig();
         if(!panelEnabled()||!placementTarget()||!config.enabled||!config.key||document.hidden)break;
         if(channel==='mol'&&!Object.values(bidState).some(b=>b.end>=quarter(Date.now())))continue;
         const c={...config},reservation=await coordinator.reserve(c.scope,owner,Date.now(),channel);
         if(channel==='live')state=reservation.state;else molState=reservation.state;
         if(reservation.retryAt>Date.now())wakeAt=Math.min(wakeAt,reservation.retryAt);
-        if(!reservation.reserved)continue;
+        if(!reservation.reserved){
+          if(connectionCheck)checkMessage=reservation.retryAt>Date.now()?
+            'De verbindingscontrole wacht op de gedeelde aanvraagplanner tot '+time(reservation.retryAt)+'. Aanvraaglimieten en serverwachttijden blijven gelden.':
+            'De verbindingscontrole wacht op een vrije aanvraag.';
+          continue;
+        }
         if(!panelEnabled()||!placementTarget())break;
         inFlight=true;render();
         try{
-          const data=await request(c,channel,reservation.state.target);
-          const result=await coordinator.success(c.scope,owner,data,Date.now(),channel);
-          if(channel==='live')state=result;else molState=result;
+          if(connectionCheck?.phase==='browser'&&channel==='live'){
+            checkMessage='Browserbereikbaarheid controleren zonder API-sleutel…';render();
+            const result=await browserReachability(c.environment);
+            state=await coordinator.probeResult(c.scope,owner,result,Date.now());
+            checkMessage=result.summary;connectionCheck=null;
+          }else{
+            const checking=!!connectionCheck;
+            const data=await request(c,channel,reservation.state.target);
+            const result=await coordinator.success(c.scope,owner,data,Date.now(),channel);
+            if(channel==='live')state=result;else molState=result;
+            if(checking||(channel==='live'&&checkMessage)){checkMessage='Verbinding geslaagd: TenneT geeft HTTP 200 en bruikbare metingen terug.';connectionCheck=null;}
+          }
         }catch(e){
           const error=e instanceof Fault?e:new Fault('network','De aanvraag kon niet worden voltooid.');
           const result=await coordinator.failure(c.scope,owner,error,Date.now(),channel);
           if(channel==='live')state=result;else molState=result;
+          if(connectionCheck&&channel==='live'){
+            if(!error.status&&(error.kind==='network'||error.kind==='manager')&&connectionCheck.phase==='manager'){
+              connectionCheck.phase='browser';
+              checkMessage='De userscript-aanvraag mislukte. De gewone browserverbinding wordt nu apart gecontroleerd…';
+              await coordinator.retry(c.scope);
+            }else{checkMessage=error.message;connectionCheck=null;}
+          }else if(channel==='live')checkMessage='';
         }finally{inFlight=false;}
         const s=channel==='live'?state:molState;
         if(s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
@@ -880,6 +983,7 @@
       input.value='';
       if(same){await coordinator.retry(config.scope);await coordinator.retry(config.scope,'mol');}
       if(!same){marketHistory=[];learnedSignature='';historyReadAt=0;}
+      connectionCheck={scope:config.scope,phase:'manager'};checkMessage='Verbinding controleren…';
       localError='';shadow.querySelector('[data-settings]').open=false;await tick();
     }catch(e){localError=e instanceof Fault?e.message:'De sleutel kon niet worden opgeslagen.';render();}
   }
@@ -895,9 +999,10 @@
     }catch(_){localError='De opgeslagen sleutel kon niet worden gewist.';render();}
   }
   function createPanel(){
-    host=document.createElement('section');host.id=ID;host.style.cssText='display:block;flex:0 0 100%;width:100%;min-width:0;margin:16px 0';
+    host=document.createElement('section');host.id=ID;host.style.cssText='display:block;flex:0 0 100%;width:100%;min-width:0;margin:16px 0;overflow-anchor:none';
     shadow=host.attachShadow({mode:'closed'});
     shadow.innerHTML=`<style>
+      .summary-card h4 small{display:inline;font-size:inherit;line-height:inherit;margin:0;white-space:nowrap}
       :host{--paper:#fff;--ink:#30263a;--muted:#6b6175;--line:#d9d1e1;--soft:#f7f4fa;--up:#277eae;--down:#b05274;--warn:#a35b12;--ems:#79b79b;--ems-text:#287455;font:13px/1.5 system-ui,-apple-system,sans-serif}
       :host([data-theme="grafiet"]){--paper:#1c1f26;--ink:#f5f7fa;--muted:#b6c0cf;--line:#3c4351;--soft:#262a34;--up:#4398ff;--down:#ff8399;--warn:#ffc64a;--ems:#9dceb4;--ems-text:#b0dec6}
       :host([data-theme="bruingrijs"]){--paper:#37322b;--ink:#f5f0e8;--muted:#c7beb0;--line:#675e4f;--soft:#454036;--up:#31adde;--down:#f681a0;--warn:#eca524;--ems:#9dceb4;--ems-text:#b0dec6}
@@ -919,33 +1024,33 @@
       label{display:block;margin:10px 0 5px}input,select{width:100%;padding:8px}input{font-size:16px}.actions{margin:10px 0}summary{cursor:pointer;padding:8px 0;font-weight:550}small,.note{font-size:11px;color:var(--muted)}a{color:var(--up)}
       .table{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums}th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}
       [data-diagnostic],[data-poll]{overflow-wrap:anywhere}[data-diagnostic]{white-space:pre-wrap;padding:10px;background:var(--soft);border-radius:6px}details{border-top:1px solid var(--line);margin-top:8px}@media(max-width:540px){.bid-grid{grid-template-columns:1fr}}@media(max-width:420px){.panel{padding:12px}.metric{padding:10px}.metric strong{font-size:21px}.actions{gap:7px}.actions button{flex:1 1 auto}}
-    </style><div class="panel"><header><h3>Regelvermogen & biedingen</h3><span data-status role="status" aria-live="polite">Regelvermogen laden…</span><span data-environment>Production</span></header>
+    </style><div class="panel"><header><h3>Regelvermogen & biedingen</h3><span data-status role="status" aria-live="polite">Regelvermogen laden…</span><span data-environment>Production</span></header><p class="note" data-connection-check role="status" aria-live="polite" hidden></p>
 
       <p class="note" data-summary-quarter></p>
       <div class="summary-grid"><section class="summary-card">
-        <div><h4>TenneT · opregelen</h4><strong class="mw" data-summary-up-power>— MW</strong><small data-summary-up-price></small></div>
-        <div><h4>EMS · ontladen</h4><strong data-summary-up-bid>—</strong></div>
-        <div class="summary-effect"><h4>Effect</h4><strong data-summary-up>Nog geen gegevens</strong><p data-summary-up-detail></p></div></section>
-        <section class="summary-card"><div><h4>TenneT · afregelen</h4><strong class="mw" data-summary-down-power>— MW</strong><small data-summary-down-price></small></div>
-        <div><h4>EMS · laden</h4><strong data-summary-down-bid>—</strong></div>
-        <div class="summary-effect"><h4>Effect</h4><strong data-summary-down>Nog geen gegevens</strong><p data-summary-down-detail></p></div></section></div>
+        <div><h4>TenneT · afregelen · <small>import</small></h4><strong class="mw" data-summary-down-power>— MW</strong><small data-summary-down-price></small></div>
+        <div><h4>EMS · laden</h4><strong data-summary-down-bid>—</strong><small data-summary-down-bid-time></small></div>
+        <div class="summary-effect"><h4>Effect</h4><strong data-summary-down>Nog geen gegevens</strong><p data-summary-down-detail></p></div></section>
+        <section class="summary-card"><div><h4>TenneT · opregelen · <small>export</small></h4><strong class="mw" data-summary-up-power>— MW</strong><small data-summary-up-price></small></div>
+        <div><h4>EMS · ontladen</h4><strong data-summary-up-bid>—</strong><small data-summary-up-bid-time></small></div>
+        <div class="summary-effect"><h4>Effect</h4><strong data-summary-up>Nog geen gegevens</strong><p data-summary-up-detail></p></div></section></div>
       <p data-summary-source></p>
-      <p class="summary-note">Kale prijzen · Opregelen: regelprijs ≥ ontlaadbod. Afregelen: regelprijs ≤ laadbod. Afroep van jouw accu is niet bevestigd.</p>
+      <p class="summary-note">Kale prijzen · Afregelen: regelprijs ≤ laadbod. Opregelen: regelprijs ≥ ontlaadbod. Afroep van jouw accu is niet bevestigd.</p>
       <details data-power-graph><summary>Regelvermogen & jouw import/export</summary><div class="power-chart"><div class="graph-toolbar"><div class="graph-heading">Vermogen in de tijd<small>TenneT en jouw installatie</small></div><div class="period-control" role="group" aria-label="Tijdsbereik grafiek"><button type="button" data-graph-range="1800000" aria-pressed="true">30 min</button><button type="button" data-graph-range="7200000" aria-pressed="false">2 uur</button><button type="button" data-graph-range="21600000" aria-pressed="false">6 uur</button></div></div><div class="graph-legend"><span><i class="graph-swatch"></i>TenneT · MW links</span><span><i class="graph-swatch meter"></i>Jouw net · kW rechts</span></div><div data-power-plot></div><div class="graph-readout" data-graph-readout><span data-graph-time>—</span><span><small>TenneT</small><strong data-graph-tn-value>—</strong></span><span><small>Jouw net</small><strong data-graph-own-value>—</strong></span></div><p class="note" data-graph-coverage></p></div></details>
       <details data-advanced><summary>Details · marktgegevens en verbinding</summary>
-      <div class="metrics"><div class="metric up"><span>aFRR opregelen</span><strong data-up>— MW</strong><small data-up-price>—</small></div><div class="metric down"><span>aFRR afregelen</span><strong data-down>— MW</strong><small data-down-price>—</small></div></div>
+      <div class="metrics"><div class="metric down"><span>aFRR afregelen</span><strong data-down>— MW</strong><small data-down-price>—</small></div><div class="metric up"><span>aFRR opregelen</span><strong data-up>— MW</strong><small data-up-price>—</small></div></div>
       <p data-signal>Nog geen meting.</p><p class="source"><span data-source></span><span data-quarter></span></p>
       <section class="bids"><h4 data-bid-quarter>Jouw BID</h4>
-        <div class="bid-grid"><div class="bid-card"><small>Ontladen · export · opregelen</small><strong data-up-bid>—</strong><small data-up-bid-time></small>
-          <p class="assessment" data-up-comparison></p><p data-up-detail></p><p data-up-ladder></p><small data-up-trend></small><p data-up-chance></p></div>
-        <div class="bid-card"><small>Laden · import · afregelen</small><strong data-down-bid>—</strong><small data-down-bid-time></small>
-          <p class="assessment" data-down-comparison></p><p data-down-detail></p><p data-down-ladder></p><small data-down-trend></small><p data-down-chance></p></div></div>
+        <div class="bid-grid"><div class="bid-card"><small>Laden · import · afregelen</small><strong data-down-bid>—</strong><small data-down-bid-time></small>
+          <p class="assessment" data-down-comparison></p><p data-down-detail></p><p data-down-ladder></p><small data-down-trend></small><p data-down-chance></p></div>
+        <div class="bid-card"><small>Ontladen · export · opregelen</small><strong data-up-bid>—</strong><small data-up-bid-time></small>
+          <p class="assessment" data-up-comparison></p><p data-up-detail></p><p data-up-ladder></p><small data-up-trend></small><p data-up-chance></p></div></div>
         <p class="note" data-comparison-quarter></p><p class="note" data-bid-source></p><p class="note" data-mol-status></p>
         <details><summary>Hoe wordt de kansindicatie bepaald?</summary><p class="note" data-history-status></p><p class="note">De historische trefkans telt hoe vaak de gepubliceerde prijs na het vergelijkingsmoment en vóór kwartiereinde nog jouw biedniveau bereikte, met positief regelvolume. Alleen complete bronkwartieren tellen mee, met een in de eerste twee minuten vastgelegd BID. De gemeten publicatievertraging wordt nagebootst bij de vergelijking. Dit is een experimentele historische frequentie; het model is nog niet getoetst op nieuwe kwartieren en voorspelt geen bevestigde afroep van jouw accu.</p></details>
         <p class="note">Dit is een marktindicatie voor jouw biedniveau. De NL-biedladder bevat prijsgebieden; internationale uitwisseling, rampsnelheid en de verdeling door jouw aanbieder kunnen de afroep beïnvloeden. Een bereikt biedniveau bevestigt geen afroep van jouw accu.</p>
       </section>
       <div class="actions"><button type="button" data-refresh>Ververs</button><button type="button" data-pause>Pauzeer</button></div>
-      <p class="note">TenneT-regelprijs: hoogste geactiveerde opregelbiedprijs / laagste geactiveerde afregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
+      <p class="note">TenneT-regelprijs: laagste geactiveerde afregelbiedprijs / hoogste geactiveerde opregelbiedprijs in de bronmeting. De bronleeftijd hierboven is gemeten en kan variëren. Vaker ophalen verwijdert de publicatievertraging van TenneT niet.</p><p class="note" data-poll></p><details><summary>Verbindingsinfo & aanvraaglimieten</summary><p class="note" data-diagnostic></p></details>
       <details data-settings open><summary data-settings-title>API-sleutel instellen</summary><p class="note" data-key-state></p><form data-form>
         <p class="note"><a href="https://developer.tennet.eu/" target="_blank" rel="noopener noreferrer">API-sleutel aanvragen bij TenneT</a>. Kies Production en vraag toegang tot Balance Delta High Res en Merit Order List aFRR & mFRRsa.</p>
         <label for="tn-env">Omgeving</label><select id="tn-env" data-env-select><option value="production">Production — actuele marktgegevens</option><option value="acceptance">Acceptance — TenneT-testomgeving</option></select>
@@ -953,7 +1058,7 @@
         <div class="actions"><button data-connect type="submit">Test & start</button><button data-forget type="button">Sleutel wissen</button></div>
         <small>Je sleutel heeft toegang nodig tot <a href="https://developer.tennet.eu/specs/v1/balance-delta-high-res" target="_blank" rel="noopener noreferrer">Balance Delta High Res</a> en <a href="https://developer.tennet.eu/specs/v1/merit-order-list" target="_blank" rel="noopener noreferrer">Merit Order List</a>. De sleutel blijft lokaal in ${globalThis.BEAfrrExtensionManager?'je extensie':'je userscriptmanager, met een herstelkopie in de browseropslag van dit dashboard'}, en wordt alleen naar de gekozen TenneT-omgeving verstuurd.</small>
       </form></details>
-      <details><summary>Laatste 10 bronmetingen</summary><div class="table"><table><thead><tr><th>Tijd</th><th>Op MW</th><th>Af MW</th><th>Op €/MWh</th><th>Af €/MWh</th></tr></thead><tbody></tbody></table></div></details>
+      <details><summary>Laatste 10 bronmetingen</summary><div class="table"><table><thead><tr><th>Tijd</th><th>Af MW</th><th>Op MW</th><th>Af €/MWh</th><th>Op €/MWh</th></tr></thead><tbody></tbody></table></div></details>
       <p class="note">Metingen maximaal iedere 12 s, één seconde na de bronpublicatie; bij stilstand minder vaak. Biedladder één keer per kwartier zodra beschikbaar; bij ontbrekende publicatie maximaal drie pogingen. Tabbladen delen aanvragen en cache. Verborgen tabbladen starten geen aanvragen. De publicatievertraging van TenneT zelf blijft bestaan.</p>
       </details>
     </div>`;

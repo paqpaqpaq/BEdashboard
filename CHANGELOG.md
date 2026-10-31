@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.5 — 31 oktober 2026
+
+- Aanpassing weergave Tennet regelvermogen
+- Aanpassing BID weergave
+- Aanpassing chemische inhoud
+
 ## 6.4.2 — 27 oktober 2026
 
 - Aanpassing TenneT-verbinding en foutinformatie.

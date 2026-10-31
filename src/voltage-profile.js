@@ -13,6 +13,18 @@
   // Mean of the measured charge/discharge curves, integrated over SOC.
   // Used only for kWh/Ah capacity display; actual counting uses varying voltage.
   const referenceVoltage=(()=>{let total=0;for(let s=0;s<100;s+=.5)total+=(base('charge',s+.25)+base('discharge',s+.25))*.25;return total/100;})();
+  // Ah-SOC is not an energy percentage. Integrate the same reference curve
+  // over the remaining charge; this estimates energy without changing SOC.
+  // Keep the existing measured range and its uncertainty at the bottom.
+  const energyCurve=(()=>{const values=[0];for(let s=0;s<100;s+=.5)
+    values.push(values.at(-1)+(base('charge',s+.25)+base('discharge',s+.25))*.25);
+    return values.map(v=>v/values.at(-1));})();
+  function energyKwh(soc,capacity){
+    if(!finite(soc)||!finite(capacity)||capacity<=0)return null;
+    const position=clamp(soc,0,100)*2,index=Math.floor(position);
+    const fraction=index===200?1:energyCurve[index]+(energyCurve[index+1]-energyCurve[index])*(position-index);
+    return capacity*fraction;
+  }
   function current(powerOut,soc,capacityAh){
     if(!finite(powerOut)||!finite(capacityAh)||capacityAh<=0)return null;
     if(powerOut===0)return 0;
@@ -30,5 +42,5 @@
     if(a===null||b===null)return null;
     const ah=(a+b)*.5*ms/3600000;return {input:Math.max(0,ah),output:Math.max(0,-ah)};
   }
-  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate};
+  root.BEMeasuredVoltage={id:profile.id,profile,referenceVoltage,base,current,integrate,energyKwh};
 })(typeof window!=='undefined'?window:globalThis);
