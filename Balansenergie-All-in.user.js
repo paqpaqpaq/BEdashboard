@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.6
+// @version      6.6.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -432,7 +432,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6'
+    '6.6.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11772,7 +11772,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6' +
+        'Instellingen v6.6.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12218,7 +12218,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.1. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12339,6 +12339,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     });
     for(var key=today;key<=range.b;key=beOvAdd(key,1))scenario.push(Object.assign({key:key,forecast:true},plans[key.slice(0,7)]));
     return {rows:beOvCalculate(scenario,settings),reason:'',base:base.length,history:usedHistory};
+  }
+
+  function beOvApplyMonthResult(target,result){
+    target.errors=(target.errors||[]).filter(function(e){return e.month!==result.month;});
+    target.unavailableMonths=(target.unavailableMonths||[]).filter(function(month){return month!==result.month;});
+    if(result.error)target.errors.push({month:result.month,message:result.error});
+    else if(result.unavailable)target.unavailableMonths.push(result.month);
+    else target.sourceRows=target.sourceRows.filter(function(r){return r.key.slice(0,7)!==result.month;}).concat(result.rows);
+  }
+  function beOvUnavailableNotice(months,cacheDays){
+    return (months||[]).slice().sort().map(function(month){
+      var name=new Intl.DateTimeFormat('nl-NL',{month:'long',year:'numeric',timeZone:'UTC'}).format(beOvDate(month+'-01'));
+      return name.charAt(0).toUpperCase()+name.slice(1)+' nog niet verwerkt'+
+        (cacheDays.some(function(day){return day.slice(0,7)===month;})?' · voorlopige eigen cache':'');
+    }).join(' · ');
   }
 
   // Het contract bepaalt de salderingsgrens. De EB-last staat op de afnamedag;
@@ -12526,7 +12541,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -12647,14 +12662,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     async function fetchMonth(id, month) {
       var key = id + ':' + month, saved = cache.get(key), now = Date.now();
-      if (saved && now - saved.time < 60000) return saved.rows;
+      if (saved && now - saved.time < 60000) return {rows:saved.rows,unavailable:!!saved.unavailable};
       var url = new URL('/customer/' + encodeURIComponent(id) + '/results-v2-api/', location.origin);
       url.searchParams.set('interval','month'); url.searchParams.set('period',month);
       url.searchParams.set('include_vat','1'); url.searchParams.set('include_delivery_cost','1');
       var res = await origFetch(url.href, {credentials:'same-origin'});
+      if(res.status===400){
+        var failure=null;try{failure=await res.json();}catch(_){}
+        if(failure?.error?.code==='period_not_available'){
+          var unavailable={rows:[],unavailable:true};
+          cache.set(key,{time:now,rows:[],unavailable:true});return unavailable;
+        }
+      }
       if (!res.ok) throw Error(res.status === 429 ? 'Balans vraagt om even te wachten (429). Probeer over een minuut opnieuw.' : res.status === 401 || res.status === 403 ? 'Log opnieuw in bij Balans om je resultaten te lezen.' : 'Resultaten ' + month + ' konden niet worden geladen (HTTP ' + res.status + ').');
       var rows = beOvNormalize(await res.json(), month);
-      cache.set(key, {time:now, rows:rows}); return rows;
+      cache.set(key, {time:now, rows:rows,unavailable:false}); return {rows:rows,unavailable:false};
     }
     async function load() {
       var ticket = ++serial, r, id;
@@ -12668,20 +12690,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if (end > today) end = today;
       if (from > beOvAdd(today, -28)) from = beOvAdd(today, -28);
       if (from < iso(cfg.start)) from = iso(cfg.start);
-      var months = beOvMonths(from, end), sets = [], errors = [], cursor = 0, done = 0;
+      var months = beOvMonths(from, end), sets = [], cursor = 0, done = 0;
       status('Historie en salderingscontext ophalen: 0 / ' + months.length + ' maanden.');
       async function worker() {
         while (cursor < months.length) {
           if (ticket !== serial) return;
           var month = months[cursor++];
-          try { sets.push(await fetchMonth(id, month)); } catch (e) { errors.push(e.message); }
+          try { sets.push(Object.assign({month:month},await fetchMonth(id,month))); }
+          catch (e) { sets.push({month:month,error:e.message||'Resultaten '+month+' konden niet worden geladen.'}); }
           done++; if (ticket === serial) status('Historie en salderingscontext ophalen: ' + done + ' / ' + months.length + ' maanden.');
         }
       }
       await Promise.all([worker(), worker()]);
       if (ticket !== serial) return;
       if (id !== verversKlantUitPad()) { $('refresh').disabled = false; load(); return; }
-      latest = {id:id, range:r, sourceRows:sets.reduce(function(a,b){return a.concat(b);},[]), rows:[], errors:errors, at:new Date(), from:from, to:end, day:today};
+      latest = {id:id, range:r, sourceRows:[], rows:[], errors:[], unavailableMonths:[], at:new Date(), from:from, to:end, day:today};
+      sets.forEach(function(set){beOvApplyMonthResult(latest,set);});
       mergeOwnCache();
       $('refresh').disabled = false; $('csv').disabled = false; render();
       refreshOwnCache();
@@ -12695,23 +12719,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     function refreshOwnCache(){
       if(ownRefreshPromise||!opened||document.hidden||!latest)return;
-      var id=latest.id;
+      var target=latest,id=target.id,before=JSON.stringify([target.rows,target.errors,target.unavailableMonths]);
       ownRefreshAt=Date.now();
       ownRefreshPromise=Promise.resolve().then(function(){return resultatenHaalVoorlopigeDagen(true);}).catch(function(){return false;}).then(async function(){
-        if(!opened||!latest||latest.id!==id||id!==verversKlantUitPad())return;
+        if(!opened||latest!==target||id!==verversKlantUitPad())return;
         // De bestaande cachecontrole ruimt een voorlopige dag op zodra Balans
         // hem heeft verwerkt. Lees daarom ook de bijbehorende echte dag opnieuw.
         var today=iso(new Date()),recent=beOvMonths(beOvAdd(today,-4),today);
         var sets=await Promise.all(recent.map(async function(month){
-          try{cache.delete(id+':'+month);return {month:month,rows:await fetchMonth(id,month)};}catch(_){return null;}
+          try{cache.delete(id+':'+month);return Object.assign({month:month},await fetchMonth(id,month));}
+          catch(e){return {month:month,error:e.message||'Resultaten '+month+' konden niet worden geladen.'};}
         }));
-        if(!opened||!latest||latest.id!==id||id!==verversKlantUitPad())return;
-        sets.filter(Boolean).forEach(function(set){latest.sourceRows=latest.sourceRows.filter(function(r){return r.key.slice(0,7)!==set.month;}).concat(set.rows);});
+        if(!opened||latest!==target||id!==verversKlantUitPad())return;
+        sets.forEach(function(set){beOvApplyMonthResult(target,set);});
       }).then(function(){
         ownRefreshPromise=null;
-        if(!opened||!latest||latest.id!==verversKlantUitPad())return;
-        var before=JSON.stringify(latest.rows);mergeOwnCache();
-        if(before!==JSON.stringify(latest.rows))render();
+        if(!opened||latest!==target||latest.id!==verversKlantUitPad())return;
+        mergeOwnCache();
+        if(before!==JSON.stringify([target.rows,target.errors,target.unavailableMonths]))render();
       });
     }
     function selected(all, r) { return all.filter(function (d) { return d.key >= r.a && d.key <= r.b; }); }
@@ -12869,7 +12894,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var cacheText=cacheDays.length?' · '+(cacheDays.length>3?cacheDays.length+' dagen':cacheDays.map(function(key){return key.slice(8)+'/'+key.slice(5,7);}).join(', '))+' uit eigen cache (voorlopig)':'';
       var todayRow=rows.find(function(d){return d.key===today;}),timeText='';
       if(todayRow&&todayRow.eigenCache)timeText=' · vandaag gedeeltelijk, cache bijgewerkt '+new Intl.DateTimeFormat('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'}).format(new Date(todayRow.bijgewerkt));
-      status((latest.errors.length?latest.errors.join(' ')+' ':'')+rows.length+' van '+n+' verstreken dagen bekend'+cacheText+timeText+(missing?' · '+missing+' '+(missing===1?'dag ontbreekt':'dagen ontbreken'):'')+(partial?' · onvolledig dagdeel':''),!!(missing||latest.errors.length||partial));
+      var unavailableText=beOvUnavailableNotice(latest.unavailableMonths,cacheDays);
+      status((latest.errors.length?latest.errors.map(function(e){return e.message;}).join(' ')+' ':'')+(unavailableText?unavailableText+' · ':'')+rows.length+' van '+n+' verstreken dagen bekend'+cacheText+timeText+(missing?' · '+missing+' '+(missing===1?'dag ontbreekt':'dagen ontbreken'):'')+(partial?' · onvolledig dagdeel':''),!!(missing||latest.errors.length||partial));
       var summary='<div class="summary"><div><small>'+esc(s.paymentMode==='actual'?'Betaalde voorschotten':'Voorschotten t/m nu')+'</small><strong>'+signedMoney(ledgerStatement.advance)+'</strong></div><div><small>Stroom + vaste kosten</small><strong class="'+signedClass(ledgerStatement.full)+'">'+signedMoney(ledgerStatement.full)+'</strong></div><div><small>'+esc(comparison?'Vergelijkingssaldo':ledgerStatement.saldo===null?'Saldo nog onbekend':missing||partial||latest.errors.length?'Voorlopig deelsaldo':ledgerStatement.saldo>=0?'Te ontvangen t/m nu':'Te betalen t/m nu')+'</small><strong class="'+signedClass(ledgerStatement.saldo)+'">'+signedMoney(ledgerStatement.saldo)+'</strong></div></div>';
       var chartRows=chartData(rows,r);
       var buy=t.ebGrossShown===null?null:t.buyShown+t.ebGrossShown,sell=t.ebCreditShown===null?null:t.sellShown+t.ebCreditShown;
@@ -14193,7 +14219,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.6. BE data only. */
+/* Coulombtelling in/uit — 6.6.1. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -14392,6 +14418,43 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 (function(root){
   'use strict';
   const clamp=v=>Math.max(5,Math.min(100,v));
+  function nativeSOC(chart,slots){
+    // Read the already rendered Balans p50 plan, including planned grid flows.
+    // Pair category-axis samples with the existing ISO forecast timestamps.
+    const candidates=(chart?.data?.datasets||[]).filter(d=>!d.beOwnSOC&&
+      /^socp50$/i.test(String(d.label||'').replace(/[^a-z0-9]/gi,''))&&
+      Array.isArray(d.data)&&d.data.length===slots.length);
+    if(candidates.length!==1)return null;
+    return candidates[0].data.map(value=>{
+      const soc=Array.isArray(value)?value[1]:value&&typeof value==='object'?value.y:value;
+      return Number.isFinite(soc)&&soc>=0&&soc<=100?soc:null;
+    });
+  }
+  function projectNative(slots,values,r,c,now=Date.now()){
+    if(!Array.isArray(values)||values.length!==slots.length||!r||!Number.isFinite(r.soc)||
+       !Number.isFinite(r.t)||now-r.t>120000||r.t>now+10000||!(c.capacity>0))return null;
+    const valid=k=>Number.isFinite(values[k])&&values[k]>=0&&values[k]<=100&&Number.isFinite(slots[k]?.t);
+    let before=-1;
+    for(let k=0;k<slots.length&&slots[k].t<=r.t;k++)before=k;
+    if(before<0||!valid(before))return null;
+    let previous=values[before];
+    if(slots[before].t!==r.t){
+      const next=before+1,dt=slots[next]?.t-slots[before].t;
+      if(!valid(next)||!(dt>0)||!(slots[before].dt>0)||dt>slots[before].dt+1)return null;
+      previous+=(values[next]-previous)*(r.t-slots[before].t)/dt;
+    }
+    const out=slots.map(()=>null);
+    let soc=clamp(r.soc),last=r.t;
+    for(let k=before;k<slots.length;k++){
+      const t=slots[k].t;if(t<r.t)continue;
+      if(!valid(k)||t<last||k>0&&(!(slots[k-1].dt>0)||t-slots[k-1].t>slots[k-1].dt+1))break;
+      // Apply each forecast movement once. Clipping each step avoids storing
+      // imaginary reserve above 100% or debt below 5% for a later reversal.
+      soc=clamp(soc+values[k]-previous);out[k]=soc;
+      previous=values[k];last=t;
+    }
+    return out;
+  }
   function project(slots,r,c,power=Infinity,now=Date.now()){
     const out=slots.map(()=>null);
     if(!r||!Number.isFinite(r.soc)||!Number.isFinite(r.t)||now-r.t>120000||r.t>now+10000||!(c.capacity>0))return out;
@@ -14417,7 +14480,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     return out;
   }
-  root.BESOCExtras={clamp,project};
+  root.BESOCExtras={clamp,project,nativeSOC,projectNative};
 })(window);
 
 (function(root){
@@ -14944,7 +15007,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><p>De blauwe vooruitblik volgt de verwachte SOC-beweging van Balans SOC p50, inclusief gepland laden en ontladen, vanaf de actuele eigen coulombtelling. Dit is een prognose, geen gemeten Ah-telling. PV en huisverbruik worden daarin niet nogmaals opgeteld. Ontbreekt een bruikbare p50-bron, dan wordt alleen PV/verbruik geraamd; meet- en prognosegaten worden niet overbrugd.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
@@ -14974,7 +15037,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -14983,7 +15046,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     if(!d){d={beOwnSOC:tag,label,type:'line',order:-20,borderColor:'#0891b2',backgroundColor:'#0891b2',borderWidth:1.6,pointRadius:0,pointHitRadius:8,fill:false,tension:0,spanGaps:false,...extra};chart.data.datasets.push(d);}
     const series=tag==='forecast'?'coulomb-forecast':'coulomb';
     const color=window.BETheme?.seriesColor(series)||(tag==='forecast'?'rgba(8,145,178,.55)':'#0891b2');
-    Object.assign(d,extra,{borderColor:color,backgroundColor:color});d.data=points;
+    Object.assign(d,extra,{label,borderColor:color,backgroundColor:color});d.data=points;
     d.borderDash=[];
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
@@ -14994,8 +15057,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     if(slots.length!==chart.data.labels?.length)return null;
     const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
     const visible=(result?.points||[]).map(p=>({...p,soc:visualSoc(p)})),last=latest();
+    const anchor=last?{...last,soc:visualSoc(last)}:null;
+    const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);
     return {actual:slots.map(q=>core.at(visible,q.t,c.maxGapMs)),
-      future:ext.project(slots,last?{...last,soc:visualSoc(last)}:null,c,power)};
+      future:planned||ext.project(slots,anchor,c,power),basis:planned?'BE-planning':'PV/verbruik'};
   }
   function applyVisibility(chart){
     chart.data.datasets.forEach((d,i)=>{
@@ -15084,7 +15149,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       if(history)points=window.BESocHistory.project(chart,points,range);
       dataset(chart,'measured','Coulombtelling in/uit',points,{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
-      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting',f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2});}
+      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting · '+f.basis,f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,beForecastBasis:f.basis});}
     }
     if(chart.canvas.id==='soc-forecast-chart')attachPastColors(chart);
     applyVisibility(chart);
@@ -15132,7 +15197,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.6. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.1. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -16003,7 +16068,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6'+
+      '\nDashboardversie: 6.6.1'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

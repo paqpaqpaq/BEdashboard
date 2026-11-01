@@ -30,6 +30,30 @@
   Preserve raw measurements and official results; valid results-v2 day amounts
   always override a local estimate for that date.
 
+## Version 6.6.1 — forecast planning and unavailable result months
+
+- User authorized publication of 6.6.1, then explicitly instructed pushing the
+  update despite the unavailable browser/API inspection. The public price and
+  annotation JS were byte-identical on 1 November at 13:19 Netherlands time.
+  Authenticated API contents could not be inspected; do not claim otherwise.
+- The blue future SOC follows successive movements of the native Balans SOC p50
+  dataset, anchored at the latest fresh measured Coulomb SOC. This includes the
+  planning already shown by Balans without inventing dispatch API fields. It is
+  a relative SOC forecast, not a new Ah integration from planned power. Actual
+  measured history and the voltage-profile Coulomb counter are unchanged.
+- Read only native SOC p50, even when hidden; exclude own datasets. Align samples
+  with the existing ISO forecast slots and interpolate the native baseline at
+  the measured timestamp. Clamp each increment at 5–100%; never carry fictitious
+  reserve/debt past a clamp. Do not add PV/usage again to the native net forecast.
+- Missing native baselines use the existing PV/usage fallback. Nulls/time gaps
+  inside a usable p50 forecast remain gaps. Native saturation can hide dispatch
+  beyond its bounds; do not claim to recover such unavailable energy volumes.
+- Only HTTP 400 with API error.code=period_not_available is a neutral unprocessed
+  month. Other 400/auth/429 errors stay visible, and real missing/partial data
+  keep their warning. No hardcoded date or processing delay. Track errors per
+  month and clear them after a successful automatic reload; official results
+  always override local estimates.
+
 ## Version 6.5 — scroll preservation, reported 27 October 2026
 
 - Background refreshes must preserve the user's scroll position with the TenneT

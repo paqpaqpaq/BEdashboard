@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.6.1 — 1 november 2026
+
+- aanpassing Coulombtelling in forecast op basis van geplande im- of export
+- statusmelding ontbrekende data
+
 ## 6.6 — 1 november 2026
 
 - Aanpassing voor verrekening Day Ahead in resultaten
