@@ -244,7 +244,30 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   'use strict';
   if(window.BECurrentTariffCache)return;
   var TTL=30*60*1000,QUARTER=900000,PREFIX='be_current_tariffs_v1:',memory=new Map(),expires=new Map(),timer;
-  var fields=['onbalans_import','onbalans_export'];
+  var fields=['onbalans_import','onbalans_export'],PRICE_MODEL=2;
+  // Store the planning decision alongside each quote. A day-ahead price may
+  // exist outside a planned quarter, so its presence alone never selects it.
+  function preparePrices(prices,payload){
+    var plans=payload&&payload.dayAheadPlans,unknown=payload&&payload.dayAheadUnavailableWindows;
+    var authoritative=Array.isArray(plans)||Array.isArray(unknown),planned=new Set();
+    (Array.isArray(plans)?plans:[]).forEach(function(p){if(p&&p.direction==='import'&&Number.isFinite(p.start)&&p.end===p.start+QUARTER)planned.add(p.start);});
+    var rows=(prices||[]).slice(),missing=new Set(planned),current=Math.floor(Date.now()/QUARTER)*QUARTER;
+    if((Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&current>=w[0]&&current<w[1];}))missing.add(current);
+    rows.forEach(function(p){if(p)missing.delete(p.start);});
+    missing.forEach(function(start){rows.push({start:start,end:start+QUARTER,values:{},provisional:true,dayAheadPlaceholder:true});});
+    return rows.map(function(p){
+      if(!p)return p;
+      var state=authoritative?(planned.has(p.start)?'planned':(Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&p.start>=w[0]&&p.start<w[1];})?'unavailable':'none')
+        :['planned','unavailable','none'].includes(p.dayAheadState)?p.dayAheadState:
+          Object.keys(p.values||{}).some(function(key){return key.indexOf('day_ahead_')===0;})?'unavailable':'none';
+      return Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
+    });
+  }
+  function importMarket(p,afrr){
+    if(p.dayAheadState==='unavailable')return {key:null,label:'Prijsbron onbekend',planned:true,mixed:false};
+    if(p.dayAheadState==='planned')return {key:afrr?'day_ahead_afrr_import':'day_ahead_import',label:afrr?'Dynamisch + aFRR':'Dynamisch',planned:true,mixed:!!afrr};
+    return {key:afrr?'afrr_import':'onbalans_import',label:afrr?'aFRR':'onbalans',planned:false,mixed:false};
+  }
   function write(id,rows){
     memory.set(id,rows);
     var next=Infinity;Object.keys(rows).forEach(function(key){
@@ -258,14 +281,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var rows=memory.get(id)||{},clean={};
     try{rows=JSON.parse(localStorage.getItem(PREFIX+id)||'null')||rows;}catch(_){}
     Object.keys(rows).forEach(function(key){
-      var p=rows[key];if(!p||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER)return;
+      var p=rows[key];if(!p||p.priceModel!==PRICE_MODEL||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER)return;
       var quotes={};fields.forEach(function(field){
         var q=p.quotes&&p.quotes[field];
         if(q&&Number.isFinite(q.value)&&Number.isFinite(q.at)&&q.at<=now&&now-q.at<TTL)quotes[field]={value:q.value,at:q.at};
       });
       if(!Object.keys(quotes).length)return;
-      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,
-        samples:(Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
+      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,priceModel:PRICE_MODEL,dayAheadState:p.dayAheadState||'none',
+        samples:(p.dayAheadState==='planned'||p.dayAheadState==='unavailable'?[]:Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
     });
     write(id,clean);return clean;
   }
@@ -277,17 +300,19 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   function remember(id,payload){
     if(!id||!payload||!Array.isArray(payload.prices))return;
     var now=Date.now(),rows=read(id);
-    payload.prices.forEach(function(p){
+    preparePrices(payload.prices,payload).forEach(function(p){
       if(!p||p.carried||p.temporaryTariffs||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER||p.start>now||now>=p.end)return;
       var row=rows[p.start]||{start:p.start,end:p.end,quotes:{},samples:[]},v=p.values||{};
       var revision=Date.parse(p.updatedAt);
       if(Number.isFinite(revision)&&Number.isFinite(row.sourceUpdatedAt)&&revision<row.sourceUpdatedAt)return;
       if(Number.isFinite(revision))row.sourceUpdatedAt=revision;
+      row.priceModel=PRICE_MODEL;row.dayAheadState=p.dayAheadState;
+      if(p.dayAheadState!=='none'){delete row.quotes.onbalans_import;row.samples=[];}
       var discovery=(payload.afrrDiscovery||[]).find(function(d){return d.start===p.start;});
       row.afrr=Array.isArray(payload.afrrEventIsps)?payload.afrrEventIsps.indexOf(p.start)!==-1:!!p.afrr;
       row.directions=discovery&&Array.isArray(discovery.directions)?discovery.directions.slice():Array.isArray(p.directions)?p.directions.slice():null;
-      fields.forEach(function(field){if(Number.isFinite(v[field]))row.quotes[field]={value:v[field],at:now};});
-      var imbalance=Array.isArray(row.directions)?!row.directions.length:!row.afrr;
+      fields.forEach(function(field){if((field!=='onbalans_import'||p.dayAheadState==='none')&&Number.isFinite(v[field]))row.quotes[field]={value:v[field],at:now};});
+      var imbalance=p.dayAheadState==='none'&&(Array.isArray(row.directions)?!row.directions.length:!row.afrr);
       if(imbalance&&fields.every(function(field){return Number.isFinite(v[field]);})){
         var last=row.samples[row.samples.length-1];
         if(!last||last.ki!==v.onbalans_import||last.ke!==v.onbalans_export)row.samples.push({t:now,ki:v.onbalans_import,ke:v.onbalans_export,marktImport:'onbalans',marktExport:'onbalans',temporaryTariffs:true});
@@ -299,12 +324,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   function get(id,start){return id?read(id)[start]||null:null;}
   function restore(id,source){
     var rows=(source||[]).filter(function(p){return !p.temporaryTariffs;}),saved=id?read(id):{};
-    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,values:{},provisional:true,temporaryTariffs:true});});
+    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,dayAheadState:p.dayAheadState,priceModel:PRICE_MODEL,values:{},provisional:true,temporaryTariffs:true});});
     return rows.sort(function(a,b){return a.start-b.start;});
   }
   try{Array.from({length:localStorage.length},function(_,i){return localStorage.key(i);}).filter(function(key){return key&&key.indexOf(PREFIX)===0;}).forEach(function(key){read(key.slice(PREFIX.length));});}catch(_){}
   window.addEventListener('storage',function(event){if(event.key&&event.key.indexOf(PREFIX)===0){var id=event.key.slice(PREFIX.length);memory.delete(id);expires.delete(id);read(id);schedule();}});
-  window.BECurrentTariffCache={remember:remember,get:get,restore:restore};schedule();
+  window.BECurrentTariffCache={remember:remember,get:get,restore:restore,preparePrices:preparePrices,importMarket:importMarket,priceModel:PRICE_MODEL};schedule();
 })();
 
 
@@ -333,7 +358,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.5'
+    '6.6'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -665,18 +690,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       return !(n<intervals.length && intervals[n][0]<=r.t && r.t<=intervals[n][1]);
     });
   }
-  function beVoegPrijzenSamen(oud, nieuw, events, discovery) {
-    var map = new Map((oud || []).map(function (p) { return [p.start, p]; }));
+  function beVoegPrijzenSamen(oud, nieuw, events, discovery, planning) {
+    var map = new Map(window.BECurrentTariffCache.preparePrices(oud).filter(Boolean).map(function (p) { return [p.start, p]; }));
     var richtingen = {};
     (discovery || []).forEach(function (d) { richtingen[d.start] = d; });
-    (nieuw || []).forEach(function (p) {
+    window.BECurrentTariffCache.preparePrices(nieuw, planning).forEach(function (p) {
       if (!p || !Number.isFinite(p.start) || !Number.isFinite(p.end) || p.end <= p.start) return;
       var vorig = map.get(p.start);
+      if(p.dayAheadPlaceholder&&vorig&&!vorig.carried)
+        p=Object.assign({},vorig,{dayAheadState:p.dayAheadState,priceModel:p.priceModel});
       // An explicitly final source cannot be downgraded by an older provisional response.
-      if (vorig && vorig.provisional === false && p.provisional === true) return;
+      if (vorig && !vorig.carried && vorig.provisional === false && p.provisional === true) {
+        map.set(p.start,window.BECurrentTariffCache.preparePrices([vorig],planning)[0]);return;
+      }
       var oudT = vorig && Date.parse(vorig.updatedAt);
       var nieuwT = Date.parse(p.updatedAt);
-      if (vorig && vorig.provisional === p.provisional && Number.isFinite(oudT) && Number.isFinite(nieuwT) && nieuwT < oudT) return;
+      if (vorig && !vorig.carried && vorig.provisional === p.provisional && Number.isFinite(oudT) && Number.isFinite(nieuwT) && nieuwT < oudT) {
+        map.set(p.start,window.BECurrentTariffCache.preparePrices([vorig],planning)[0]);return;
+      }
       var d = richtingen[p.start];
       var afrr = Array.isArray(events) ? events.indexOf(p.start) !== -1 : !!p.afrr;
       // Replace this snapshot, including nulls and corrections; do not mix tariff revisions.
@@ -698,7 +729,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var nu = Date.now();
       if (p.start <= nu && nu < p.end) {
         var r = actueelPrijsRij(snapshot);
-        if (Number.isFinite(r.ki) && Number.isFinite(r.ke) && !r.historischImport && !r.historischExport) {
+        if ((Number.isFinite(r.ki) || Number.isFinite(r.ke)) && !r.historischImport && !r.historischExport) {
           var last = verloop[verloop.length - 1];
           if (!last || last.ki !== r.ki || last.ke !== r.ke ||
               last.marktImport !== r.marktImport || last.marktExport !== r.marktExport) {
@@ -726,17 +757,25 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(live||p.temporaryTariffs)delete saved[field];
       if(cached&&cached.quotes[field])saved[field]=cached.quotes[field].value;
     });
-    var ik=ai?'afrr_import':'onbalans_import',ek=ae?'afrr_export':'onbalans_export';
-    var ki=v[ik],ke=v[ek],hi=false,he=false;
-    if(!Number.isFinite(ki) && Number.isFinite(saved[ik])){ki=saved[ik];hi=true;}
+    var market=window.BECurrentTariffCache.importMarket(p,ai);
+    var ik=market.key,ek=ae?'afrr_export':'onbalans_export',exportMarket=ae?'aFRR':'onbalans';
+    var ki=ik?v[ik]:null,ke=v[ek],hi=false,he=false;
+    // Planned imports use only the API's corresponding day-ahead/mix quote.
+    // Unknown planning or a missing quote must never become an imbalance price.
+    if(!market.planned && !Number.isFinite(ki) && Number.isFinite(saved[ik])){ki=saved[ik];hi=true;}
     if(!Number.isFinite(ke) && Number.isFinite(saved[ek])){ke=saved[ek];he=true;}
     // Recorded live observations can repair a same-market quote as well.
     verloop.slice().reverse().forEach(function(o){
-      if(!Number.isFinite(ki) && o.marktImport===(ai?'aFRR':'onbalans') && Number.isFinite(o.ki)){ki=o.ki;hi=true;}
-      if(!Number.isFinite(ke) && o.marktExport===(ae?'aFRR':'onbalans') && Number.isFinite(o.ke)){ke=o.ke;he=true;}
+      if(!market.planned && !Number.isFinite(ki) && o.marktImport===market.label && Number.isFinite(o.ki)){ki=o.ki;hi=true;}
+      if(!Number.isFinite(ke) && o.marktExport===exportMarket && Number.isFinite(o.ke)){ke=o.ke;he=true;}
     });
+    verloop=verloop.map(function(o){return Object.assign({},o,{
+      ki:ik&&Number.isFinite(ki)&&o.marktImport===market.label&&Number.isFinite(o.ki)?o.ki:null,
+      ke:Number.isFinite(ke)&&o.marktExport===exportMarket&&Number.isFinite(o.ke)?o.ke:null
+    });}).filter(function(o){return Number.isFinite(o.ki)||Number.isFinite(o.ke);});
     return {start:p.start,end:p.end,afrr:ai||ae,
-      marktImport:ai?'aFRR':'onbalans',marktExport:ae?'aFRR':'onbalans',ki:ki,ke:ke,
+      marktImport:market.label,marktExport:exportMarket,ki:ki,ke:ke,
+      dayAheadState:p.dayAheadState||'none',gemengdImport:market.mixed,
       historischImport:hi,historischExport:he,
       provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
       carried:!!p.carried,sourceStart:p.sourceStart,verloop:verloop,values:Object.assign({},v)};
@@ -746,7 +785,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var prijs = u.pathname.indexOf('current-prices') !== -1;
     if (prijs) {
       var oud = await beLeesBron('prijzen');
-      var rows = beVoegPrijzenSamen(oud.rows, j && j.prices, j && j.afrrEventIsps, j && j.afrrDiscovery);
+      var rows = beVoegPrijzenSamen(oud.rows, j && j.prices, j && j.afrrEventIsps, j && j.afrrDiscovery, j);
       if (j && Array.isArray(j.prices)) await beSchrijfBron('prijzen', { rows: rows });
       return { generatedAt:j && j.generatedAt, prices: rows, afrrEventIsps: rows.filter(function (p) { return p.afrr; }).map(function (p) { return p.start; }) };
     }
@@ -866,6 +905,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       Object.keys(o).forEach(function (k) {
         var r = o[k];
         if (!r || r.key !== k || r.archiefVersie !== 1 || r.klant !== KLANT) delete o[k];
+        else if (r.prijsModel !== window.BECurrentTariffCache.priceModel) {
+          // Retain the measured source and audit, but do not show amounts
+          // computed with an older market selector while rebuilding the day.
+          r.prijsOnvolledig = true; r.prijsHerberekenen = true;
+        }
       });
       return o;
 
@@ -943,6 +987,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     opslag[dagKey] = {
       validatie: voorlopigeSessie,
       archiefVersie: 1,
+      prijsModel: window.BECurrentTariffCache.priceModel,
       klant: KLANT,
       key:
         dagKey,
@@ -1095,6 +1140,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
             k <= vandaag &&
             !echt[k] &&
             r &&
+            !r.prijsHerberekenen &&
             r.voorlopig &&
             Number.isFinite(
               r.inkoop
@@ -2079,6 +2125,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     " });\n" +
     " var TG_KW=900000;\n" +
     " var TG={rijen:[],aan:false,allin:true};\n" +
+    " function tgMarkt(q,kort){\n" +
+    "  if(q.marktImport==='Prijsbron onbekend')return kort?'bron?':'prijsbron onbekend';\n" +
+    "  if(q.gemengdImport||q.marktImport==='Dynamisch + aFRR')return kort?'dyn.+aFRR':'dynamisch + aFRR';\n" +
+    "  if(q.marktImport==='Dynamisch')return kort?'dyn.':'dynamisch';\n" +
+    "  if(q.wacht)return kort?'wacht':'geen prijs';\n" +
+    "  return q.afrr?'aFRR':kort?'onb.':'onbalans';\n" +
+    " }\n" +
+    " function tgWaarde(value){return Number.isFinite(value)?value:null;}\n" +
     " function tgBedrag(v){return (v<0?'\\u2212 ':'+ ')+Math.abs(v).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});}\n" +
     " Chart.register({id:'beTariefBanden',beforeDatasetsDraw:function(c){\n" +
     "  if(!c.canvas||c.canvas.id!=='be-tarief-chart')return;\n" +
@@ -2092,20 +2146,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   if(p2<=p1)return;\n" +
     "   if(Math.floor(q.start/TG_KW)%2){t.fillStyle='#f1f2f4';t.fillRect(p1,a.top,p2-p1,a.bottom-a.top);}\n" +
     "   var mid=(p1+p2)/2;\n" +
-    "   var lab=q.wacht?'geen prijs':q.carried?'laatst bekend':(q.afrr?'aFRR':'onbalans');\n" +
+    "   var lab=q.carried?'laatst bekend':tgMarkt(q,false);\n" +
     "   var live=q.start<=Date.now()&&Date.now()<q.end;\n" +
     "   \n" +
     "   t.font='600 9.5px system-ui,-apple-system,sans-serif';\n" +
-    "   t.fillStyle=q.wacht?'#8a8f98':(q.afrr?'#6B3FA0':'#2f6f9f');\n" +
+    "   t.fillStyle=q.wacht||q.marktImport==='Prijsbron onbekend'?'#8a8f98':(q.afrr||q.gemengdImport?'#6B3FA0':'#2f6f9f');\n" +
     "   var ruimte=p2-p1-4;\n" +
     "   if(ruimte>=t.measureText(lab).width){\n" +
     "    t.fillText(lab,mid,a.top+11);\n" +
-    "   }else if(ruimte>=24){\n" +
-    "    t.font='600 8px system-ui,-apple-system,sans-serif';\n" +
-    "    t.fillText(q.wacht?'wacht':(q.afrr?'aFRR':'onb.'),mid,a.top+11);\n" +
     "   }else if(ruimte>=8){\n" +
-    "    t.save();t.translate(mid,a.top+4);t.rotate(-Math.PI/2);t.textAlign='right';\n" +
-    "    t.fillText(lab,0,3);t.restore();\n" +
+    "    t.font='600 8px system-ui,-apple-system,sans-serif';\n" +
+    "    var kort=q.carried?'bekend':tgMarkt(q,true);\n" +
+    "    if(ruimte>=t.measureText(kort).width)t.fillText(kort,mid,a.top+11);\n" +
+    "    else{\n" +
+    "     t.save();t.translate(mid,a.top+4);t.rotate(-Math.PI/2);t.textAlign='right';\n" +
+    "     t.fillText(lab,0,3);t.restore();\n" +
+    "    }\n" +
     "   }\n" +
     "   if(ruimte<24)return;\n" +
     "   if(q.res==null||Math.abs(q.res)<0.005)return;\n" +
@@ -2133,15 +2189,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "       if(!i.length)return '';\n" +
     "       var tm=i[0].parsed.x;\n" +
     "       var q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
-    "       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' \u00b7 afname '+q.marktImport+' / invoeding '+q.marktExport:'');\n" +
+    "       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' \u00b7 afname '+(q.marktImport||'Prijsbron onbekend')+' / invoeding '+(q.marktExport||'Prijsbron onbekend'):'');\n" +
     "      },afterBody:function(i){\n" +
     "       if(!i.length)return [];\n" +
     "       var tm=i[0].parsed.x, q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
     "       if(!q)return [];\n" +
     "       var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend \u00b7 voorlopig':q.provisional===false?'Definitief':'Voorlopig'];\n" +
+    "       if(q.gemengdImport)out.push('Afname: ongewogen gemiddelde van dynamisch en aFRR; indicatieve API-prijs.');\n" +
+    "       if(q.marktImport==='Prijsbron onbekend')out.push('Day-aheadplanning niet beschikbaar; afnameprijs onbekend.');\n" +
     "       return out;\n" +
     "      },\n" +
-    "      label:function(z){return z.dataset.label+': '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+' / kWh';}}}}}});\n" +
+    "      label:function(z){\n" +
+    "       var tm=z.parsed.x,q=(z.chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
+    "       var prijs=Number.isFinite(z.parsed.y)?z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'\u2014';\n" +
+    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'\u2248 ':'')+prijs+' / kWh';\n" +
+    "      }}}}}});\n" +
     "  return tgChart;\n" +
     " }\n" +
     " function tgVul(){\n" +
@@ -2163,7 +2225,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   if(mx!=null&&r.start>mx)return;\n" +
     "   if(gezien[r.start])return; gezien[r.start]=true;\n" +
     "   kw.push(r);\n" +
-    "   if(r.wacht)return;\n" +
     "   var live=r.start<=nu&&nu<r.end;\n" +
     "   if(live){\n" +
     "    // Never connect a settled quarter to a later first observation: stepped\n" +
@@ -2172,19 +2233,19 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "    var samples=(r.verloop||[]).filter(function(v){return v.t>=r.start&&v.t<=nu;});\n" +
     "    if(samples.length){\n" +
     "     samples.forEach(function(v){\n" +
-    "      imp.push({x:v.t,y:v.pi,beLive:true});\n" +
-    "      exp.push({x:v.t,y:v.pe,beLive:true});\n" +
+    "      imp.push({x:v.t,y:tgWaarde(v.pi),beLive:true});\n" +
+    "      exp.push({x:v.t,y:tgWaarde(v.pe),beLive:true});\n" +
     "     });\n" +
     "     var last=samples[samples.length-1];\n" +
-    "     imp.push({x:nu,y:last.pi,beLive:true});\n" +
-    "     exp.push({x:nu,y:last.pe,beLive:true});\n" +
+    "     imp.push({x:nu,y:tgWaarde(last.pi),beLive:true});\n" +
+    "     exp.push({x:nu,y:tgWaarde(last.pe),beLive:true});\n" +
     "    }else{\n" +
-    "     imp.push({x:nu,y:r.pi,beLive:true});\n" +
-    "     exp.push({x:nu,y:r.pe,beLive:true});\n" +
+    "     imp.push({x:nu,y:tgWaarde(r.pi),beLive:true});\n" +
+    "     exp.push({x:nu,y:tgWaarde(r.pe),beLive:true});\n" +
     "    }\n" +
     "   }else{\n" +
-    "    imp.push({x:r.start,y:r.pi,beLive:false},{x:r.end,y:r.pi,beLive:false});\n" +
-    "    exp.push({x:r.start,y:r.pe,beLive:false},{x:r.end,y:r.pe,beLive:false});\n" +
+    "    imp.push({x:r.start,y:tgWaarde(r.pi),beLive:false},{x:r.end,y:tgWaarde(r.pi),beLive:false});\n" +
+    "    exp.push({x:r.start,y:tgWaarde(r.pe),beLive:false},{x:r.end,y:tgWaarde(r.pe),beLive:false});\n" +
     "   }\n" +
     "  });\n" +
     "  ch.data.datasets[0].data=imp; ch.data.datasets[1].data=exp;\n" +
@@ -2487,25 +2548,25 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         start: r.start,
         end: r.end,
         afrr: !!r.afrr,
-        marktImport:r.marktImport, marktExport:r.marktExport,
+        marktImport:r.marktImport, marktExport:r.marktExport,gemengdImport:!!r.gemengdImport,
         carried:!!r.carried, sourceStart:r.sourceStart,
         provisional:r.provisional, fresh:r.fresh, updatedAt:r.updatedAt,
         values:r.values,
         verloop:(r.verloop || []).map(function (v) {
           return { t:v.t, carried:!!v.carried,
-            pi:actueelAan ? actueelAllin(v.ki, false) : v.ki,
-            pe:actueelAan ? actueelAllin(v.ke, true) : v.ke };
+            pi:Number.isFinite(v.ki)?(actueelAan ? actueelAllin(v.ki, false) : v.ki):null,
+            pe:Number.isFinite(v.ke)?(actueelAan ? actueelAllin(v.ke, true) : v.ke):null };
         }),
-        wacht: !heeftPrijs,
+        wacht: !Number.isFinite(r.ki) && !Number.isFinite(r.ke),
         res: res,
         breakEven: breakEven,
         deel: deel,
 
-        pi: heeftPrijs
+        pi: Number.isFinite(r.ki)
           ? (actueelAan ? actueelAllin(r.ki, false) : r.ki)
           : null,
 
-        pe: heeftPrijs
+        pe: Number.isFinite(r.ke)
           ? (actueelAan ? actueelAllin(r.ke, true) : r.ke)
           : null
       });
@@ -2684,6 +2745,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var current=rows.find(function(p){return p.start===start;});
     var prior=rows.filter(function(p){return p.end===start;}).pop();
     if(!prior)return rows;
+    // A day-ahead plan belongs to one exact quarter. Never extend it, or
+    // hide a missing planned/unknown import beneath a previous market price.
+    if((current&&current.dayAheadState&&current.dayAheadState!=='none')||
+       (prior.dayAheadState&&prior.dayAheadState!=='none'))return rows;
     var previous=actueelPrijsRij(prior),r=current&&actueelPrijsRij(current);
     if(!Number.isFinite(previous.ki)||!Number.isFinite(previous.ke))return rows;
     var seed={t:start,ki:previous.ki,ke:previous.ke,marktImport:previous.marktImport,marktExport:previous.marktExport,carried:true};
@@ -2699,8 +2764,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     window.BECurrentTariffCache.remember(KLANT,j);
     beLivePrijsRows=window.BECurrentTariffCache.restore(KLANT,beLivePrijsRows);
     document.dispatchEvent(new CustomEvent('be-afrr-source',{detail:j}));
-    beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
-    beLivePrijsRows=beVoegPrijzenSamen(beLivePrijsRows,j.prices,j.afrrEventIsps,j.afrrDiscovery);
+    beLivePrijsRows=beVoegPrijzenSamen(beLivePrijsRows,j.prices,j.afrrEventIsps,j.afrrDiscovery,j);
     beLivePrijsRows=beOverbrugPrijzen(beLivePrijsRows,Date.now());
     actueelPasPrijzenToe({prices:beLivePrijsRows});
   }
@@ -3494,7 +3558,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   var ACTUEEL_NOOT_KAAL =
     'Kale prijzen per kWh: ' +
-    'actuele onbalans-/aFRR-prijs zonder btw, ' +
+    'actuele onbalans-, aFRR- of dynamische prijs zonder btw, ' +
     'leverkosten en energiebelasting. ' +
     'Lopende kwartieren (ISP) zijn een schatting ' +
     'en worden ongeveer twee minuten na afloop vastgesteld.';
@@ -9847,7 +9911,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     });
     Object.keys(opslag).sort().forEach(function(key) {
       var r = opslag[key];
-      if (key <= verwerkt || key < begin || key > vandaag || !r || !r.voorlopig ||
+      if (key <= verwerkt || key < begin || key > vandaag || !r || r.prijsHerberekenen || !r.voorlopig ||
           !['imp','exp','inkoop','verkoop'].every(function(k){return Number.isFinite(r[k]);})) return;
       extra.push(r);
       if (r.deelresultaat || r.prijsOnvolledig) onvolledig.push(key);
@@ -11634,7 +11698,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.5' +
+        'Instellingen v6.6' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12080,7 +12144,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.5. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12157,7 +12221,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     source.forEach(function(r){if(r.key>=from&&r.key<=to&&r.key<=today)map.set(r.key,Object.assign({},r));});
     Object.keys(stored).forEach(function(key){
       var p=stored[key],g=voorlopigeDagGrenzen(key);
-      if(map.has(key)||key<from||key>to||key>today||!g||!p||p.key!==key||p.klant!==id||p.archiefVersie!==1||p.voorlopig!==true)return;
+      if(map.has(key)||key<from||key>to||key>today||!g||!p||p.prijsHerberekenen||p.key!==key||p.klant!==id||p.archiefVersie!==1||p.voorlopig!==true)return;
       if(!['imp','exp','inkoop','verkoop','gemetenVanaf','gemetenTot','gedektMs','bijgewerkt'].every(function(k){return beOvFinite(p[k]);})||p.imp<0||p.exp<0)return;
       if(p.gemetenVanaf!==g.start||p.gemetenTot<=g.start||p.gemetenTot>g.eind||p.gemetenTot>now||p.bijgewerkt>now||p.gedektMs<=0||p.gedektMs>p.gemetenTot-g.start)return;
       var r=Object.assign({},p,{eigenCache:true});
@@ -12388,7 +12452,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.5</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>

@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.6 — 1 november 2026
+
+- Aanpassing voor verrekening Day Ahead in resultaten
+
 ## 6.5 — 31 oktober 2026
 
 - Aanpassing weergave Tennet regelvermogen

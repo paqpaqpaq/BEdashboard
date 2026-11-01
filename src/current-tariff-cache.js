@@ -3,7 +3,30 @@
   'use strict';
   if(window.BECurrentTariffCache)return;
   var TTL=30*60*1000,QUARTER=900000,PREFIX='be_current_tariffs_v1:',memory=new Map(),expires=new Map(),timer;
-  var fields=['onbalans_import','onbalans_export'];
+  var fields=['onbalans_import','onbalans_export'],PRICE_MODEL=2;
+  // Store the planning decision alongside each quote. A day-ahead price may
+  // exist outside a planned quarter, so its presence alone never selects it.
+  function preparePrices(prices,payload){
+    var plans=payload&&payload.dayAheadPlans,unknown=payload&&payload.dayAheadUnavailableWindows;
+    var authoritative=Array.isArray(plans)||Array.isArray(unknown),planned=new Set();
+    (Array.isArray(plans)?plans:[]).forEach(function(p){if(p&&p.direction==='import'&&Number.isFinite(p.start)&&p.end===p.start+QUARTER)planned.add(p.start);});
+    var rows=(prices||[]).slice(),missing=new Set(planned),current=Math.floor(Date.now()/QUARTER)*QUARTER;
+    if((Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&current>=w[0]&&current<w[1];}))missing.add(current);
+    rows.forEach(function(p){if(p)missing.delete(p.start);});
+    missing.forEach(function(start){rows.push({start:start,end:start+QUARTER,values:{},provisional:true,dayAheadPlaceholder:true});});
+    return rows.map(function(p){
+      if(!p)return p;
+      var state=authoritative?(planned.has(p.start)?'planned':(Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&p.start>=w[0]&&p.start<w[1];})?'unavailable':'none')
+        :['planned','unavailable','none'].includes(p.dayAheadState)?p.dayAheadState:
+          Object.keys(p.values||{}).some(function(key){return key.indexOf('day_ahead_')===0;})?'unavailable':'none';
+      return Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
+    });
+  }
+  function importMarket(p,afrr){
+    if(p.dayAheadState==='unavailable')return {key:null,label:'Prijsbron onbekend',planned:true,mixed:false};
+    if(p.dayAheadState==='planned')return {key:afrr?'day_ahead_afrr_import':'day_ahead_import',label:afrr?'Dynamisch + aFRR':'Dynamisch',planned:true,mixed:!!afrr};
+    return {key:afrr?'afrr_import':'onbalans_import',label:afrr?'aFRR':'onbalans',planned:false,mixed:false};
+  }
   function write(id,rows){
     memory.set(id,rows);
     var next=Infinity;Object.keys(rows).forEach(function(key){
@@ -17,14 +40,14 @@
     var rows=memory.get(id)||{},clean={};
     try{rows=JSON.parse(localStorage.getItem(PREFIX+id)||'null')||rows;}catch(_){}
     Object.keys(rows).forEach(function(key){
-      var p=rows[key];if(!p||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER)return;
+      var p=rows[key];if(!p||p.priceModel!==PRICE_MODEL||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER)return;
       var quotes={};fields.forEach(function(field){
         var q=p.quotes&&p.quotes[field];
         if(q&&Number.isFinite(q.value)&&Number.isFinite(q.at)&&q.at<=now&&now-q.at<TTL)quotes[field]={value:q.value,at:q.at};
       });
       if(!Object.keys(quotes).length)return;
-      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,
-        samples:(Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
+      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,priceModel:PRICE_MODEL,dayAheadState:p.dayAheadState||'none',
+        samples:(p.dayAheadState==='planned'||p.dayAheadState==='unavailable'?[]:Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
     });
     write(id,clean);return clean;
   }
@@ -36,17 +59,19 @@
   function remember(id,payload){
     if(!id||!payload||!Array.isArray(payload.prices))return;
     var now=Date.now(),rows=read(id);
-    payload.prices.forEach(function(p){
+    preparePrices(payload.prices,payload).forEach(function(p){
       if(!p||p.carried||p.temporaryTariffs||!Number.isFinite(p.start)||p.start%QUARTER||p.end!==p.start+QUARTER||p.start>now||now>=p.end)return;
       var row=rows[p.start]||{start:p.start,end:p.end,quotes:{},samples:[]},v=p.values||{};
       var revision=Date.parse(p.updatedAt);
       if(Number.isFinite(revision)&&Number.isFinite(row.sourceUpdatedAt)&&revision<row.sourceUpdatedAt)return;
       if(Number.isFinite(revision))row.sourceUpdatedAt=revision;
+      row.priceModel=PRICE_MODEL;row.dayAheadState=p.dayAheadState;
+      if(p.dayAheadState!=='none'){delete row.quotes.onbalans_import;row.samples=[];}
       var discovery=(payload.afrrDiscovery||[]).find(function(d){return d.start===p.start;});
       row.afrr=Array.isArray(payload.afrrEventIsps)?payload.afrrEventIsps.indexOf(p.start)!==-1:!!p.afrr;
       row.directions=discovery&&Array.isArray(discovery.directions)?discovery.directions.slice():Array.isArray(p.directions)?p.directions.slice():null;
-      fields.forEach(function(field){if(Number.isFinite(v[field]))row.quotes[field]={value:v[field],at:now};});
-      var imbalance=Array.isArray(row.directions)?!row.directions.length:!row.afrr;
+      fields.forEach(function(field){if((field!=='onbalans_import'||p.dayAheadState==='none')&&Number.isFinite(v[field]))row.quotes[field]={value:v[field],at:now};});
+      var imbalance=p.dayAheadState==='none'&&(Array.isArray(row.directions)?!row.directions.length:!row.afrr);
       if(imbalance&&fields.every(function(field){return Number.isFinite(v[field]);})){
         var last=row.samples[row.samples.length-1];
         if(!last||last.ki!==v.onbalans_import||last.ke!==v.onbalans_export)row.samples.push({t:now,ki:v.onbalans_import,ke:v.onbalans_export,marktImport:'onbalans',marktExport:'onbalans',temporaryTariffs:true});
@@ -58,10 +83,10 @@
   function get(id,start){return id?read(id)[start]||null:null;}
   function restore(id,source){
     var rows=(source||[]).filter(function(p){return !p.temporaryTariffs;}),saved=id?read(id):{};
-    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,values:{},provisional:true,temporaryTariffs:true});});
+    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,dayAheadState:p.dayAheadState,priceModel:PRICE_MODEL,values:{},provisional:true,temporaryTariffs:true});});
     return rows.sort(function(a,b){return a.start-b.start;});
   }
   try{Array.from({length:localStorage.length},function(_,i){return localStorage.key(i);}).filter(function(key){return key&&key.indexOf(PREFIX)===0;}).forEach(function(key){read(key.slice(PREFIX.length));});}catch(_){}
   window.addEventListener('storage',function(event){if(event.key&&event.key.indexOf(PREFIX)===0){var id=event.key.slice(PREFIX.length);memory.delete(id);expires.delete(id);read(id);schedule();}});
-  window.BECurrentTariffCache={remember:remember,get:get,restore:restore};schedule();
+  window.BECurrentTariffCache={remember:remember,get:get,restore:restore,preparePrices:preparePrices,importMarket:importMarket,priceModel:PRICE_MODEL};schedule();
 })();

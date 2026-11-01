@@ -47,6 +47,14 @@
  });
  var TG_KW=900000;
  var TG={rijen:[],aan:false,allin:true};
+ function tgMarkt(q,kort){
+  if(q.marktImport==='Prijsbron onbekend')return kort?'bron?':'prijsbron onbekend';
+  if(q.gemengdImport||q.marktImport==='Dynamisch + aFRR')return kort?'dyn.+aFRR':'dynamisch + aFRR';
+  if(q.marktImport==='Dynamisch')return kort?'dyn.':'dynamisch';
+  if(q.wacht)return kort?'wacht':'geen prijs';
+  return q.afrr?'aFRR':kort?'onb.':'onbalans';
+ }
+ function tgWaarde(value){return Number.isFinite(value)?value:null;}
  function tgBedrag(v){return (v<0?'\u2212 ':'+ ')+Math.abs(v).toLocaleString('nl-NL',{minimumFractionDigits:2,maximumFractionDigits:2});}
  Chart.register({id:'beTariefBanden',beforeDatasetsDraw:function(c){
   if(!c.canvas||c.canvas.id!=='be-tarief-chart')return;
@@ -60,20 +68,22 @@
    if(p2<=p1)return;
    if(Math.floor(q.start/TG_KW)%2){t.fillStyle='#f1f2f4';t.fillRect(p1,a.top,p2-p1,a.bottom-a.top);}
    var mid=(p1+p2)/2;
-   var lab=q.wacht?'geen prijs':q.carried?'laatst bekend':(q.afrr?'aFRR':'onbalans');
+   var lab=q.carried?'laatst bekend':tgMarkt(q,false);
    var live=q.start<=Date.now()&&Date.now()<q.end;
    
    t.font='600 9.5px system-ui,-apple-system,sans-serif';
-   t.fillStyle=q.wacht?'#8a8f98':(q.afrr?'#6B3FA0':'#2f6f9f');
+   t.fillStyle=q.wacht||q.marktImport==='Prijsbron onbekend'?'#8a8f98':(q.afrr||q.gemengdImport?'#6B3FA0':'#2f6f9f');
    var ruimte=p2-p1-4;
    if(ruimte>=t.measureText(lab).width){
     t.fillText(lab,mid,a.top+11);
-   }else if(ruimte>=24){
-    t.font='600 8px system-ui,-apple-system,sans-serif';
-    t.fillText(q.wacht?'wacht':(q.afrr?'aFRR':'onb.'),mid,a.top+11);
    }else if(ruimte>=8){
-    t.save();t.translate(mid,a.top+4);t.rotate(-Math.PI/2);t.textAlign='right';
-    t.fillText(lab,0,3);t.restore();
+    t.font='600 8px system-ui,-apple-system,sans-serif';
+    var kort=q.carried?'bekend':tgMarkt(q,true);
+    if(ruimte>=t.measureText(kort).width)t.fillText(kort,mid,a.top+11);
+    else{
+     t.save();t.translate(mid,a.top+4);t.rotate(-Math.PI/2);t.textAlign='right';
+     t.fillText(lab,0,3);t.restore();
+    }
    }
    if(ruimte<24)return;
    if(q.res==null||Math.abs(q.res)<0.005)return;
@@ -101,15 +111,21 @@
        if(!i.length)return '';
        var tm=i[0].parsed.x;
        var q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});
-       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' · afname '+q.marktImport+' / invoeding '+q.marktExport:'');
+       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' · afname '+(q.marktImport||'Prijsbron onbekend')+' / invoeding '+(q.marktExport||'Prijsbron onbekend'):'');
       },afterBody:function(i){
        if(!i.length)return [];
        var tm=i[0].parsed.x, q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});
        if(!q)return [];
        var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend · voorlopig':q.provisional===false?'Definitief':'Voorlopig'];
+       if(q.gemengdImport)out.push('Afname: ongewogen gemiddelde van dynamisch en aFRR; indicatieve API-prijs.');
+       if(q.marktImport==='Prijsbron onbekend')out.push('Day-aheadplanning niet beschikbaar; afnameprijs onbekend.');
        return out;
       },
-      label:function(z){return z.dataset.label+': '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+' / kWh';}}}}}});
+      label:function(z){
+       var tm=z.parsed.x,q=(z.chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});
+       var prijs=Number.isFinite(z.parsed.y)?z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'—';
+       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh';
+      }}}}}});
   return tgChart;
  }
  function tgVul(){
@@ -131,7 +147,6 @@
    if(mx!=null&&r.start>mx)return;
    if(gezien[r.start])return; gezien[r.start]=true;
    kw.push(r);
-   if(r.wacht)return;
    var live=r.start<=nu&&nu<r.end;
    if(live){
     // Never connect a settled quarter to a later first observation: stepped
@@ -140,19 +155,19 @@
     var samples=(r.verloop||[]).filter(function(v){return v.t>=r.start&&v.t<=nu;});
     if(samples.length){
      samples.forEach(function(v){
-      imp.push({x:v.t,y:v.pi,beLive:true});
-      exp.push({x:v.t,y:v.pe,beLive:true});
+      imp.push({x:v.t,y:tgWaarde(v.pi),beLive:true});
+      exp.push({x:v.t,y:tgWaarde(v.pe),beLive:true});
      });
      var last=samples[samples.length-1];
-     imp.push({x:nu,y:last.pi,beLive:true});
-     exp.push({x:nu,y:last.pe,beLive:true});
+     imp.push({x:nu,y:tgWaarde(last.pi),beLive:true});
+     exp.push({x:nu,y:tgWaarde(last.pe),beLive:true});
     }else{
-     imp.push({x:nu,y:r.pi,beLive:true});
-     exp.push({x:nu,y:r.pe,beLive:true});
+     imp.push({x:nu,y:tgWaarde(r.pi),beLive:true});
+     exp.push({x:nu,y:tgWaarde(r.pe),beLive:true});
     }
    }else{
-    imp.push({x:r.start,y:r.pi,beLive:false},{x:r.end,y:r.pi,beLive:false});
-    exp.push({x:r.start,y:r.pe,beLive:false},{x:r.end,y:r.pe,beLive:false});
+    imp.push({x:r.start,y:tgWaarde(r.pi),beLive:false},{x:r.end,y:tgWaarde(r.pi),beLive:false});
+    exp.push({x:r.start,y:tgWaarde(r.pe),beLive:false},{x:r.end,y:tgWaarde(r.pe),beLive:false});
    }
   });
   ch.data.datasets[0].data=imp; ch.data.datasets[1].data=exp;

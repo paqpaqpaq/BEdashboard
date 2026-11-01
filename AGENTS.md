@@ -16,6 +16,20 @@
 - Keep current JS, TXT, metadata, extension and visible/exported version strings
   synchronized. Earlier published release artifacts are immutable.
 
+## Day-ahead pricing from 6.6
+
+- Select dynamic import only for exact import quarters in `dayAheadPlans`.
+  Quote presence alone is insufficient. Preserve per-quarter planning context
+  in the source archive, reload cache and provisional calculation.
+- Use `day_ahead_import` or, with aFRR import, `day_ahead_afrr_import` exactly
+  as provided. The mixed price is indicative; do not invent a weighted price.
+- Unknown planning or a missing planned price must not fall back to imbalance,
+  an old market observation or a price carried from another quarter. Export
+  remains independent; unavailable values stay null, including in the graph.
+- Rebuild provisional amounts from older price models before counting them.
+  Preserve raw measurements and official results; valid results-v2 day amounts
+  always override a local estimate for that date.
+
 ## Version 6.5 — scroll preservation, reported 27 October 2026
 
 - Background refreshes must preserve the user's scroll position with the TenneT
