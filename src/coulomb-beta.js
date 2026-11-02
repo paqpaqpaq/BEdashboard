@@ -155,13 +155,72 @@
 (function(root){
   'use strict';
   const clamp=v=>Math.max(5,Math.min(100,v));
+  const forecastClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  function forecastParts(t){
+    if(!Number.isFinite(t))return null;
+    try{return Object.fromEntries(forecastClock.formatToParts(new Date(t)).map(p=>[p.type,p.value]));}catch(_){return null;}
+  }
+  function sameForecastDay(a,b=Date.now()){
+    const x=forecastParts(a),y=forecastParts(b);
+    return !!(a>0&&x&&y&&x.year===y.year&&x.month===y.month&&x.day===y.day);
+  }
+  function forecastTime(value,t,index){
+    const expected=forecastParts(t);
+    if(!expected)return {known:false};
+    let stamp=null;
+    if(Object.prototype.toString.call(value)==='[object Date]')stamp=value.getTime();
+    else if(typeof value==='number'&&Number.isFinite(value)&&value>=1e9)stamp=value<1e11?value*1000:value;
+    else if(typeof value==='string'){
+      const s=value.trim();
+      if(/^\d{10}$|^\d{13}$/.test(s)){const n=Number(s);stamp=s.length===10?n*1000:n;}
+      else if(/^\d{4}-\d\d-\d\d[T ]\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:?\d\d)$/i.test(s))stamp=Date.parse(s);
+      else{
+        const dated=s.match(/^(\d{4})-(\d\d)-(\d\d)[T ](\d{1,2}):(\d\d)(?::(\d\d))?$/);
+        if(dated)return {known:true,dated:true,match:dated[1]===expected.year&&dated[2]===expected.month&&dated[3]===expected.day&&Number(dated[4])===Number(expected.hour)&&dated[5]===expected.minute&&(!dated[6]||dated[6]===expected.second)};
+        const clock=s.match(/^(\d{1,2}):(\d\d)(?::(\d\d))?$/);
+        if(clock)return {known:true,dated:false,match:Number(clock[1])===Number(expected.hour)&&clock[2]===expected.minute&&(!clock[3]||clock[3]===expected.second)};
+      }
+    }
+    if(stamp!==null)return {known:true,dated:true,match:Number.isFinite(stamp)&&Math.abs(stamp-t)<=1};
+    if((typeof value==='number'||typeof value==='string')&&String(value).trim()!==''&&Number(value)===index)return {known:false,index:true};
+    return {known:false};
+  }
+  function nativeCandidates(chart){
+    return (chart?.data?.datasets||[]).filter(d=>!d.beOwnSOC&&/^socp50$/i.test(String(d.label||'').replace(/[^a-z0-9]/gi,'')));
+  }
+  function forecastGrid(chart,slots,anchor=null){
+    const labels=chart?.data?.labels,candidates=nativeCandidates(chart);
+    const invalid=reason=>({valid:false,reason});
+    if(!Array.isArray(slots)||!slots.length||!Array.isArray(labels)||labels.length!==slots.length)return invalid('tijdas en prognose hebben verschillende lengtes');
+    if(candidates.length>1)return invalid('meerdere SOC p50-bronnen');
+    const data=candidates[0]?.data;
+    if(candidates.length&&(!Array.isArray(data)||data.length!==slots.length))return invalid('SOC p50 en tijdas komen niet overeen');
+    let dated=false,contiguous=true;
+    for(let k=0;k<slots.length;k++){
+      const q=slots[k];
+      if(!q||!Number.isFinite(q.t)||!(q.dt>0)||k&&q.t<=slots[k-1].t)return invalid('ongeldige of verwisselde prognosetijden');
+      if(k&&Math.abs(q.t-slots[k-1].t-slots[k-1].dt)>1)contiguous=false;
+      const label=forecastTime(labels[k],q.t,k),point=data?.[k];
+      const hasX=Array.isArray(point)?point.length>1:point&&typeof point==='object'&&Object.prototype.hasOwnProperty.call(point,'x');
+      const x=hasX?forecastTime(Array.isArray(point)?point[0]:point.x,q.t,k):null;
+      if(label.known&&!label.match||x?.known&&!x.match)return invalid('tijdstippen van SOC p50 en prognose verschillen');
+      if(hasX&&!x.known&&!x.index)return invalid('tijdstip van SOC p50 is niet herkenbaar');
+      if(!label.known&&!x?.known)return invalid('tijdas bevat geen herkenbare tijdstippen');
+      dated=dated||!!label.dated||!!x?.dated;
+    }
+    // Clock-only category labels can verify every step and day rollover, but
+    // cannot prove an absolute date: a complete 24-hour shift remains ambiguous.
+    // Require the current day's fetched payload and a contiguous sequence;
+    // explicit dates/x timestamps are always checked when they are available.
+    if(!dated&&!contiguous)return invalid('kloktijden vormen geen aaneengesloten prognose');
+    if(anchor&&Number.isFinite(anchor.t)&&(anchor.t<slots[0].t||anchor.t>slots.at(-1).t))return invalid('de actuele SOC valt buiten de prognosetijdas');
+    return {valid:true,clockOnly:!dated};
+  }
   function nativeSOC(chart,slots){
     // Read the already rendered Balans p50 plan, including planned grid flows.
     // Pair category-axis samples with the existing ISO forecast timestamps.
-    const candidates=(chart?.data?.datasets||[]).filter(d=>!d.beOwnSOC&&
-      /^socp50$/i.test(String(d.label||'').replace(/[^a-z0-9]/gi,''))&&
-      Array.isArray(d.data)&&d.data.length===slots.length);
-    if(candidates.length!==1)return null;
+    const candidates=nativeCandidates(chart);
+    if(candidates.length!==1||!forecastGrid(chart,slots).valid)return null;
     return candidates[0].data.map(value=>{
       const soc=Array.isArray(value)?value[1]:value&&typeof value==='object'?value.y:value;
       return Number.isFinite(soc)&&soc>=0&&soc<=100?soc:null;
@@ -217,7 +276,7 @@
     }
     return out;
   }
-  root.BESOCExtras={clamp,project,nativeSOC,projectNative};
+  root.BESOCExtras={clamp,project,nativeSOC,projectNative,forecastGrid,sameForecastDay};
 })(window);
 
 (function(root){
@@ -662,8 +721,8 @@
       if(typeof CustomEvent==='function')document.dispatchEvent(new CustomEvent('be-installation-power',{detail:JSON.stringify({installation:id,rows:net})}));
       const rows=[...j.rows,...(j.latest?[j.latest]:[])].filter(r=>Number.isFinite(r.t)&&r.t<=now).map(r=>[r.t,Number.isFinite(r.s)?r.s:null,Number.isFinite(r.bo)?r.bo:null]);
       await persist(rows);compute();lastFetch=now;error='';
-      if(!payload||now-forecastFetch>300000){
-        try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=now;
+      if(!payload||now-forecastFetch>300000||!ext.sameForecastDay(forecastFetch,now)){
+        try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=Date.now();
           compute();
         }catch(e){error='Forecast tijdelijk niet beschikbaar';}
       }
@@ -724,7 +783,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   function panel(canvas){
     let p=document.getElementById('be-own-soc-panel');if(p)return p;
     p=document.createElement('section');p.id='be-own-soc-panel';p.className='be-own-soc';
-    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite" title="Geschatte resterende energie uit coulombtelling en het gemeten spanningsprofiel. Geen directe energiemeting; bij lage SOC is de onzekerheid groter.">— kWh</strong></div><span data-energy></span></header><output data-state></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
+    p.innerHTML=`<header><div class="be-soc-current"><span class="be-soc-line">Coulombtelling in/uit</span><strong data-soc>—</strong></div><div class="be-soc-chemical"><span class="be-soc-chemical-label">Chemische inhoud</span><strong data-chemical aria-live="polite" title="Geschatte resterende energie uit coulombtelling en het gemeten spanningsprofiel. Geen directe energiemeting; bij lage SOC is de onzekerheid groter.">— kWh</strong></div><span data-energy></span></header><output data-state></output><output data-forecast-state hidden role="status"></output><details><summary>Herijken en instellingen</summary><form data-manual><label>Nieuwe SOC %<input name="soc" type="number" min="0" max="100" step="0.1" required></label><button>Herijk alleen de blauwe telling</button></form><form data-settings class="be-capacity-card">
   <div class="be-capacity-title">Accucapaciteit</div>
   <label class="be-capacity-method">Invoermethode
     <select name="capacityMode"><option value="kwh">kWh handmatig</option><option value="fcc">FCC per accu (Ah)</option></select>
@@ -744,7 +803,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </div>
   <div class="be-capacity-footer"><output data-capacity-preview aria-live="polite"></output><button type="submit">Capaciteit opslaan</button></div>
   <small data-capacity-help></small>
-</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><p>De blauwe vooruitblik volgt de verwachte SOC-beweging van Balans SOC p50, inclusief gepland laden en ontladen, vanaf de actuele eigen coulombtelling. Dit is een prognose, geen gemeten Ah-telling. PV en huisverbruik worden daarin niet nogmaals opgeteld. Ontbreekt een bruikbare p50-bron, dan wordt alleen PV/verbruik geraamd; meet- en prognosegaten worden niet overbrugd.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
+</form><p>Blauw telt Ah in/uit. De accustroom wordt geschat uit BE-accuvermogen en het gemeten 16S-LiFePO₄-spanningsprofiel: afhankelijk van gemelde SOC, belasting en laad-/ontlaadrichting. SOC = start-SOC + 100 × (Ah in − Ah uit) / Ah-capaciteit. Dit profiel schat de spanning; er wordt geen vaste laadverliescorrectie toegepast. Bij ontbrekende gemelde SOC blijft de telling lopen met de laatst bekende SOC voor het spanningsprofiel. De gemeten kWh-in/uitmeters lopen ook bij herijking door.</p><p>Chemische inhoud (~ kWh) is een schatting op basis van de spanning over de resterende Ah. Daarvoor wordt het gemiddelde van de gemeten laad- en ontlaadcurve gebruikt. De schatting gebruikt dezelfde SOC-telling; een afwijkend SOC-nulpunt wordt hiermee niet gecorrigeerd. Bij lage SOC is de onzekerheid groter.</p><p>Bij dalen naar 10% en lager volgt blauw de laagste originele SOC; zodra de telling stijgt, gaat hij zelfstandig verder. Bij stijgen naar 95% en hoger volgt blauw de hoogste originele SOC; zodra de telling daalt, gaat hij zelfstandig verder. De terugweg langs 10% of 95% herijkt niet opnieuw. Bij het bereiken van precies 5% of 100% BE-SOC wordt altijd opnieuw geijkt, ook na een eerdere richtingswisseling; een blijvend eindpunt blokkeert daarna geen nieuwe in-/uittelling. De getoonde kWh in/uit zijn sinds het laatste ijkpunt; de volledige telling blijft doorlopen.</p><p>De blauwe vooruitblik volgt de verwachte SOC-beweging van Balans SOC p50, inclusief gepland laden en ontladen, vanaf de actuele eigen coulombtelling. Dit is een prognose, geen gemeten Ah-telling. PV en huisverbruik worden daarin niet nogmaals opgeteld. Ontbreekt een bruikbare p50-bron, dan wordt alleen PV/verbruik geraamd; meet- en prognosegaten worden niet overbrugd. Bij ontbrekende of tegenstrijdige tijdinformatie wacht de vooruitblik op vernieuwde prognosegegevens.</p><button type="button" data-export>Exporteer telgegevens</button><output data-history></output><p data-log></p><ul data-events></ul></details>`;
     canvas.parentElement.insertAdjacentElement('afterend',p);
     const f=p.querySelector('[data-settings]'),resolved=window.BECapacity.resolve(cfg);
     f.elements.capacityMode.value=cfg.capacityMode==='fcc'?'fcc':'kwh';
@@ -774,7 +833,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -788,16 +847,19 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
   function forecastValues(chart){
-    const items=payload?.items;if(!items?.length)return null;
+    const pending=notice=>({actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice});
+    const items=payload?.items;if(!items?.length)return pending('Vooruitblik wacht op prognosegegevens.');
+    if(!ext.sameForecastDay(forecastFetch))return pending('Vooruitblik wacht op vernieuwde prognosegegevens voor vandaag.');
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
       load:i.usage_kwh?.[k],pv:i.pv_production_kwh?.[k]})));
-    if(slots.length!==chart.data.labels?.length)return null;
     const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
     const visible=(result?.points||[]).map(p=>({...p,soc:visualSoc(p)})),last=latest();
     const anchor=last?{...last,soc:visualSoc(last)}:null;
+    const grid=ext.forecastGrid(chart,slots,anchor);
+    if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.');
     const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);
     return {actual:slots.map(q=>core.at(visible,q.t,c.maxGapMs)),
-      future:planned||ext.project(slots,anchor,c,power),basis:planned?'BE-planning':'PV/verbruik'};
+      future:planned||ext.project(slots,anchor,c,power),basis:planned?'BE-planning':'PV/verbruik',notice:''};
   }
   function applyVisibility(chart){
     chart.data.datasets.forEach((d,i)=>{
@@ -874,6 +936,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
     const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
     for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}
+    const forecastState=p.querySelector('[data-forecast-state]');
+    if(forecastState){
+      const notice=chart.canvas.id==='soc-forecast-chart'?chart.$beForecastNotice||'':'';
+      textIfChanged(forecastState,notice);forecastState.hidden=!notice;
+    }
   }
   function decorate(chart){
 
@@ -886,7 +953,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       if(history)points=window.BESocHistory.project(chart,points,range);
       dataset(chart,'measured','Coulombtelling in/uit',points,{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
-      const f=forecastValues(chart);if(f){dataset(chart,'measured','Coulombtelling in/uit gemeten',f.actual,{yAxisID:'y'});dataset(chart,'forecast','Coulombtelling in/uit verwachting · '+f.basis,f.future,{yAxisID:'y',borderDash:[],borderWidth:1.2,beForecastBasis:f.basis});}
+      const f=forecastValues(chart);
+      chart.$beForecastNotice=f?.notice||'';
+      // These category-axis arrays are projections into the current native grid.
+      // Clear both when the grid is unverified; stored measured SOC is untouched.
+      dataset(chart,'measured','Coulombtelling in/uit gemeten',f&&!f.pending?f.actual:[],{yAxisID:'y'});
+      dataset(chart,'forecast','Coulombtelling in/uit verwachting · '+(f?.basis||'Wachten op tijdkoppeling'),f&&!f.pending?f.future:[],{yAxisID:'y',borderDash:[],borderWidth:1.2,beForecastBasis:f?.basis||'Wachten op tijdkoppeling'});
     }
     if(chart.canvas.id==='soc-forecast-chart')attachPastColors(chart);
     applyVisibility(chart);

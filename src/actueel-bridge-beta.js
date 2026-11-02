@@ -9,6 +9,28 @@
  function chart(){return (typeof Chart!=='undefined'&&Chart.getChart)?Chart.getChart(CANVAS):null;}
  function euro(v){return '\u20ac '+v.toFixed(3).replace('.',',');}
  function allin(kaal,isExport){return isExport?kaal*st.btw-st.opslag+(st.saldeert?st.eb:0):kaal*st.btw+st.opslag+st.eb;}
+ function prijsRij(c,tekst,x,y){
+  var t;
+  if(/^\s*(?:Nu|ISP)\b/i.test(tekst))t=Date.now();
+  else{
+   var pixel=x,transform=c.ctx.getTransform?.(),ratio=c.currentDevicePixelRatio||1;
+   if(transform&&[transform.a,transform.c,transform.e].every(Number.isFinite))pixel=(transform.a*x+transform.c*y+transform.e)/ratio;
+   t=c.scales?.x?.getValueForPixel?.(pixel);
+  }
+  if(!Number.isFinite(t))return null;
+  return (Array.isArray(st.rijen)?st.rijen:[]).find(function(r){return r.start<=t&&t<r.end&&!r.carried&&(!Number.isFinite(r.sourceStart)||r.sourceStart===r.start);})||null;
+ }
+ function prijsLabel(tekst,rij){
+  var bedrag=/(?:[+\-−]\s*)?€\s*(?:[+\-−]\s*)?\d+(?:[.,]\d+)?/g;
+  return tekst.split(/(?=\b(?:Import|Inkoop|Afname|Export|Invoeding|Teruglevering|Teruglever|Injectie)\b)/i).map(function(deel){
+   if(!deel.match(bedrag))return deel;
+   var richting=deel.match(/^\s*(Import|Inkoop|Afname|Export|Invoeding|Teruglevering|Teruglever|Injectie)\b/i);
+   var uitvoer=richting&&/^(Export|Invoeding|Teruglevering|Teruglever|Injectie)$/i.test(richting[1]);
+   var kaal=richting&&rij?rij[uitvoer?'ke':'ki']:null,bekend=Number.isFinite(kaal);
+   var nieuw=deel.replace(bedrag,bekend?euro(allin(kaal,!!uitvoer)):'prijs volgt (all-in)');
+   return bekend?nieuw:nieuw.replace(/\s*\/\s*kWh\b/gi,'');
+  }).join('');
+ }
  function wikkel(){
   var c=chart(); if(!c||!c.ctx)return;
   if(ctxRef===c.ctx&&c.ctx.__beAllinFillText)return;
@@ -17,24 +39,10 @@
   c.ctx.__beAllinOrigFill=basisFill;
   c.ctx.fillText=function(tekst,x,y,mw){
    try{
-    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\u20ac')!==-1&&/(?:\u2248|Import|Inkoop|Afname|Export|Teruglever|Injectie|ISP|Nu)/i.test(tekst)){
-     var explicietExport=/(?:Export|Teruglever|Injectie)/i.test(tekst);
-     var explicietImport=/(?:Import|Inkoop|Afname)/i.test(tekst);
-     var isExport=explicietExport;
-     var t=c.scales.x?c.scales.x.getValueForPixel(x):null;
-     var m=tekst.match(/\u20ac\s*([+\-\u2212]?\s*\d+(?:[.,]\d+)?)/);
-     var kaal=m?parseFloat(m[1].replace(/\s/g,'').replace('\u2212','-').replace(',','.')):null;
-     var rr=null;
-     if(t!=null){
-      for(var i=0;i<st.rijen.length;i++){
-       if(st.rijen[i].start<=t&&st.rijen[i].end>t){rr=st.rijen[i];break;}
-      }
-     }
-     if(rr&&!explicietExport&&!explicietImport&&kaal!=null&&isFinite(kaal))isExport=Math.abs(kaal-rr.ke)<Math.abs(kaal-rr.ki);
-     if((kaal==null||!isFinite(kaal))&&rr)kaal=isExport?rr.ke:rr.ki;
-     if(kaal!=null&&isFinite(kaal))tekst=tekst.replace(/\u20ac\s*[+\-\u2212]?\s*\d+(?:[.,]\d+)?/,euro(allin(kaal,isExport)));
+    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\u20ac')!==-1&&/(?:\u2248|Import|Inkoop|Afname|Export|Invoeding|Teruglever|Injectie|ISP|Nu)/i.test(tekst)){
+     tekst=prijsLabel(tekst,prijsRij(c,tekst,x,y));
     }
-   }catch(e){}
+   }catch(e){tekst=prijsLabel(tekst,null);}
    return basisFill(tekst,x,y,mw);
   };
   c.ctx.__beAllinFillText=true;

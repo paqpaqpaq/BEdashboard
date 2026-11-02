@@ -4,22 +4,39 @@
   if(window.BECurrentTariffCache)return;
   var TTL=30*60*1000,QUARTER=900000,PREFIX='be_current_tariffs_v1:',memory=new Map(),expires=new Map(),timer;
   var fields=['onbalans_import','onbalans_export'],PRICE_MODEL=2;
+  function planningContext(payload){
+    var plans=payload&&payload.dayAheadPlans,windows=payload&&payload.dayAheadUnavailableWindows,planned=new Set();
+    (Array.isArray(plans)?plans:[]).forEach(function(p){if(p&&p.direction==='import'&&Number.isFinite(p.start)&&p.start%QUARTER===0&&p.end===p.start+QUARTER)planned.add(p.start);});
+    return {authoritative:Array.isArray(plans)||Array.isArray(windows),planned:planned,
+      unknown:(Array.isArray(windows)?windows:[]).filter(function(w){return Array.isArray(w)&&Number.isFinite(w[0])&&Number.isFinite(w[1])&&w[1]>w[0];})};
+  }
+  function unknownPlanning(context,start){
+    return context.unknown.some(function(w){return start>=w[0]&&start<w[1];});
+  }
   // Store the planning decision alongside each quote. A day-ahead price may
   // exist outside a planned quarter, so its presence alone never selects it.
   function preparePrices(prices,payload){
-    var plans=payload&&payload.dayAheadPlans,unknown=payload&&payload.dayAheadUnavailableWindows;
-    var authoritative=Array.isArray(plans)||Array.isArray(unknown),planned=new Set();
-    (Array.isArray(plans)?plans:[]).forEach(function(p){if(p&&p.direction==='import'&&Number.isFinite(p.start)&&p.end===p.start+QUARTER)planned.add(p.start);});
+    var context=planningContext(payload),planned=context.planned;
     var rows=(prices||[]).slice(),missing=new Set(planned),current=Math.floor(Date.now()/QUARTER)*QUARTER;
-    if((Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&current>=w[0]&&current<w[1];}))missing.add(current);
+    if(unknownPlanning(context,current))missing.add(current);
     rows.forEach(function(p){if(p)missing.delete(p.start);});
     missing.forEach(function(start){rows.push({start:start,end:start+QUARTER,values:{},provisional:true,dayAheadPlaceholder:true});});
     return rows.map(function(p){
       if(!p)return p;
-      var state=authoritative?(planned.has(p.start)?'planned':(Array.isArray(unknown)?unknown:[]).some(function(w){return Array.isArray(w)&&p.start>=w[0]&&p.start<w[1];})?'unavailable':'none')
+      var state=context.authoritative?(planned.has(p.start)?'planned':unknownPlanning(context,p.start)?'unavailable':'none')
         :['planned','unavailable','none'].includes(p.dayAheadState)?p.dayAheadState:
           Object.keys(p.values||{}).some(function(key){return key.indexOf('day_ahead_')===0;})?'unavailable':'none';
       return Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
+    });
+  }
+  // A partial response can omit old price rows. Its explicit plans/windows still
+  // update those rows, while an empty plan list says nothing about their scope.
+  function applyPlanning(prices,payload){
+    var context=planningContext(payload);
+    return preparePrices(prices).map(function(p){
+      if(!p)return p;
+      var state=context.planned.has(p.start)?'planned':unknownPlanning(context,p.start)?'unavailable':null;
+      return state===null?p:Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
     });
   }
   function importMarket(p,afrr){
@@ -88,5 +105,5 @@
   }
   try{Array.from({length:localStorage.length},function(_,i){return localStorage.key(i);}).filter(function(key){return key&&key.indexOf(PREFIX)===0;}).forEach(function(key){read(key.slice(PREFIX.length));});}catch(_){}
   window.addEventListener('storage',function(event){if(event.key&&event.key.indexOf(PREFIX)===0){var id=event.key.slice(PREFIX.length);memory.delete(id);expires.delete(id);read(id);schedule();}});
-  window.BECurrentTariffCache={remember:remember,get:get,restore:restore,preparePrices:preparePrices,importMarket:importMarket,priceModel:PRICE_MODEL};schedule();
+  window.BECurrentTariffCache={remember:remember,get:get,restore:restore,preparePrices:preparePrices,applyPlanning:applyPlanning,importMarket:importMarket,priceModel:PRICE_MODEL};schedule();
 })();

@@ -54,6 +54,23 @@
   month and clear them after a successful automatic reload; official results
   always override local estimates.
 
+## Version 6.6.2 — presentation precision and source revisions
+
+- All-in applies to valid import/export prices regardless of a provisional
+  approximation marker. DOM/canvas amounts and tooltips must use full-precision
+  same-quarter API quotes, not rounded native label text. The native text/title
+  must be restored when all-in is disabled; repeated refreshes must not apply
+  taxes twice. A missing quote stays pending, never a guessed all-in amount.
+- Forecast sample counts alone do not establish time alignment. Validate native
+  timestamps/labels against the forecast slots; reject explicit mismatches and
+  clear old own datasets when the grid is not usable. Clock-only labels cannot
+  prove an absolute date: validate the whole clock sequence and preserve this
+  limitation rather than claiming absolute-date verification from HH:mm alone.
+- Explicit unknown planning windows and withdrawn day-ahead quotes must update
+  affected archived quarters and the status of provisional day amounts. A
+  network failure alone must not erase a valid archived result. Preserve raw
+  meter data and valid partial results; official results remain authoritative.
+
 ## Version 6.5 — scroll preservation, reported 27 October 2026
 
 - Background refreshes must preserve the user's scroll position with the TenneT

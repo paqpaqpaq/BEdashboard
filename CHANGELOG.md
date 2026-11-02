@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.6.2 — 2 november 2026
+
+- Correctie all-in prijsweergave in Actueel
+- Verbeterde tijdkoppeling forecast en verwerking prijscache
+
 ## 6.6.1 — 1 november 2026
 
 - aanpassing Coulombtelling in forecast op basis van geplande im- of export
