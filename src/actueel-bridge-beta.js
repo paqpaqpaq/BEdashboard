@@ -53,6 +53,36 @@
   try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}
   catch(e){console.error('[BE Actueel all-in bridge]',e);}
  });
+ var gridSwatches=new WeakMap(),tooltipSwatches=new WeakMap();
+ function restoreGridSwatch(tip){
+  var saved=tip&&tooltipSwatches.get(tip);if(!saved)return;
+  if(tip.labelColors===saved.themed)tip.labelColors=saved.source;
+  tooltipSwatches.delete(tip);
+ }
+ Chart.register({id:'beGrafietGridSwatch',
+  beforeDraw:function(c){if(c.canvas?.id===CANVAS)restoreGridSwatch(c.tooltip);},
+  beforeTooltipDraw:function(c,args){
+   if(c.canvas?.id!==CANVAS)return;
+   var tip=args.tooltip,html=document.documentElement;
+   if(html.getAttribute('data-be-dark')!=='aan'||html.getAttribute('data-be-dark-style')!=='grafiet'||
+      !Array.isArray(tip?.labelColors)||!Array.isArray(tip.dataPoints)||!c.ctx?.createLinearGradient)return;
+   var source=tip.labelColors,themed=source.slice(),changed=false;
+   tip.dataPoints.forEach(function(item,i){
+    var label=item.dataset?.label??c.data.datasets[item.datasetIndex]?.label;
+    if(!source[i]||!/^\s*Netaansluiting\b/i.test(label||''))return;
+    var white=gridSwatches.get(c.ctx);
+    if(!white){
+     // A solid gradient stays a foreground swatch through the canvas theme's
+     // background recolouring; a plain white fill would turn dark again.
+     white=c.ctx.createLinearGradient(0,0,1,0);
+     white.addColorStop(0,'#fff');white.addColorStop(1,'#fff');gridSwatches.set(c.ctx,white);
+    }
+    themed[i]=Object.assign({},source[i],{backgroundColor:white,borderColor:white});changed=true;
+   });
+   if(changed){tooltipSwatches.set(tip,{source:source,themed:themed});tip.labelColors=themed;}
+  },
+  afterTooltipDraw:function(c,args){restoreGridSwatch(args.tooltip);}
+ });
  var TG_KW=900000;
  var TG={rijen:[],aan:false,allin:true};
  function tgMarkt(q,kort){

@@ -375,7 +375,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.2'
+    '6.6.3'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -2188,6 +2188,36 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
     "  catch(e){console.error('[BE Actueel all-in bridge]',e);}\n" +
     " });\n" +
+    " var gridSwatches=new WeakMap(),tooltipSwatches=new WeakMap();\n" +
+    " function restoreGridSwatch(tip){\n" +
+    "  var saved=tip&&tooltipSwatches.get(tip);if(!saved)return;\n" +
+    "  if(tip.labelColors===saved.themed)tip.labelColors=saved.source;\n" +
+    "  tooltipSwatches.delete(tip);\n" +
+    " }\n" +
+    " Chart.register({id:'beGrafietGridSwatch',\n" +
+    "  beforeDraw:function(c){if(c.canvas?.id===CANVAS)restoreGridSwatch(c.tooltip);},\n" +
+    "  beforeTooltipDraw:function(c,args){\n" +
+    "   if(c.canvas?.id!==CANVAS)return;\n" +
+    "   var tip=args.tooltip,html=document.documentElement;\n" +
+    "   if(html.getAttribute('data-be-dark')!=='aan'||html.getAttribute('data-be-dark-style')!=='grafiet'||\n" +
+    "      !Array.isArray(tip?.labelColors)||!Array.isArray(tip.dataPoints)||!c.ctx?.createLinearGradient)return;\n" +
+    "   var source=tip.labelColors,themed=source.slice(),changed=false;\n" +
+    "   tip.dataPoints.forEach(function(item,i){\n" +
+    "    var label=item.dataset?.label??c.data.datasets[item.datasetIndex]?.label;\n" +
+    "    if(!source[i]||!/^\\s*Netaansluiting\\b/i.test(label||''))return;\n" +
+    "    var white=gridSwatches.get(c.ctx);\n" +
+    "    if(!white){\n" +
+    "     // A solid gradient stays a foreground swatch through the canvas theme's\n" +
+    "     // background recolouring; a plain white fill would turn dark again.\n" +
+    "     white=c.ctx.createLinearGradient(0,0,1,0);\n" +
+    "     white.addColorStop(0,'#fff');white.addColorStop(1,'#fff');gridSwatches.set(c.ctx,white);\n" +
+    "    }\n" +
+    "    themed[i]=Object.assign({},source[i],{backgroundColor:white,borderColor:white});changed=true;\n" +
+    "   });\n" +
+    "   if(changed){tooltipSwatches.set(tip,{source:source,themed:themed});tip.labelColors=themed;}\n" +
+    "  },\n" +
+    "  afterTooltipDraw:function(c,args){restoreGridSwatch(args.tooltip);}\n" +
+    " });\n" +
     " var TG_KW=900000;\n" +
     " var TG={rijen:[],aan:false,allin:true};\n" +
     " function tgMarkt(q,kort){\n" +
@@ -2887,11 +2917,85 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var actueelDagOphaling = null;
   var actueelDagPuntenScope = '';
   var actueelDagRevisie = 0;
+  var actueelDagEnergie = null;
+  var actueelDagKlok = new Intl.DateTimeFormat('en-GB', {
+    timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+  });
+  var actueelDagGetal = new Intl.NumberFormat('nl-NL', {minimumFractionDigits:1,maximumFractionDigits:1});
+  function actueelEnergieDag(nu) {
+    function delen(t){return Object.fromEntries(actueelDagKlok.formatToParts(t).map(function(p){return [p.type,p.value];}));}
+    var lokaal=delen(nu),utc=Date.UTC(+lokaal.year,+lokaal.month-1,+lokaal.day),offset=delen(utc);
+    // At 00:00 UTC the Amsterdam clock is one or two hours ahead; the
+    // summer-time change is later in the local night, not at midnight.
+    return {key:lokaal.year+'-'+lokaal.month+'-'+lokaal.day,start:utc-(+offset.hour*60 + +offset.minute)*60000};
+  }
+  function actueelTelDagEnergie(rows,veld,vanaf,tot) {
+    var plus=0,min=0,dekking=0;
+    function tel(kwh){if(kwh>=0)plus+=kwh;else min-=kwh;}
+    for(var i=1;i<rows.length;i++){
+      var a=rows[i-1],b=rows[i],dt=b.t-a.t;
+      if(!(dt>0&&dt<=300000)||!Number.isFinite(a[veld])||!Number.isFinite(b[veld]))continue;
+      var x=Math.max(vanaf,a.t),y=Math.min(tot,b.t);
+      if(y<=x)continue;
+      var w1=a[veld]+(b[veld]-a[veld])*(x-a.t)/dt,w2=a[veld]+(b[veld]-a[veld])*(y-a.t)/dt;
+      var uren=(y-x)/3600000000;
+      if(w1*w2<0){
+        var fractie=Math.abs(w1)/(Math.abs(w1)+Math.abs(w2));
+        tel(w1*uren*fractie/2);tel(w2*uren*(1-fractie)/2);
+      }else tel((w1+w2)*uren/2);
+      dekking+=y-x;
+    }
+    return dekking?{plus:plus,min:min,deel:tot-vanaf-dekking>300000}:null;
+  }
+  function actueelMeetDagEnergie(j,netRows,dag,tot) {
+    j=j||{};
+    var metingen=new Map();
+    (Array.isArray(j.rows)?j.rows:[]).concat(j.latest||[]).forEach(function(r){
+      if(!r||!Number.isFinite(r.t)||r.t<dag.start-300000||r.t>tot) return;
+      var sample=metingen.get(r.t)||{t:r.t};
+      ['bo','l','p','g'].forEach(function(k){if(Number.isFinite(r[k]))sample[k]=r[k];});
+      metingen.set(r.t,sample);
+    });
+    var rows=Array.from(metingen.values()).sort(function(a,b){return a.t-b.t;});
+    var pv=actueelTelDagEnergie(rows,'p',dag.start,tot),lokaal=actueelTelDagEnergie(rows,'g',dag.start,tot);
+    return {
+      scope:KLANT+':'+dag.key,tot:tot,
+      grid:actueelTelDagEnergie(netRows,'po',dag.start,tot),
+      battery:actueelTelDagEnergie(rows,'bo',dag.start,tot),
+      load:actueelTelDagEnergie(rows,'l',dag.start,tot),
+      pv:pv||lokaal?{plus:(pv?.plus||0)+(lokaal?.plus||0),min:(pv?.min||0)+(lokaal?.min||0),deel:!pv||!lokaal||pv.deel||lokaal.deel}:null
+    };
+  }
+  function actueelTekenDagEnergie() {
+    var legenda=document.querySelector('.energy-chart-legend');if(!legenda)return;
+    var nu=Date.now(),dag=actueelEnergieDag(nu);
+    var data=actueelDagEnergie?.scope===KLANT+':'+dag.key?actueelDagEnergie:null;
+    var stijl=document.getElementById('be-dagenergie-css');
+    if(!stijl){
+      stijl=document.createElement('style');stijl.id='be-dagenergie-css';
+      stijl.textContent='.energy-chart-legend [data-be-dagenergie]::after{content:attr(data-be-dagenergie);display:inline-block;margin-inline-start:.35em;font-size:.74em;font-weight:600;opacity:.76;white-space:nowrap}'+
+        '@media(max-width:900px){.energy-chart-legend [data-be-dagenergie]::after{display:block;margin-inline-start:0;text-align:end}}';
+      (document.head||document.documentElement).appendChild(stijl);
+    }
+    function energie(v){return actueelDagGetal.format(Math.abs(v)<.05?0:v)+' kWh';}
+    [['grid','import','export'],['battery','ontladen','laden'],['load'],['pv']].forEach(function(richting){
+      var key=richting[0],node=legenda.querySelector('#legend-'+key+'-power');if(!node)return;
+      var r=data&&data[key],deel=r&&(r.deel||nu-data.tot>300000);
+      var tekst=' / '+(r?(deel?'~ ':'')+energie(r.plus-r.min):'— kWh');
+      var tip=r?'Dagtotaal: '+(deel?'~ ':'')+energie(r.plus-r.min):'Dagtotaal: nog geen meetgegevens.';
+      if(r&&richting[1])tip+=' · '+richting[1]+' '+energie(r.plus)+' · '+richting[2]+' '+energie(r.min);
+      if(deel)tip+=' · Deel van de meetgegevens beschikbaar.';
+      if(node.getAttribute('data-be-dagenergie')!==tekst)node.setAttribute('data-be-dagenergie',tekst);
+      if(node.title!==tip)node.title=tip;
+    });
+  }
   function actueelHaalDagPunten() {
     if (!isActueelPagina() || !KLANT) return Promise.resolve();
     var klant = KLANT, beginVandaag = new Date();
     beginVandaag.setHours(0,0,0,0);
     var vanaf = beginVandaag.getTime(), tot = Date.now(), dagKey = iso(beginVandaag);
+    var energiedag = actueelEnergieDag(tot);
     var scope = klant + ':' + dagKey;
     if (actueelDagOphaling && actueelDagOphaling.scope === scope) return actueelDagOphaling.promise;
     if (actueelDagPuntenScope !== scope) {
@@ -2919,7 +3023,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }).catch(function(e){console.warn('[BE Actueel] dagcache:',e.message);});
     var u = new URL('/customer/current-history/api/',location.origin);
     u.searchParams.set('installation',klant);
-    u.searchParams.set('start',String(vanaf));
+    u.searchParams.set('start',String(Math.min(vanaf,energiedag.start)));
     u.searchParams.set('end',String(tot));
     var controller = new AbortController();
     var timeout = setTimeout(function(){controller.abort();},12000);
@@ -2931,10 +3035,13 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(!r.ok)throw new Error('HTTP '+r.status);
       return r.json();
     }).then(function(j){
-      if(KLANT!==klant || iso(new Date())!==dagKey)return;
+      if(revisie!==actueelDagRevisie || KLANT!==klant || iso(new Date())!==dagKey)return;
       // Publish raw measurements first; storage latency cannot hide the result.
       versOntvangen = true;
-      ontvang(beHistorieMetingen(j));
+      var netRows=beHistorieMetingen(j);
+      actueelDagEnergie=actueelMeetDagEnergie(j,netRows,energiedag,tot);
+      actueelTekenDagEnergie();
+      ontvang(netRows);
       var werk = beArchiefWachtrij.then(function(){
         if(KLANT!==klant)return null;
         return beVerwerkBron(u,j);
@@ -3985,6 +4092,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     actueelInstalleerBridge();
 
     actueelBouwSchakelaar();
+
+    actueelTekenDagEnergie();
 
     tariefZorgKnop();
 
@@ -11675,7 +11784,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.2' +
+        'Instellingen v6.6.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12121,7 +12230,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.2. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.3. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12444,7 +12553,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.2</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>

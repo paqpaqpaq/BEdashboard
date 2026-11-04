@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.6.3 — 4 november 2026
+
+- Dagtotalen in kWh bij de vermogenskaarten
+- Wit netvakje in de tooltip van Grafiet
+
 ## 6.6.2 — 2 november 2026
 
 - Correctie all-in prijsweergave in Actueel
