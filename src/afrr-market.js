@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.6.3. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.4. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -16,7 +16,7 @@
   let bidDB,observedCustomer='',lastBidRead=0,keyStorageWarning='';
   let marketHistory=[],historyIdentity='',learnedSignature='',historyReadAt=0;
   let emsRows=[],emsInstallation='',emsRevision=0,emsDB,lastEmsRead=0,graphDuration=1800000,graphSelection=null;
-  let connectionCheck=null,checkMessage='';
+  let connectionCheck=null,checkMessage='',graphVisible=true;
   const owner=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   function panelEnabled(){try{return localStorage.getItem(PANEL_SETTING)!=='uit';}catch(_){return true;}}
 
@@ -559,7 +559,9 @@
   }
   function showPower(id,rows){
     if(id!==customer())return;
-    emsInstallation=id;emsRows=rows;emsRevision++;renderGraph();
+    const changed=id!==emsInstallation||rows.length!==emsRows.length||rows.some((r,i)=>r.t!==emsRows[i].t||r.po!==emsRows[i].po);
+    emsInstallation=id;emsRows=rows;
+    if(changed){emsRevision++;renderGraph();}
   }
   async function receivePower(event){
     if(!panelEnabled()||!coordinator)return;
@@ -740,7 +742,7 @@
     }
   }
   function renderGraph(){
-    if(!panelEnabled()||!placementTarget())return;
+    if(document.hidden||!graphVisible||!panelEnabled()||!placementTarget())return;
     const details=shadow?.querySelector('[data-power-graph]');if(!details?.open)return;
     const good=state?.scope===config.scope?state.good:null,container=shadow.querySelector('[data-power-plot]');
     const duration=graphDuration,now=Date.now();
@@ -837,7 +839,7 @@
     container.replaceChildren(svg);container.dataset.signature=signature;
   }
   function render(){
-    if(!shadow)return;
+    if(!shadow||document.hidden)return;
     if(!panelEnabled()){mount();return;}
     mount();const now=Date.now(),s=state?.scope===config.scope?state:null,good=s?.good,row=good?.latest;
     const stale=good&&(now-good.fetchedAt>90000||now-good.advancedAt>90000||now-row.end>300000);
@@ -853,6 +855,12 @@
     text('[data-key-label]',config.key?'Nieuwe API-sleutel (optioneel)':'TenneT API-sleutel');
     text('[data-settings-title]',config.key?'Verbinding · sleutel opgeslagen':'API-sleutel instellen');
     shadow.querySelector('[data-key]').placeholder=config.key?'Laat leeg om de opgeslagen sleutel te behouden':'Vul je eigen API-sleutel in';
+    shadow.querySelector('[data-connect]').disabled=inFlight;
+    renderSummary(row,stale,now);
+    renderGraph();
+    // Technical details are rendered on opening; collapsed content need not
+    // repeat the historical probability calculation or rebuild diagnostics.
+    if(!shadow.querySelector('[data-advanced]').open)return;
     text('[data-up]',number(row?.up)+' MW');text('[data-down]',number(row?.down)+' MW');
     text('[data-up-price]',row?.upPrice==null?'—':'€ '+number(row.upPrice,2)+' / MWh');
     text('[data-down-price]',row?.downPrice==null?'—':'€ '+number(row.downPrice,2)+' / MWh');
@@ -862,14 +870,12 @@
     text('[data-quarter]',q===null?'':('Bronkwartier '+time(q).slice(0,5)+'–'+time(q+900000).slice(0,5)+
       (q<Math.floor(now/900000)*900000?' · huidig kwartier nog niet gepubliceerd':'')));
     renderBids(row,stale,now);
-    renderSummary(row,stale,now);
-    renderGraph();
     const wait=s?.nextAt>now?Math.ceil((s.nextAt-now)/1000):0;
     text('[data-poll]',!config.enabled?'Automatisch verversen staat uit.':document.hidden?'Verversen wacht tot dit tabblad zichtbaar is.':
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.3'+
+      '\nDashboardversie: 6.6.4'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
@@ -904,6 +910,9 @@
   }
   async function tick(){
     if(busy||destroyed)return;clearTimeout(timer);
+    // Resume through visibilitychange, without waking storage/UI every five
+    // seconds in a hidden tab. Public BID/power events still retain their data.
+    if(document.hidden)return;
     if(!panelEnabled()){mount();return;}
     busy=true;
     let wakeAt=Date.now()+5000;
@@ -957,7 +966,7 @@
         wakeAt=Math.min(wakeAt,Date.now()+1100);
       }
       budgetState=await coordinator.read('budget');
-      await learnHistory();
+      if(!document.hidden)await learnHistory();
       localError='';
     }catch(e){localError=e instanceof Fault?e.message:'Regelvermogen kon niet worden bijgewerkt.';}
     finally{
@@ -965,7 +974,7 @@
       for(const s of [state,molState]){
         if(config.enabled&&!s?.authBlocked&&s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
       }
-      if(!destroyed&&panelEnabled())timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
+      if(!destroyed&&!document.hidden&&panelEnabled())timer=setTimeout(tick,Math.max(150,Math.min(5000,wakeAt-Date.now())));
     }
   }
   async function connect(event){
@@ -1069,6 +1078,16 @@
     shadow.querySelector('[data-forget]').addEventListener('click',forget);
     shadow.querySelector('[data-refresh]').addEventListener('click',tick);
     shadow.querySelector('[data-power-graph]').addEventListener('toggle',renderGraph);
+    shadow.querySelector('[data-advanced]').addEventListener('toggle',render);
+    if(typeof IntersectionObserver==='function'){
+      // Keep the SVG and its height intact while outside the viewport. The
+      // current rolling window and all cached measurements return on entry.
+      const observer=new IntersectionObserver(entries=>{
+        graphVisible=entries.some(entry=>entry.isIntersecting);
+        if(graphVisible)renderGraph();
+      },{rootMargin:'150px'});
+      observer.observe(shadow.querySelector('[data-power-graph]'));
+    }
     try{const saved=Number(localStorage.getItem('be_cfg_afrr_graph_span'));if([1800000,7200000,21600000].includes(saved))graphDuration=saved;}catch(_){}
     const rangeButtons=[...shadow.querySelectorAll('[data-graph-range]')];
     function selectRange(value){graphDuration=value;graphSelection=null;rangeButtons.forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.graphRange)===value)));renderGraph();}
@@ -1088,10 +1107,10 @@
     // The native dashboard owns its page tree. A broad childList observer
     // can otherwise reinsert this panel during a navigation teardown loop.
     new MutationObserver(mount).observe(document.documentElement,{attributes:true,attributeFilter:['data-be-dark','data-be-dark-style']});
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else render();});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();else clearTimeout(timer);});
     document.addEventListener('be-afrr-source',receiveBids);
     document.addEventListener('be-installation-power',receivePower);
-    document.addEventListener('be-tarief-update',()=>{if(panelEnabled())Promise.all([readBids(true),readPower(true)]).then(render);});
+    document.addEventListener('be-tarief-update',()=>{if(panelEnabled()&&!document.hidden)Promise.all([readBids(),readPower()]).then(render);});
     function settingChanged(){clearTimeout(timer);mount();if(panelEnabled())tick();}
     document.addEventListener('be-afrr-market-change',settingChanged);
     document.addEventListener('be-tennet-connection-change',()=>{if(!busy)tick();});

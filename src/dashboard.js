@@ -49,7 +49,7 @@
     if(series==='bid-import')return lighter(palette().red,.25);
     if(series==='bid-export')return lighter(palette().green,.25);
   }
-  function color(value,kind,canvas) {
+  function convertColor(value,kind,canvas) {
     var c=rgba(value);if(!c||c[3]===0)return value;
     var r=c[0],g=c[1],b=c[2],hi=Math.max(r,g,b),lo=Math.min(r,g,b),light=(r+g+b)/3,name;
     // A thin coloured stroke is a data series, not a neutral chart grid line.
@@ -68,6 +68,19 @@
     if(canvas&&kind==='background'&&name==='yellow')c[3]=Math.max(c[3],.85);
     if(kind==='text'&&hi-lo<48)return mapped;
     if(c[3]<1)return canvas?'rgba('+rgba(mapped).slice(0,3).join(',')+','+c[3]+')':'color-mix(in srgb,'+mapped+' '+(c[3]*100)+'%,transparent)';
+    return mapped;
+  }
+  var canvasColors=new Map();
+  function color(value,kind,canvas) {
+    if(!canvas)return convertColor(value,kind,false);
+    // Gradients/patterns already describe their own colours. Repeated canvas
+    // primitives otherwise share a small set of strings within each palette.
+    if(typeof value!=='string')return value;
+    var key=(enabled?'1':'0')+'|'+selected+'|'+kind+'|'+value;
+    if(canvasColors.has(key))return canvasColors.get(key);
+    var mapped=convertColor(value,kind,true);
+    if(canvasColors.size>=512)canvasColors.clear();
+    canvasColors.set(key,mapped);
     return mapped;
   }
   var colorPattern=/(?:rgba?|hsla?|color)\([^)]*\)|#[\da-f]{3,8}\b|\b(?:white|black|gr[ae]y|transparent)\b/gi;
@@ -375,7 +388,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.3'
+    '6.6.4'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -1116,6 +1129,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         nu
     };
 
+    if (eerder) {
+      var vergelijk = Object.assign({}, opslag[dagKey], { bijgewerkt: eerder.bijgewerkt });
+      if (JSON.stringify(vergelijk) === JSON.stringify(eerder)) return true;
+    }
     schrijfVoorlopigeDagen(
       opslag
     );
@@ -2080,6 +2097,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   var actueelRijen = [];
   var actueelDagPunten = [];
+  var actueelDagBerekening = null;
   var actueelLaatstGeschreven = null;
   var actueelGestart = false;
   var actueelWasPagina = false;
@@ -2138,6 +2156,37 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "\n" +
     " if(window.__beActueelAllinBridge)return;\n" +
     " window.__beActueelAllinBridge=true;\n" +
+    " function beChartRefresh(){\n" +
+    "  if(window.BEChartRefresh)return window.BEChartRefresh;\n" +
+    "  var pending=new Map(),queued=false;\n" +
+    "  function schedule(){\n" +
+    "   if(queued||document.hidden||!pending.size)return;\n" +
+    "   queued=true;\n" +
+    "   (typeof requestAnimationFrame==='function'?requestAnimationFrame:function(f){setTimeout(f,0);})(flush);\n" +
+    "  }\n" +
+    "  function flush(){\n" +
+    "   queued=false;if(document.hidden)return;\n" +
+    "   var work=Array.from(pending);pending.clear();\n" +
+    "   work.forEach(function(pair){\n" +
+    "    var c=pair[0],job=pair[1];if(!c.canvas||c.canvas.isConnected===false)return;\n" +
+    "    try{\n" +
+    "     var update=job.update;\n" +
+    "     job.prepare.forEach(function(prepare){if(prepare())update=true;});\n" +
+    "     if(update&&typeof c.update==='function')c.update('none');\n" +
+    "     else if(job.draw&&typeof c.draw==='function')c.draw();\n" +
+    "    }catch(e){console.error('[BE grafiekupdate]',e);}\n" +
+    "   });\n" +
+    "  }\n" +
+    "  var api={request:function(c,mode,prepare){\n" +
+    "   if(!c)return;\n" +
+    "   var job=pending.get(c);if(!job){job={update:false,draw:false,prepare:new Set()};pending.set(c,job);}\n" +
+    "   if(mode==='update')job.update=true;else if(mode==='draw')job.draw=true;\n" +
+    "   if(prepare)job.prepare.add(prepare);\n" +
+    "   schedule();\n" +
+    "  }};\n" +
+    "  document.addEventListener('visibilitychange',schedule);\n" +
+    "  window.BEChartRefresh=api;return api;\n" +
+    " }\n" +
     " var CANVAS='battery-chart';\n" +
     " var st={rijen:[],aan:true,eb:0.11085,btw:1.21,opslag:0.02,saldeert:true};\n" +
     " var ctxRef=null;\n" +
@@ -2156,7 +2205,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  return (Array.isArray(st.rijen)?st.rijen:[]).find(function(r){return r.start<=t&&t<r.end&&!r.carried&&(!Number.isFinite(r.sourceStart)||r.sourceStart===r.start);})||null;\n" +
     " }\n" +
     " function prijsLabel(tekst,rij){\n" +
-    "  var bedrag=/(?:[+\\-\u2212]\\s*)?\u20ac\\s*(?:[+\\-\u2212]\\s*)?\\d+(?:[.,]\\d+)?/g;\n" +
+    "  var bedrag=/(?:[+\\-−]\\s*)?€\\s*(?:[+\\-−]\\s*)?\\d+(?:[.,]\\d+)?/g;\n" +
     "  return tekst.split(/(?=\\b(?:Import|Inkoop|Afname|Export|Invoeding|Teruglevering|Teruglever|Injectie)\\b)/i).map(function(deel){\n" +
     "   if(!deel.match(bedrag))return deel;\n" +
     "   var richting=deel.match(/^\\s*(Import|Inkoop|Afname|Export|Invoeding|Teruglevering|Teruglever|Injectie)\\b/i);\n" +
@@ -2182,7 +2231,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  };\n" +
     "  c.ctx.__beAllinFillText=true;\n" +
     " }\n" +
-    " function verver(){var c=chart();if(!c)return;if(typeof c.update==='function')c.update('none');if(typeof c.draw==='function')c.draw();}\n" +
+    " function verver(){var c=chart();if(c)beChartRefresh().request(c,'draw');}\n" +
     " document.addEventListener('be-actueel-allin-update',function(){\n" +
     "  var n=document.getElementById('be-actueel-allin-data');if(!n)return;\n" +
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
@@ -2219,7 +2268,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  afterTooltipDraw:function(c,args){restoreGridSwatch(args.tooltip);}\n" +
     " });\n" +
     " var TG_KW=900000;\n" +
-    " var TG={rijen:[],aan:false,allin:true};\n" +
+    " var TG={rijen:[],aan:false,allin:true},tgRevision=0,tgSource=null;\n" +
+    " function tgLees(n){var raw=n.textContent||'{}';if(raw===tgSource)return;TG=Object.assign(TG,JSON.parse(raw));tgSource=raw;tgRevision++;}\n" +
     " function tgMarkt(q,kort){\n" +
     "  if(q.marktImport==='Prijsbron onbekend')return kort?'bron?':'prijsbron onbekend';\n" +
     "  if(q.gemengdImport||q.marktImport==='Dynamisch + aFRR')return kort?'dyn.+aFRR':'dynamisch + aFRR';\n" +
@@ -2284,29 +2334,46 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "       if(!i.length)return '';\n" +
     "       var tm=i[0].parsed.x;\n" +
     "       var q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
-    "       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' \u00b7 afname '+(q.marktImport||'Prijsbron onbekend')+' / invoeding '+(q.marktExport||'Prijsbron onbekend'):'');\n" +
+    "       return new Date(tm).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})+(q?' · afname '+(q.marktImport||'Prijsbron onbekend')+' / invoeding '+(q.marktExport||'Prijsbron onbekend'):'');\n" +
     "      },afterBody:function(i){\n" +
     "       if(!i.length)return [];\n" +
     "       var tm=i[0].parsed.x, q=(i[0].chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
     "       if(!q)return [];\n" +
-    "       var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend \u00b7 voorlopig':q.provisional===false?'Definitief':'Voorlopig'];\n" +
+    "       var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend · voorlopig':q.provisional===false?'Definitief':'Voorlopig'];\n" +
     "       if(q.gemengdImport)out.push('Afname: ongewogen gemiddelde van dynamisch en aFRR; indicatieve API-prijs.');\n" +
     "       if(q.marktImport==='Prijsbron onbekend')out.push('Day-aheadplanning niet beschikbaar; afnameprijs onbekend.');\n" +
     "       return out;\n" +
     "      },\n" +
     "      label:function(z){\n" +
     "       var tm=z.parsed.x,q=(z.chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});\n" +
-    "       var prijs=Number.isFinite(z.parsed.y)?z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'\u2014';\n" +
-    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'\u2248 ':'')+prijs+' / kWh';\n" +
+    "       var prijs=Number.isFinite(z.parsed.y)?z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'—';\n" +
+    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh';\n" +
     "      }}}}}});\n" +
     "  return tgChart;\n" +
     " }\n" +
     " function tgVul(){\n" +
+    "  var rij=document.getElementById('be-tarief-row');if(rij)rij.hidden=!TG.aan;\n" +
+    "  if(!TG.aan)return;\n" +
+    "  var ch=tgMaak();if(ch)beChartRefresh().request(ch,'prepare',tgWerkBij);\n" +
+    " }\n" +
+    " function tgWerkBij(){\n" +
     "  var rij=document.getElementById('be-tarief-row');\n" +
     "  if(rij)rij.hidden=!TG.aan;\n" +
     "  if(!TG.aan)return;\n" +
     "  var ch=tgMaak(); if(!ch)return;\n" +
-    "  var bv=chart();\n" +
+    "  var bv=chart(),nu=Date.now(),xs=bv&&bv.scales&&bv.scales.x;\n" +
+    "  var srcRect=bv&&bv.canvas&&bv.canvas.getBoundingClientRect?bv.canvas.getBoundingClientRect():null;\n" +
+    "  var dstRect=ch.canvas.getBoundingClientRect?ch.canvas.getBoundingClientRect():null;\n" +
+    "  var active=(TG.rijen||[]).some(function(r){return r.start<=nu&&nu<r.end&&(!xs||r.end>=xs.min&&r.start<=xs.max);});\n" +
+    "  var bx=bv&&bv.options.scales&&bv.options.scales.x;\n" +
+    "  var ticks=xs&&xs.ticks?xs.ticks.map(function(t){return {value:t.value};}):[];\n" +
+    "  // A historical/still view needs no repaint. Keep the moving endpoint of a\n" +
+    "  // visible running quarter at its existing three-second cadence.\n" +
+    "  var signature=JSON.stringify([tgRevision,xs&&xs.min,xs&&xs.max,bx&&bx.type,bx&&bx.time,bx&&bx.bounds,bx&&bx.offset,\n" +
+    "   bx&&bx.ticks&&[bx.ticks.maxRotation,bx.ticks.autoSkip,bx.ticks.source,bx.ticks.font,bx.ticks.color,bx.ticks.autoSkipPadding,bx.ticks.padding],\n" +
+    "   ticks,bv&&bv.width,bv&&bv.chartArea&&[bv.chartArea.left,bv.chartArea.right],ch.width,\n" +
+    "   srcRect&&[srcRect.left,srcRect.width],dstRect&&[dstRect.left,dstRect.width],active?Math.floor(nu/3000):0]);\n" +
+    "  if(ch.$beTariefSignature===signature)return false;\n" +
     "  if(bv&&bv.options.scales&&bv.options.scales.x){\n" +
     "   var bx=bv.options.scales.x;\n" +
     "   ch.options.scales.x=JSON.parse(JSON.stringify({type:bx.type,time:bx.time,bounds:bx.bounds,offset:bx.offset,grid:{display:false},\n" +
@@ -2314,7 +2381,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   if(bv.scales.x){ch.options.scales.x.min=bv.scales.x.min;ch.options.scales.x.max=bv.scales.x.max;}\n" +
     "  }\n" +
     "  var mn=ch.options.scales.x.min,mx=ch.options.scales.x.max;\n" +
-    "  var imp=[],exp=[],kw=[],gezien={}; var nu=Date.now();\n" +
+    "  var imp=[],exp=[],kw=[],gezien={};\n" +
     "  (TG.rijen||[]).forEach(function(r){\n" +
     "   if(mn!=null&&r.end<mn)return;\n" +
     "   if(mx!=null&&r.start>mx)return;\n" +
@@ -2345,32 +2412,33 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  });\n" +
     "  ch.data.datasets[0].data=imp; ch.data.datasets[1].data=exp;\n" +
     "  // Match both plot edges in screen coordinates, including differing canvas offsets.\n" +
-    "  if(bv&&bv.chartArea&&bv.scales.x){\n" +
-    "   var srcRect=bv.canvas.getBoundingClientRect(),dstRect=ch.canvas.getBoundingClientRect();\n" +
+    "  if(bv&&bv.chartArea&&bv.scales.x&&srcRect&&dstRect){\n" +
     "   var srcRatio=srcRect.width/bv.width,dstRatio=dstRect.width/ch.width;\n" +
     "   if(srcRatio>0&&dstRatio>0){\n" +
     "    var left=(srcRect.left+bv.chartArea.left*srcRatio-dstRect.left)/dstRatio;\n" +
     "    var right=(srcRect.left+bv.chartArea.right*srcRatio-dstRect.left)/dstRatio;\n" +
     "    ch.options.layout.padding={top:6,left:0,right:Math.max(0,ch.width-right)};\n" +
     "    ch.options.scales.y.afterFit=function(axis){axis.width=Math.max(0,left);};\n" +
-    "    var ticks=bv.scales.x.ticks.map(function(t){return {value:t.value};});\n" +
     "    ch.options.scales.x.afterBuildTicks=function(axis){axis.ticks=ticks;};\n" +
     "    ch.options.scales.x.ticks.autoSkip=false;\n" +
     "   }\n" +
     "  }\n" +
-    "  ch.$beKwartieren=kw; ch.update('none');\n" +
+    "  ch.$beKwartieren=kw; ch.$beTariefSignature=signature; return true;\n" +
     " }\n" +
     " document.addEventListener('be-tarief-update',function(){\n" +
     "  var n=document.getElementById('be-tarief-data'); if(!n)return;\n" +
-    "  try{TG=Object.assign(TG,JSON.parse(n.textContent||'{}'));tgVul();}\n" +
+    "  try{tgLees(n);tgVul();}\n" +
     "  catch(e){console.error('[BE tariefgrafiek bridge]',e);}\n" +
     " });\n" +
     " var initial=document.getElementById('be-actueel-allin-data');\n" +
     " try{if(initial)st=Object.assign(st,JSON.parse(initial.textContent||'{}'));}catch(e){}\n" +
     " var initialTarief=document.getElementById('be-tarief-data');\n" +
-    " try{if(initialTarief)TG=Object.assign(TG,JSON.parse(initialTarief.textContent||'{}'));}catch(e){}\n" +
+    " try{if(initialTarief)tgLees(initialTarief);}catch(e){}\n" +
     " wikkel();tgVul();\n" +
-    " setInterval(function(){ if(TG.aan) tgVul(); },3000);\n" +
+    " Chart.register({id:'beTariefViewportSync',afterUpdate:function(c){if(c.canvas?.id===CANVAS)tgVul();}});\n" +
+    " document.addEventListener('visibilitychange',function(){if(!document.hidden){wikkel();tgVul();}});\n" +
+    " window.addEventListener('resize',tgVul,{passive:true});\n" +
+    " setInterval(function(){ if(TG.aan&&!document.hidden) tgVul(); },3000);\n" +
     " setInterval(wikkel,3000);\n" +
     " console.log('[BE Actueel all-in bridge] actief');\n" +
     "})();\n";
@@ -2576,6 +2644,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       actueelRijen=beLivePrijsRows.map(actueelPrijsRij).filter(function(r){return Number.isFinite(r.ki)||Number.isFinite(r.ke);});
     }
     var uit = [];
+    // Sort the daily measurements once, then integrate just the points that
+    // bracket each quarter. Keep both edge neighbours for exact interpolation.
+    var dagPunten = actueelDagPunten.filter(function(p){
+      return p && Number.isFinite(p.x) && Number.isFinite(p.y);
+    }).sort(function(a,b){return a.x-b.x;});
 
     var bekend = {};
 
@@ -2616,11 +2689,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if (!r.carried && actueelDagPunten.length) {
         var b =
           actueelProjectieBereken(
-            actueelDagPunten,
+            dagPunten,
             [r],
             r.start,
             r.end,
-            nu
+            nu,
+            true
           );
 
         if (b && !b.ongeldig && b.gemetenMs > 0) {
@@ -3006,12 +3080,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     function ontvang(rows) {
       if (revisie !== actueelDagRevisie) return;
       if (KLANT !== klant || iso(new Date()) !== dagKey || actueelDagPuntenScope !== scope) return;
-      var map = new Map(actueelDagPunten.map(function(p){return [p.x,p];}));
+      var map = new Map(actueelDagPunten.map(function(p){return [p.x,p];})), gewijzigd = false;
       (rows || []).forEach(function(r){
-        if(r && Number.isFinite(r.t) && Number.isFinite(r.po) && r.t >= vanaf && r.t <= tot)
-          map.set(r.t,{x:r.t,y:r.po});
+        if(r && Number.isFinite(r.t) && Number.isFinite(r.po) && r.t >= vanaf && r.t <= tot) {
+          var oud = map.get(r.t);
+          if (!oud || oud.y !== r.po) { map.set(r.t,{x:r.t,y:r.po}); gewijzigd = true; }
+        }
       });
-      actueelDagPunten = Array.from(map.values()).sort(function(a,b){return a.x-b.x;});
+      if (gewijzigd) actueelDagPunten = Array.from(map.values()).sort(function(a,b){return a.x-b.x;});
       actueelProjectieToon();
       tariefStuur();
     }
@@ -3710,7 +3786,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * Integreer lineair tussen metingen, gesplitst op prijsgrenzen en nul.
    * Geen extrapolatie voorbij de laatste meting; hiaten blijven zichtbaar.
    */
-  function actueelProjectieBereken(punten, prijzen, vanaf, tot, nu) {
+  function actueelProjectieBereken(punten, prijzen, vanaf, tot, nu, gesorteerd) {
     var uit = { bedrag: 0, importKwh: 0, exportKwh: 0, gedekt: 0,
       inkoopEur: 0, verkoopEur: 0,
       resultaatImportEur: 0, resultaatExportEur: 0,
@@ -3718,9 +3794,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       bronVanaf: vanaf, bronTot: tot, gaten: 0, ongeldig: false };
     var kwartier = 15 * 60 * 1000;
     var huidigStart = Math.floor(nu / kwartier) * kwartier;
-    var reeks = punten.filter(function (p) {
+    var reeks = gesorteerd ? punten : punten.filter(function (p) {
       return p && Number.isFinite(p.x) && Number.isFinite(p.y);
     }).slice().sort(function (a, b) { return a.x - b.x; });
+    // Ignore points outside the integration window, retaining the adjacent
+    // observations on either side. Original gap and zero-crossing rules stay.
+    function ondergrens(t) {
+      var l=0,h=reeks.length;
+      while(l<h){var m=(l+h)>>>1;if(reeks[m].x<t)l=m+1;else h=m;}
+      return l;
+    }
+    var eerste=Math.max(0,ondergrens(vanaf)-1),laatste=Math.min(reeks.length,ondergrens(tot)+1);
+    reeks=reeks.slice(eerste,laatste);
     // Meter totals are independent of tariff availability. Split sign changes
     // before integrating, so simultaneous daily import/export never cancel out.
     var gemetenImport = 0, gemetenExport = 0, gemetenMs = 0;
@@ -3974,7 +4059,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     var nu =
       Date.now();
 
-    var punten =
+    var vorig = actueelDagBerekening;
+    var punten = vorig && vorig.bron === actueelDagPunten ? vorig.punten :
       actueelDagPunten
         .filter(
           function (p) {
@@ -4015,13 +4101,17 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         ].x
       );
 
-    var res = actueelProjectieBereken(
-      punten,
-      actueelRijen,
-      vanaf,
-      tot,
-      nu
-    );
+    // Reuse the same measured-day result between source changes. Both time
+    // buckets matter: a completed quarter becomes 'older' after 20 minutes.
+    var klok = Math.floor(nu / 900000) + ':' + Math.floor((nu - 1200000) / 900000);
+    var gelijk = vorig && vorig.bron === actueelDagPunten && vorig.prijzen === actueelRijen &&
+      vorig.klant === KLANT && vorig.aan === actueelAan && vorig.vanaf === vanaf &&
+      vorig.tot === tot && vorig.klok === klok;
+    var res = gelijk ? vorig.res : actueelProjectieBereken(punten, actueelRijen, vanaf, tot, nu);
+    if (!gelijk) actueelDagBerekening = {
+      bron: actueelDagPunten, punten: punten, prijzen: actueelRijen, klant: KLANT,
+      aan: actueelAan, vanaf: vanaf, tot: tot, klok: klok, res: res
+    };
     bewaarVoorlopigeDag(
       iso(beginVandaag),
       res,
@@ -11784,7 +11874,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.3' +
+        'Instellingen v6.6.4' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12230,7 +12320,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.3. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.4. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12553,7 +12643,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.4</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13190,6 +13280,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var STYLE_ID = 'be-stabiele-cijfers-stijl';
   var MARKER = 'be-stabiel-getal';
   var scanGepland = false;
+  var panelen = [null, null];
+  var wachtPanelen = [null, null];
+  var ontdekPanelen = true;
 
   function voegStijlToe() {
     if (document.getElementById(STYLE_ID)) return;
@@ -13273,6 +13366,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   function vindPaneel(titel) {
     var titelElement = vindTitelElement(titel);
+    var index = titel === 'Live Status' ? 0 : 1;
+    wachtPanelen[index] = titelElement && (titelElement.closest('section,.card') ||
+      (titelElement.parentElement && titelElement.parentElement.parentElement));
     if (!titelElement) return null;
 
     var minimaal = titel === 'Laatste meting' ? 4 : 3;
@@ -13318,18 +13414,31 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   function markeerActueleCijfers() {
     scanGepland = false;
+    if (document.hidden) return;
     voegStijlToe();
 
-    var elementen = document.body ? document.body.querySelectorAll('*') : [];
-    var panelen = [vindPaneel('Live Status'), vindPaneel('Laatste meting')];
+    if (ontdekPanelen || panelen.some(function(p){return p && !p.isConnected;})) {
+      panelen = [vindPaneel('Live Status'), vindPaneel('Laatste meting')];
+      ontdekPanelen = false;
+    }
+    // Only live-value panels need numerical alignment; chart/status mutations
+    // elsewhere must not trigger layout reads across the whole dashboard.
+    var elementen = [], gezien = new Set();
+    panelen.forEach(function(paneel){
+      if (!paneel || !paneel.isConnected) return;
+      paneel.querySelectorAll('*').forEach(function(el){
+        if (!gezien.has(el)) { gezien.add(el); elementen.push(el); }
+      });
+    });
 
     for (var i = 0; i < elementen.length; i++) {
       var el = elementen[i];
       var waarde = tekst(el);
       var eenheid = eenheidVan(waarde);
+      if (!eenheid) continue;
       var paneelNummer = actueelPaneelNummer(el, panelen);
 
-      if (!eenheid || paneelNummer < 0) continue;
+      if (paneelNummer < 0) continue;
 
       /*
        * Het SOC-bolletje ligt ín de batterijtekening. Een geforceerde
@@ -13349,22 +13458,55 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   }
 
   function planScan() {
-    if (scanGepland) return;
+    if (scanGepland || document.hidden) return;
     scanGepland = true;
     requestAnimationFrame(markeerActueleCijfers);
+  }
+
+  function herontdek() {
+    ontdekPanelen = true;
+    planScan();
+  }
+
+  function mogelijkNieuwPaneel(node) {
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el || el.closest('script,style,canvas,noscript')) return false;
+    var inhoud = tekst(node);
+    return inhoud.indexOf('Live Status') !== -1 || inhoud.indexOf('Laatste meting') !== -1 ||
+      (panelen.some(function(p,i){return !p && wachtPanelen[i] && wachtPanelen[i].contains(el);}) && !!eenheidVan(inhoud));
+  }
+
+  function volgMeetwaarden(records) {
+    var geraakt = false;
+    if (panelen.some(function(p){return p && !p.isConnected;})) ontdekPanelen = true;
+    records.forEach(function(r){
+      var el = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+      var binnenPaneel = panelen.some(function(p){return p && el && p.contains(el);});
+      if (binnenPaneel) geraakt = true;
+      if (r.type === 'characterData') {
+        if (!binnenPaneel && mogelijkNieuwPaneel(r.target)) ontdekPanelen = true;
+      } else {
+        r.addedNodes.forEach(function(node){
+          if (mogelijkNieuwPaneel(node)) ontdekPanelen = true;
+        });
+      }
+    });
+    if (geraakt || ontdekPanelen) planScan();
   }
 
   voegStijlToe();
   planScan();
 
-  new MutationObserver(planScan).observe(document.documentElement, {
+  new MutationObserver(volgMeetwaarden).observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true
   });
 
   window.addEventListener('resize', planScan, { passive: true });
-  window.addEventListener('popstate', planScan, { passive: true });
+  window.addEventListener('popstate', herontdek, { passive: true });
+  window.addEventListener('hashchange', herontdek, { passive: true });
+  document.addEventListener('visibilitychange', function(){if(!document.hidden)herontdek();});
 }());
 
 
@@ -13422,10 +13564,23 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
       return out;
     }
-    let data = null, chartLibrary = null, pending = false;
+    let data = null, chartLibrary = null, pending = false, sourceText = null, drawnChart = null;
+    let marksData = null, marksQuarter = null, cachedMarks = [];
     function read() {
-      try { data = JSON.parse(document.getElementById('be-tarief-data')?.textContent || 'null'); }
+      const source = document.getElementById('be-tarief-data')?.textContent || 'null';
+      if (source === sourceText) return false;
+      sourceText = source;
+      try { data = JSON.parse(source); }
       catch (_) { data = null; }
+      return true;
+    }
+    function currentMarks() {
+      const now = Date.now(), quarter = Math.floor(now / 900000);
+      if (marksData !== data || marksQuarter !== quarter) {
+        marksData = data; marksQuarter = quarter;
+        cachedMarks = data?.aan && Array.isArray(data.rijen) ? crossings(data.rijen, now) : [];
+      }
+      return cachedMarks;
     }
     const plugin = {
       id: 'beDagBreakevenTest',
@@ -13433,7 +13588,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         if (chart.canvas?.id !== 'be-tarief-chart' || !data?.aan || !Array.isArray(data.rijen)) return;
         const a = chart.chartArea, x = chart.scales.x, ctx = chart.ctx;
         if (!a || !x) return;
-        const marks = crossings(data.rijen, Date.now());
+        const marks = currentMarks();
         ctx.save();
         ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip();
         let lastLabelX = -Infinity, lane = 0;
@@ -13474,12 +13629,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
     };
     function update() {
-      pending = false; read();
+      pending = false;
+      if (document.hidden) return;
+      const changed = read();
       const C = window.Chart;
       if (!C || typeof C.register !== 'function') return;
       if (chartLibrary !== C) { C.register(plugin); chartLibrary = C; }
       const chart = C.getChart('be-tarief-chart');
-      if (chart) chart.draw();
+      if (chart && (changed || drawnChart !== chart)) {
+        drawnChart = chart;
+        if (window.BEChartRefresh) window.BEChartRefresh.request(chart, 'draw');
+        else chart.draw();
+      }
       let note = document.getElementById('be-break-even-note');
       const row = document.getElementById('be-tarief-row');
       if (!row) return;
@@ -13487,10 +13648,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         note = document.createElement('p'); note.id = 'be-break-even-note';
         note.className = 'charging-chart-note'; row.appendChild(note);
       }
-      const marks = data?.aan && Array.isArray(data.rijen) ? crossings(data.rijen, Date.now()) : [];
+      const marks = currentMarks();
       const indicative = marks.some(m => m.estimated);
       note.hidden = !indicative;
-      note.textContent = indicative ? '≈ Break even van het berekende dagresultaat; ontbrekende prijzen of het lopende kwartier maken dit voorlopig.' : '';
+      const text = indicative ? '≈ Break even van het berekende dagresultaat; ontbrekende prijzen of het lopende kwartier maken dit voorlopig.' : '';
+      if (note.textContent !== text) note.textContent = text;
     }
     function schedule() {
       if (pending) return;

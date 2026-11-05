@@ -3,6 +3,37 @@
 
  if(window.__beActueelAllinBridge)return;
  window.__beActueelAllinBridge=true;
+ function beChartRefresh(){
+  if(window.BEChartRefresh)return window.BEChartRefresh;
+  var pending=new Map(),queued=false;
+  function schedule(){
+   if(queued||document.hidden||!pending.size)return;
+   queued=true;
+   (typeof requestAnimationFrame==='function'?requestAnimationFrame:function(f){setTimeout(f,0);})(flush);
+  }
+  function flush(){
+   queued=false;if(document.hidden)return;
+   var work=Array.from(pending);pending.clear();
+   work.forEach(function(pair){
+    var c=pair[0],job=pair[1];if(!c.canvas||c.canvas.isConnected===false)return;
+    try{
+     var update=job.update;
+     job.prepare.forEach(function(prepare){if(prepare())update=true;});
+     if(update&&typeof c.update==='function')c.update('none');
+     else if(job.draw&&typeof c.draw==='function')c.draw();
+    }catch(e){console.error('[BE grafiekupdate]',e);}
+   });
+  }
+  var api={request:function(c,mode,prepare){
+   if(!c)return;
+   var job=pending.get(c);if(!job){job={update:false,draw:false,prepare:new Set()};pending.set(c,job);}
+   if(mode==='update')job.update=true;else if(mode==='draw')job.draw=true;
+   if(prepare)job.prepare.add(prepare);
+   schedule();
+  }};
+  document.addEventListener('visibilitychange',schedule);
+  window.BEChartRefresh=api;return api;
+ }
  var CANVAS='battery-chart';
  var st={rijen:[],aan:true,eb:0.11085,btw:1.21,opslag:0.02,saldeert:true};
  var ctxRef=null;
@@ -47,7 +78,7 @@
   };
   c.ctx.__beAllinFillText=true;
  }
- function verver(){var c=chart();if(!c)return;if(typeof c.update==='function')c.update('none');if(typeof c.draw==='function')c.draw();}
+ function verver(){var c=chart();if(c)beChartRefresh().request(c,'draw');}
  document.addEventListener('be-actueel-allin-update',function(){
   var n=document.getElementById('be-actueel-allin-data');if(!n)return;
   try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}
@@ -84,7 +115,8 @@
   afterTooltipDraw:function(c,args){restoreGridSwatch(args.tooltip);}
  });
  var TG_KW=900000;
- var TG={rijen:[],aan:false,allin:true};
+ var TG={rijen:[],aan:false,allin:true},tgRevision=0,tgSource=null;
+ function tgLees(n){var raw=n.textContent||'{}';if(raw===tgSource)return;TG=Object.assign(TG,JSON.parse(raw));tgSource=raw;tgRevision++;}
  function tgMarkt(q,kort){
   if(q.marktImport==='Prijsbron onbekend')return kort?'bron?':'prijsbron onbekend';
   if(q.gemengdImport||q.marktImport==='Dynamisch + aFRR')return kort?'dyn.+aFRR':'dynamisch + aFRR';
@@ -167,11 +199,28 @@
   return tgChart;
  }
  function tgVul(){
+  var rij=document.getElementById('be-tarief-row');if(rij)rij.hidden=!TG.aan;
+  if(!TG.aan)return;
+  var ch=tgMaak();if(ch)beChartRefresh().request(ch,'prepare',tgWerkBij);
+ }
+ function tgWerkBij(){
   var rij=document.getElementById('be-tarief-row');
   if(rij)rij.hidden=!TG.aan;
   if(!TG.aan)return;
   var ch=tgMaak(); if(!ch)return;
-  var bv=chart();
+  var bv=chart(),nu=Date.now(),xs=bv&&bv.scales&&bv.scales.x;
+  var srcRect=bv&&bv.canvas&&bv.canvas.getBoundingClientRect?bv.canvas.getBoundingClientRect():null;
+  var dstRect=ch.canvas.getBoundingClientRect?ch.canvas.getBoundingClientRect():null;
+  var active=(TG.rijen||[]).some(function(r){return r.start<=nu&&nu<r.end&&(!xs||r.end>=xs.min&&r.start<=xs.max);});
+  var bx=bv&&bv.options.scales&&bv.options.scales.x;
+  var ticks=xs&&xs.ticks?xs.ticks.map(function(t){return {value:t.value};}):[];
+  // A historical/still view needs no repaint. Keep the moving endpoint of a
+  // visible running quarter at its existing three-second cadence.
+  var signature=JSON.stringify([tgRevision,xs&&xs.min,xs&&xs.max,bx&&bx.type,bx&&bx.time,bx&&bx.bounds,bx&&bx.offset,
+   bx&&bx.ticks&&[bx.ticks.maxRotation,bx.ticks.autoSkip,bx.ticks.source,bx.ticks.font,bx.ticks.color,bx.ticks.autoSkipPadding,bx.ticks.padding],
+   ticks,bv&&bv.width,bv&&bv.chartArea&&[bv.chartArea.left,bv.chartArea.right],ch.width,
+   srcRect&&[srcRect.left,srcRect.width],dstRect&&[dstRect.left,dstRect.width],active?Math.floor(nu/3000):0]);
+  if(ch.$beTariefSignature===signature)return false;
   if(bv&&bv.options.scales&&bv.options.scales.x){
    var bx=bv.options.scales.x;
    ch.options.scales.x=JSON.parse(JSON.stringify({type:bx.type,time:bx.time,bounds:bx.bounds,offset:bx.offset,grid:{display:false},
@@ -179,7 +228,7 @@
    if(bv.scales.x){ch.options.scales.x.min=bv.scales.x.min;ch.options.scales.x.max=bv.scales.x.max;}
   }
   var mn=ch.options.scales.x.min,mx=ch.options.scales.x.max;
-  var imp=[],exp=[],kw=[],gezien={}; var nu=Date.now();
+  var imp=[],exp=[],kw=[],gezien={};
   (TG.rijen||[]).forEach(function(r){
    if(mn!=null&&r.end<mn)return;
    if(mx!=null&&r.start>mx)return;
@@ -210,32 +259,33 @@
   });
   ch.data.datasets[0].data=imp; ch.data.datasets[1].data=exp;
   // Match both plot edges in screen coordinates, including differing canvas offsets.
-  if(bv&&bv.chartArea&&bv.scales.x){
-   var srcRect=bv.canvas.getBoundingClientRect(),dstRect=ch.canvas.getBoundingClientRect();
+  if(bv&&bv.chartArea&&bv.scales.x&&srcRect&&dstRect){
    var srcRatio=srcRect.width/bv.width,dstRatio=dstRect.width/ch.width;
    if(srcRatio>0&&dstRatio>0){
     var left=(srcRect.left+bv.chartArea.left*srcRatio-dstRect.left)/dstRatio;
     var right=(srcRect.left+bv.chartArea.right*srcRatio-dstRect.left)/dstRatio;
     ch.options.layout.padding={top:6,left:0,right:Math.max(0,ch.width-right)};
     ch.options.scales.y.afterFit=function(axis){axis.width=Math.max(0,left);};
-    var ticks=bv.scales.x.ticks.map(function(t){return {value:t.value};});
     ch.options.scales.x.afterBuildTicks=function(axis){axis.ticks=ticks;};
     ch.options.scales.x.ticks.autoSkip=false;
    }
   }
-  ch.$beKwartieren=kw; ch.update('none');
+  ch.$beKwartieren=kw; ch.$beTariefSignature=signature; return true;
  }
  document.addEventListener('be-tarief-update',function(){
   var n=document.getElementById('be-tarief-data'); if(!n)return;
-  try{TG=Object.assign(TG,JSON.parse(n.textContent||'{}'));tgVul();}
+  try{tgLees(n);tgVul();}
   catch(e){console.error('[BE tariefgrafiek bridge]',e);}
  });
  var initial=document.getElementById('be-actueel-allin-data');
  try{if(initial)st=Object.assign(st,JSON.parse(initial.textContent||'{}'));}catch(e){}
  var initialTarief=document.getElementById('be-tarief-data');
- try{if(initialTarief)TG=Object.assign(TG,JSON.parse(initialTarief.textContent||'{}'));}catch(e){}
+ try{if(initialTarief)tgLees(initialTarief);}catch(e){}
  wikkel();tgVul();
- setInterval(function(){ if(TG.aan) tgVul(); },3000);
+ Chart.register({id:'beTariefViewportSync',afterUpdate:function(c){if(c.canvas?.id===CANVAS)tgVul();}});
+ document.addEventListener('visibilitychange',function(){if(!document.hidden){wikkel();tgVul();}});
+ window.addEventListener('resize',tgVul,{passive:true});
+ setInterval(function(){ if(TG.aan&&!document.hidden) tgVul(); },3000);
  setInterval(wikkel,3000);
  console.log('[BE Actueel all-in bridge] actief');
 })();

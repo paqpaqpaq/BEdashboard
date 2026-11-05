@@ -29,6 +29,7 @@ function page({mainPlugin=true,response=success(balance()),molResponse=success(m
  w.eval(source);return {w,get root(){return root;},setHidden(value){visibility=value;w.document.dispatchEvent(new w.Event('visibilitychange'));},advance(ms){at+=ms;}};
 }
 async function until(check,label){const deadline=Date.now()+6500;while(Date.now()<deadline){if(check())return;await new Promise(r=>setTimeout(r,10));}throw Error(label);}
+async function openDetails(p){await until(()=>p.root,'panel ready');p.root.querySelector('[data-advanced]').open=true;}
 async function seedBids(database){
  const db=await new Promise((resolve,reject)=>{const r=database.open('balansenergie-bids-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('kwartieren',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
  await new Promise((resolve,reject)=>{const tx=db.transaction('kwartieren','readwrite');tx.objectStore('kwartieren').put({id:'test:'+q,customer:'test',start:q,end:q+Q,export:{value:.11,observedAt:q+30000},import:{value:-.02,observedAt:q+40000}});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
@@ -47,6 +48,7 @@ try{
  assert.equal(a.root.querySelector('[data-advanced]').open,false,'technical details start collapsed');
  assert.equal(a.root.querySelectorAll('.summary-card').length,2,'two clear summaries replace the data wall');
  assert(!a.root.querySelector('[data-settings]').closest('[data-advanced]'),'key entry remains accessible');
+ await openDetails(a);
  assert.equal(a.w.document.getElementById('be-tarief-row').nextElementSibling.id,'be-tennet-standalone-test');
  a.root.querySelector('[data-key]').value=secret;
  a.root.querySelector('[data-form]').dispatchEvent(new a.w.Event('submit',{bubbles:true,cancelable:true}));
@@ -109,6 +111,7 @@ try{
  }
 
  const b=page({at:now+1500});
+ await openDetails(b);
  await until(()=>b.root?.querySelector('[data-up-ladder]').textContent.includes('20–30 MW'),'second tab full cache');
  assert.equal(requests.length,2,'reloads and tabs reuse both API caches');
  assert.equal(b.root.querySelector('[data-settings]').open,false,'stored key does not require setup after reload');
@@ -130,31 +133,36 @@ try{
  await until(()=>!store.has('be-afrr-market-settings-v1')&&a.root.querySelector('[data-up]').textContent==='— MW','key/cache cleared');
  const blockedRequests=[];
  const denied=page({database:new IDBFactory(),values:enabled('blocked'),record:blockedRequests,response:{status:403,responseText:'<html>'+secret+'</html>'}});
+ await openDetails(denied);
  await until(()=>denied.root?.querySelector('[data-status]').textContent.includes('HTTP 403'),'403 diagnostic');
  assert(!denied.root.textContent.includes(secret));assert(denied.root.querySelector('[data-refresh]').disabled);assert.equal(blockedRequests.length,1);
  const accStore=enabled('acc');accStore.get('be-afrr-market-settings-v1').environment='acceptance';const accRequests=[];
  const acc=page({database:new IDBFactory(),values:accStore,record:accRequests,modern:true});
+ await openDetails(acc);
  await until(()=>acc.root?.querySelector('[data-up]').textContent==='25,5 MW','modern GM / acceptance');
  assert(accRequests[0].url.startsWith('https://api.acc.tennet.eu/'));assert(acc.root.querySelector('[data-up-chance]').textContent.includes('Geen kansmodel op testgegevens'));
  const partialDB=new IDBFactory();await seedBids(partialDB);const partialRequests=[];
  const partial=page({database:partialDB,values:enabled('partial'),record:partialRequests,molResponse:{status:403,responseText:'<html>'+secret+'</html>'}});
+ await openDetails(partial);
  await until(()=>partial.root?.querySelector('[data-up]').textContent==='25,5 MW','balance still works');
  partial.advance(1500);partial.w.document.dispatchEvent(new partial.w.Event('visibilitychange'));
  await until(()=>partial.root.querySelector('[data-mol-status]').textContent.includes('HTTP 403'),'separate MOL permission failure');
  assert.equal(partial.root.querySelector('[data-up]').textContent,'25,5 MW');assert(!partial.root.textContent.includes(secret));
  const oldDB=new IDBFactory();await seedBids(oldDB);
  const old=page({database:oldDB,values:enabled('old-quarter'),record:[],at:q+60000,response:success(balance(q-60000))});
+ await openDetails(old);
  await until(()=>old.root?.querySelector('[data-up]').textContent==='25,5 MW','prior-quarter source');
  assert.equal(old.root.querySelector('[data-up-bid]').textContent,'€ 110,00 / MWh');
  assert(old.root.querySelector('[data-up-comparison]').textContent.includes('BID ontbreekt'),'new BID never compares with previous-quarter measurements');
  assert(old.root.querySelector('[data-comparison-quarter]').textContent.includes('niet gebruikt'));
  assert.equal(old.root.querySelector('[data-summary-up]').textContent,'Wachten op dit kwartier');
  const hiddenRequests=[],hidden=page({database:new IDBFactory(),values:enabled('hidden'),record:hiddenRequests,hidden:true});
- await until(()=>hidden.root?.querySelector('[data-poll]').textContent.includes('zichtbaar'),'hidden page idle');
+ await until(()=>hidden.root,'hidden page mounted without UI work');
  assert.equal(hiddenRequests.length,0,'hidden tab starts no requests');
  hidden.setHidden(false);await until(()=>hiddenRequests.length===1,'visible page resumes');
  // Navigation teardown must not cause a panel/native-page reinsertion loop.
  const navigationDB=new IDBFactory(),navigationRequests=[],navigation=page({database:navigationDB,values:enabled('navigation'),record:navigationRequests});
+ await openDetails(navigation);
  await until(()=>navigation.root?.querySelector('[data-up]').textContent==='25,5 MW','navigation baseline');
  const navHost=navigation.w.document.getElementById('be-tennet-standalone-test'),nativeMain=navigation.w.document.querySelector('main');
  const marker=navigation.w.document.createElement('span');marker.id='native-navigation-marker';
@@ -193,6 +201,7 @@ try{
  assert.equal(off.w.document.getElementById('be-tennet-standalone-test').style.display,'none');
  assert.equal(offStore.get('be-afrr-market-settings-v1').key,secret,'disabling preserves the key');
  off.w.eval(settings);off.w.beAfrrMarketSet(true);
+ await openDetails(off);
  await until(()=>off.root.querySelector('[data-up]').textContent==='25,5 MW','settings restore panel with stored key');
  assert.equal(offRequests.length,1);assert(!off.w.document.getElementById('be-tennet-standalone-test').hidden);
  off.w.beAfrrMarketSet(false);assert(off.w.document.getElementById('be-tennet-standalone-test').hidden);

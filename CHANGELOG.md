@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.6.4 — 5 november 2026
+
+- Prestatieverbeteringen zonder verlies van functionaliteit
+
 ## 6.6.3 — 4 november 2026
 
 - Dagtotalen in kWh bij de vermogenskaarten

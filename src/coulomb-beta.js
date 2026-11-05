@@ -630,6 +630,7 @@
 
   const core=window.BEEnergySOC, key='be-own-soc-settings:'+id, DAY=86400000;
   let cfg={},record={rows:[],manual:[]},result=null,payload=null,db=null,busy=false,error='',storageError='',lastFetch=0,forecastFetch=0;
+  let recordVersion=0,resultVersion=0,payloadVersion=0,computedVersion=-1,computedSettings='',pruneAttempt=null;
   try{cfg=JSON.parse(localStorage.getItem(key)||'{}')||{};delete cfg.nominalVoltage;}catch{}
   const settings=()=>{const r=window.BECapacity.resolve(cfg);return {...core.defaults,...cfg,capacity:r?.capacity??NaN,capacityAh:r?.capacityAh??NaN,voltageProfile:window.BEMeasuredVoltage.id,chargeEfficiency:1,dischargeEfficiency:1,auto:true};};
   const number=(v,n=1)=>Number.isFinite(v)?v.toLocaleString('nl-NL',{maximumFractionDigits:n,minimumFractionDigits:n}):'—';
@@ -675,26 +676,51 @@
     req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(Error("Lokale historie geblokkeerd"));
   });}
   // Merge in one read/write transaction: simultaneous dashboard tabs cannot overwrite observations.
+  const sameRows=(a,b)=>a===b||(a.length===b.length&&a.every((r,i)=>Array.isArray(r)&&Array.isArray(b[i])&&r.length===b[i].length&&r.every((v,k)=>Object.is(v,b[i][k]))));
+  const sameManual=(a,b)=>a===b||JSON.stringify(a)===JSON.stringify(b);
+  function containsRows(rows,incoming){
+    return incoming.every(r=>{
+      let lo=0,hi=rows.length-1;
+      while(lo<=hi){const mid=(lo+hi)>>1;if(rows[mid][0]<r[0])lo=mid+1;else hi=mid-1;}
+      const old=rows[lo];return old&&r.length===old.length&&r.every((v,k)=>Object.is(v,old[k]));
+    });
+  }
+  function useRecord(old,rows,manual){
+    const changed=!sameRows(record.rows,rows)||!sameManual(record.manual,manual);
+    if(!changed){rows=record.rows;manual=record.manual;}
+    record={...old,rows,manual};if(changed)recordVersion++;
+  }
   function persist(incoming=[],anchor=null){return new Promise((resolve,reject)=>{
-    if(!db){record.rows=[...new Map([...record.rows,...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);if(anchor)record.manual=[...record.manual.filter(a=>a.t!==anchor.t),anchor];resolve();return;}
+    incoming=incoming.filter(core.valid);
+    if(!db){
+      const rows=containsRows(record.rows,incoming)?record.rows:[...new Map([...record.rows,...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
+      const manual=anchor?[...record.manual.filter(a=>a.t!==anchor.t),anchor]:record.manual;
+      useRecord(record,rows,manual);resolve();return;
+    }
     const tx=db.transaction('installations','readwrite'),store=tx.objectStore('installations'),req=store.get(id);
     req.onsuccess=()=>{
       try {
         const old=req.result||{rows:[],manual:[]};
-        let rows=[...new Map([...record.rows,...(old.rows||[]),...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
-        let manual=[...new Map([...record.manual,...(old.manual||[])].map(a=>[a.t,a])).values()];
+        const unchanged=sameRows(record.rows,old.rows||[])&&sameManual(record.manual,old.manual||[]);
+        let rows=unchanged&&containsRows(record.rows,incoming)?record.rows:[...new Map([...record.rows,...(old.rows||[]),...incoming].filter(core.valid).map(r=>[r[0],r])).values()].sort((a,b)=>a[0]-b[0]);
+        let manual=unchanged?record.manual:[...new Map([...record.manual,...(old.manual||[])].map(a=>[a.t,a])).values()];
         if(anchor)manual=[...manual.filter(a=>a.t!==anchor.t),anchor];
         // Preserve the integrated state when old observations are removed.
         const cutoff=Date.now()-30*DAY,index=rows.findIndex(r=>r[0]>=cutoff);
-        if(index>0&&settings().capacity>0){
-          const prior=core.calculate(rows.slice(0,index+1),settings(),manual).points.at(-1);
+        const c=settings(),pruneKey=JSON.stringify(c);
+        if(index>0&&c.capacity>0&&!(pruneAttempt?.rows===rows&&pruneAttempt.manual===manual&&pruneAttempt.index===index&&pruneAttempt.settings===pruneKey)){
+          pruneAttempt={rows,manual,index,settings:pruneKey};
+          const prior=core.calculate(rows.slice(0,index+1),c,manual).points.at(-1);
           // Retain unresolved gaps or out-of-range drift until a valid anchor exists.
           if(prior&&!prior.uncertain&&prior.soc!==null&&prior.soc>=0&&prior.soc<=100){
             rows=rows.slice(index);manual=manual.filter(a=>a.t>=rows[0][0]);
             if(!manual.some(a=>a.t===prior.t))manual.unshift({t:prior.t,soc:prior.soc,kind:'bewaard telpunt',lowState:prior.lowState,highState:prior.highState,boundaryState:prior.boundaryState,statsReference:prior.reference?{reference:prior.reference,input:prior.sinceInput,output:prior.sinceOutput}:undefined});
+            pruneAttempt=null;
           }
         }
-        record={...old,rows,manual};store.put(record,id);
+        const changed=!sameRows(old.rows||[],rows)||!sameManual(old.manual||[],manual);
+        useRecord(old,rows,manual);
+        if(changed)store.put(record,id);
       }catch(e){reject(e);tx.abort();}
     };
     tx.oncomplete=()=>resolve();tx.onerror=tx.onabort=()=>reject(tx.error||Error('Transactie afgebroken'));
@@ -705,7 +731,12 @@
       if(!r.ok)throw Error('Bron geeft HTTP '+r.status);return await r.json();
     }finally{clearTimeout(timer);}
   }
-  function compute(){result=settings().capacity>0?core.calculate(record.rows,settings(),record.manual):null;}
+  function compute(){
+    const c=settings(),signature=JSON.stringify(c);
+    if(computedVersion===recordVersion&&computedSettings===signature)return;
+    result=c.capacity>0?core.calculate(record.rows,c,record.manual):null;
+    computedVersion=recordVersion;computedSettings=signature;resultVersion++;
+  }
   async function poll(){
     if(busy)return;busy=true;
     try {
@@ -722,8 +753,7 @@
       const rows=[...j.rows,...(j.latest?[j.latest]:[])].filter(r=>Number.isFinite(r.t)&&r.t<=now).map(r=>[r.t,Number.isFinite(r.s)?r.s:null,Number.isFinite(r.bo)?r.bo:null]);
       await persist(rows);compute();lastFetch=now;error='';
       if(!payload||now-forecastFetch>300000||!ext.sameForecastDay(forecastFetch,now)){
-        try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=Date.now();
-          compute();
+        try{payload=await request('/customer/'+encodeURIComponent(id)+'/forecast_api/');forecastFetch=Date.now();payloadVersion++;
         }catch(e){error='Forecast tijdelijk niet beschikbaar';}
       }
     }catch(e){error=e.message||String(e);}
@@ -833,7 +863,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -853,7 +883,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
       load:i.usage_kwh?.[k],pv:i.pv_production_kwh?.[k]})));
     const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
-    const visible=(result?.points||[]).map(p=>({...p,soc:visualSoc(p)})),last=latest();
+    const visible=result?.points||[],last=latest();
     const anchor=last?{...last,soc:visualSoc(last)}:null;
     const grid=ext.forecastGrid(chart,slots,anchor);
     if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.');
@@ -922,8 +952,30 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       button.setAttribute('aria-pressed',String(visible));
     }
   }
+  const chartVersions=new WeakMap(),eventVersions=new WeakMap();
+  function chartVersion(chart){
+    const forecast=chart.canvas.id==='soc-forecast-chart',now=Date.now(),last=latest();
+    const native=chart.data.datasets.filter(d=>!d.beOwnSOC);
+    // Native updates still run decorate through Chart.js. These inexpensive
+    // signatures avoid requesting a second full chart update between samples.
+    const input=forecast?[chart.data.labels,native.filter(d=>/^socp50$/i.test(String(d.label||'').replace(/[^a-z0-9]/gi,''))).map(d=>d._data||d.data)]:
+      native.map(d=>{const a=d._data||d.data||[];return [d.label,d.yAxisID,a.length,a[0],a.at(-1)];});
+    const slots=forecast?(payload?.items||[]).flatMap(i=>i.hours||[]):[];
+    const past=forecast?slots.reduce((n,t)=>n+(Date.parse(t)<=now?1:0),0):0;
+    return JSON.stringify([resultVersion,payloadVersion,cfg.show_kwh!==false,
+      document.documentElement.getAttribute('data-be-dark'),document.documentElement.getAttribute('data-be-dark-style'),
+      chart.width,chart.height,chart.scales.x?.min,chart.scales.x?.max,input,
+      forecast&&ext.sameForecastDay(forecastFetch,now),forecast&&!!last&&now-last.t<=120000,past]);
+  }
+  function rememberChart(chart){
+    if(chart.canvas.id==='soc-chart'||chart.canvas.id==='soc-forecast-chart')chartVersions.set(chart,chartVersion(chart));
+  }
   function render(){
+    // Keep collecting measurements while a tab is hidden; defer its canvas and
+    // DOM work until the existing visibility/pageshow handlers run again.
+    if(document.hidden)return;
     const C=window.Chart;if(!C?.getChart)return;
+    register();
     const cv=document.getElementById('soc-chart')||document.getElementById('soc-forecast-chart');if(!cv)return;
     const chart=C.getChart(cv);if(!chart)return;
     const p=panel(cv),view=display();
@@ -933,9 +985,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     textIfChanged(p.querySelector('[data-state]'),view.state);
     textIfChanged(p.querySelector('[data-history]'),view.history);
     try{window.BESocNativeReadout?.render(view);}catch(e){console.warn('[SOC waarde]',e);}
-    p.querySelector('[data-log]').textContent=result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'';
-    const ul=p.querySelector('[data-events]');ul.replaceChildren(...(result?.events||[]).slice(-10).reverse().map(a=>{const li=document.createElement('li');li.textContent=date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':'');return li;}));
-    for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){decorate(c);legend(c);c.update('none');}}
+    textIfChanged(p.querySelector('[data-log]'),result?.lastAnchor?'Laatste anker: '+date(result.lastAnchor.t)+' · '+result.lastAnchor.kind+' · '+number(result.lastAnchor.soc)+'% · '+result.gaps+' meetgaten in archief.':'');
+    const ul=p.querySelector('[data-events]'),events=(result?.events||[]).slice(-10).reverse().map(a=>date(a.t)+' · '+a.kind+' → '+number(a.soc)+'%'+(a.correction!==null?' (correctie '+number(a.correction)+' pp)':''));
+    const eventVersion=JSON.stringify(events);
+    if(eventVersions.get(ul)!==eventVersion){ul.replaceChildren(...events.map(value=>{const li=document.createElement('li');li.textContent=value;return li;}));eventVersions.set(ul,eventVersion);}
+    for(const name of ['soc-chart','soc-forecast-chart']){const c=C.getChart(name);if(c){
+      legend(c);
+      const own=c.data.datasets.filter(d=>d.beOwnSOC),expected=name==='soc-chart'?1:2;
+      if(own.length<expected||chartVersions.get(c)!==chartVersion(c)){
+        // beforeUpdate owns decoration, including native data replacements.
+        c.update('none');rememberChart(c);
+      }
+    }}
     const forecastState=p.querySelector('[data-forecast-state]');
     if(forecastState){
       const notice=chart.canvas.id==='soc-forecast-chart'?chart.$beForecastNotice||'':'';
@@ -973,7 +1034,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   let renderPending=false,started=false;
   function scheduleRender(){if(renderPending)return;renderPending=true;setTimeout(()=>{renderPending=false;register();render();},0);}
   let library;
-  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,window.BESocHistory.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterInit:scheduleRender});library=C;}}
+  function register(){const C=window.Chart;if(C?.register&&C!==library){C.register(window.BESocHover.plugin,window.BESocHistory.plugin,{id:'beOwnEnergySoc',beforeUpdate:decorate,afterUpdate:rememberChart,afterInit:scheduleRender});library=C;}}
   new MutationObserver(records=>{
     const added=records.flatMap(r=>Array.from(r.addedNodes));
     if(added.some(n=>n.nodeType===1&&(n.matches?.('canvas')||n.querySelector?.('canvas'))))scheduleRender();

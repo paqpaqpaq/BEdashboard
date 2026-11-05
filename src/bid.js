@@ -6,7 +6,44 @@
     function bidColour(direction) {
       return window.BETheme?.seriesColor('bid-'+direction) || colours[direction];
     }
+    function beChartRefresh(){
+     if(window.BEChartRefresh)return window.BEChartRefresh;
+     var pending=new Map(),queued=false;
+     function schedule(){
+      if(queued||document.hidden||!pending.size)return;
+      queued=true;
+      (typeof requestAnimationFrame==='function'?requestAnimationFrame:function(f){setTimeout(f,0);})(flush);
+     }
+     function flush(){
+      queued=false;if(document.hidden)return;
+      var work=Array.from(pending);pending.clear();
+      work.forEach(function(pair){
+       var c=pair[0],job=pair[1];if(!c.canvas||c.canvas.isConnected===false)return;
+       try{
+        var update=job.update;
+        job.prepare.forEach(function(prepare){if(prepare())update=true;});
+        if(update&&typeof c.update==='function')c.update('none');
+        else if(job.draw&&typeof c.draw==='function')c.draw();
+       }catch(e){console.error('[BE grafiekupdate]',e);}
+      });
+     }
+     var api={request:function(c,mode,prepare){
+      if(!c)return;
+      var job=pending.get(c);if(!job){job={update:false,draw:false,prepare:new Set()};pending.set(c,job);}
+      if(mode==='update')job.update=true;else if(mode==='draw')job.draw=true;
+      if(prepare)job.prepare.add(prepare);
+      schedule();
+     }};
+     document.addEventListener('visibilitychange',schedule);
+     window.BEChartRefresh=api;return api;
+    }
     const bids = new Map();
+    let bidRevision=0;
+    function setBid(start,record){
+      const previous=bids.get(start);
+      if(directions.some(d=>previous?.[d]?.value!==record[d]?.value||previous?.[d]?.observedAt!==record[d]?.observedAt||!!previous?.[d]?.estimated!==!!record[d]?.estimated))bidRevision++;
+      bids.set(start,record);
+    }
     let library, timer, busy = false, enabled = true, error = '', unavailable = false;
     let lastSuccess = 0, lastLiveQuarter = null, ui, button, status, recovering=false, archiveReady=false, dbPromise, storageError='';
     let recoveryTimer, rateRetryUntil = 0, archiveRead, recoveryMemory={};
@@ -22,9 +59,12 @@
       timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit'
     });
     const euro = n => '€ ' + n.toLocaleString('nl-NL', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+    const jsonCache=new Map();
     function read(id) {
-      try { return JSON.parse(document.getElementById(id)?.textContent || 'null'); }
-      catch (_) { return null; }
+      const node=document.getElementById(id),raw=node?.textContent||'null',cached=jsonCache.get(id);
+      if(cached?.raw===raw)return cached.value;
+      let value=null;try{value=JSON.parse(raw);}catch(_){}
+      jsonCache.set(id,{raw,value});return value;
     }
     function quarter(now) { return Math.floor(now / QUARTER) * QUARTER; }
 
@@ -101,7 +141,7 @@
         }
         if(!directions.some(d=>incoming[d])&&!Object.keys(incoming.reconstruction).length)continue;
         const merged=mergeRecord(record,incoming);
-        if(JSON.stringify(record)!==JSON.stringify(merged)){bids.set(record.start,merged);persist(merged);}
+        if(JSON.stringify(record)!==JSON.stringify(merged)){setBid(record.start,merged);persist(merged);}
       }
     }
     function database(){
@@ -127,7 +167,7 @@
           const req=tx.objectStore('kwartieren').getAll(IDBKeyRange.bound(cachePrefix+(quarter(Date.now())-ARCHIVE_DAYS*DAY),cachePrefix+'9999999999999'));
           req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
         });
-        rows.forEach(r=>{if(r.customer===customer&&Number.isFinite(r.start)&&r.end===r.start+QUARTER)bids.set(r.start,mergeRecord(r,bids.get(r.start)||r));});
+        rows.forEach(r=>{if(r.customer===customer&&Number.isFinite(r.start)&&r.end===r.start+QUARTER)setBid(r.start,mergeRecord(r,bids.get(r.start)||r));});
       })().finally(()=>{archiveRead=null;});
       return archiveRead;
     }
@@ -172,11 +212,11 @@
         }
         // A subsequent confirmed quote must not replace the captured bid.
       }
-      const merged=mergeRecord(old,record);bids.set(start,merged);
+      const merged=mergeRecord(old,record);setBid(start,merged);
       if(JSON.stringify(old)!==JSON.stringify(merged))persist(merged);
       }
       // Alleen de werkset in geheugen begrenzen; opgeslagen BIDs worden niet verwijderd.
-      for (const key of bids.keys()) if (key < quarter(now) - ARCHIVE_DAYS * DAY) bids.delete(key);
+      for (const key of bids.keys()) if (key < quarter(now) - ARCHIVE_DAYS * DAY) {bids.delete(key);bidRevision++;}
       reconstruct(now);
       return added;
     }
@@ -240,13 +280,24 @@
       const t = chart.$beTariefHoverTime;
       return Number.isFinite(t) ? items.map(i => ({...i, parsed: {...i.parsed, x: t}})) : items;
     }
+    function overlaySignature(tariff,settings){
+      return JSON.stringify([bidRevision,enabled,tariff?.aan,tariff?.allin,
+        settings?.btw,settings?.eb,settings?.opslag,settings?.saldeert,bidColour('import'),bidColour('export'),window.BETheme?.isDark()]);
+    }
+    const overlaySignatures=new WeakMap();
+    function prepareOverlay(chart){
+      const tariff=read('be-tarief-data'),settings=read('be-actueel-allin-data');
+      return overlaySignatures.get(chart)!==overlaySignature(tariff,settings)||directions.some(d=>!chart.data.datasets.some(s=>s.beBidDirection===d));
+    }
     const plugin = {
       id: 'beAfrrBidOverlay01',
       beforeUpdate(chart) {
         if (chart.canvas?.id !== 'be-tarief-chart') return;
         const tariff = read('be-tarief-data'), settings = read('be-actueel-allin-data');
+        const signature=overlaySignature(tariff,settings),changed=overlaySignatures.get(chart)!==signature;
         for (const direction of directions) {
           let dataset = chart.data.datasets.find(d => d.beBidDirection === direction);
+          const created=!dataset;
           if (!dataset) {
             dataset = {
               beBidDirection: direction,
@@ -266,11 +317,12 @@
             };
             chart.data.datasets.push(dataset);
           }
-          dataset.data = points(direction, tariff, settings);
+          if(changed||created)dataset.data = points(direction, tariff, settings);
           dataset.borderWidth=window.BETheme?.isDark()?1:1.5;
           dataset.borderColor=bidColour(direction);
           dataset.backgroundColor=dataset.borderColor;
         }
+        overlaySignatures.set(chart,signature);
         const options = chart.config.options;
         options.interaction = {...options.interaction, mode: 'beTariefTime', axis: 'x', intersect: false};
         options.plugins = options.plugins || {};
@@ -354,10 +406,10 @@
         C.register(plugin); library = C;
       }
       const chart = C?.getChart?.('be-tarief-chart');
-      if (chart) chart.update('none');
+      if (chart) beChartRefresh().request(chart,'prepare',()=>prepareOverlay(chart));
       if (!status) return;
-      button.setAttribute('aria-checked', String(enabled));
-      button.querySelector('.be-afrr-bid-state').textContent = enabled ? 'AAN' : 'UIT';
+      if(button.getAttribute('aria-checked')!==String(enabled))button.setAttribute('aria-checked', String(enabled));
+      const state=button.querySelector('.be-afrr-bid-state'),label=enabled?'AAN':'UIT';if(state.textContent!==label)state.textContent=label;
       const now = Date.now(), start = quarter(now), record = bids.get(start);
       const tariff = read('be-tarief-data'), settings = read('be-actueel-allin-data');
       const prefix = clock.format(start) + '–' + clock.format(start + QUARTER) + ' · ';
@@ -370,8 +422,9 @@
         if (record?.states[direction] === 'missing_bid') return direction + ' geen bod';
         return direction + (now - start < 120000 ? ' wachten op bod' : ' bod niet waargenomen');
       });
-      status.textContent = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
+      const message = prefix + (unavailable ? 'aFRR niet beschikbaar' : labels.join(' · ')) +
         (storageError?' · '+storageError:'')+(error ? ' · ' + error : '') + (!error && lastSuccess && now - lastSuccess > 90000 ? ' · gegevens verouderd' : '');
+      if(status.textContent!==message)status.textContent=message;
       ui.title = 'BID = biedprijs; ~ betekent een onzekere reconstructie uit historische prijsgrenzen. Rechtstreeks waargenomen biedingen hebben voorrang. ' +
         (tariff?.allin ? 'All-in, volgens de instellingen van de hoofdplugin.' : 'Kale bedragen.');
     }
