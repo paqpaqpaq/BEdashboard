@@ -7,6 +7,9 @@
   const read=(key)=>{try{return localStorage.getItem(key);}catch(_){return null;}};
   const save=(key,value)=>{try{localStorage.setItem(key,value);}catch(_){}};
   let enabled=read(KEY)==='aan', rows=[],cache=null,busy=false,retryAt=0,error='',button,status;
+  const FORECAST_KEY='be_epex_forecast_enabled_v1',FORECAST_CACHE='be_epex_forecast_prices_v1';
+  let forecastEnabled=read(FORECAST_KEY)!=='uit',forecastCache={},forecastBusy=false,forecastError='';
+  try{forecastCache=JSON.parse(read(FORECAST_CACHE))||{};}catch(_){}
   try{cache=JSON.parse(read(CACHE));if(cache)rows=normalise(cache.body);}catch(_){cache=null;}
   function normalise(body){
     if(!body || body.interval!=='RESPONSE_INTERVAL_QUARTER' || !Array.isArray(body.base))throw Error('Onbekend EnergyZero-prijsformaat');
@@ -27,8 +30,9 @@
   }
   function publish(){
     const s=settings();
-    stateNode.textContent=JSON.stringify({enabled,rows,allin:s.aan!==false,btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
-    document.dispatchEvent(new Event('be-epex-data'));
+    const forecastRows=Object.values(forecastCache).flatMap(c=>Array.isArray(c?.rows)?c.rows:[]).sort((a,b)=>a.start-b.start);
+    const text=JSON.stringify({enabled,rows,forecastEnabled,forecastRows,allin:typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit',btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
+    if(stateNode.textContent!==text){stateNode.textContent=text;document.dispatchEvent(new Event('be-epex-data'));}
     if(button){
       button.setAttribute('aria-checked',String(enabled));
       button.querySelector('.be-epex-state').textContent=enabled?'AAN':'UIT';
@@ -38,10 +42,14 @@
       status.textContent=enabled&&error?'!':enabled&&busy&&!rows.length?'…':'';
       status.title=error||'Prijzen ophalen';status.hidden=!status.textContent;
     }
+    const fb=document.getElementById('be-epex-forecast-switch');
+    if(fb){fb.setAttribute('aria-pressed',String(forecastEnabled));fb.title='EPEX-kwartierprijs '+(forecastEnabled?'verbergen':'tonen');fb.querySelector('[data-epex-label]').textContent=(typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit')?'EPEX · all-in':'EPEX · kaal';}
+    const note=document.getElementById('be-epex-forecast-status');
+    if(note){const message=forecastError||(forecastBusy&&!forecastRows.length?'Prijzen ophalen…':'');if(note.textContent!==message)note.textContent=message;}
 
   }
-  function range(){
-    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  function range(at=Date.now()){
+    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(at));
     const part=t=>parts.find(p=>p.type===t).value;
     const date=part('day')+'-'+part('month')+'-'+part('year');
     return {date,key:date};
@@ -67,6 +75,26 @@
     }catch(e){error=e.message+(rows.length?' · eerder opgehaalde prijzen zichtbaar':'');retryAt=Date.now()+300000;}
     finally{busy=false;publish();}
   }
+  async function refreshForecast(){
+    if(!forecastEnabled||forecastBusy||document.hidden||!document.getElementById('soc-forecast-chart'))return;
+    let dates=[];try{dates=JSON.parse(document.getElementById('be-epex-forecast-range')?.textContent||'[]');}catch(_){}
+    dates=[...new Set(dates)].filter(d=>/^\d{2}-\d{2}-\d{4}$/.test(d)).slice(0,3);
+    if(!dates.length)return;
+    forecastBusy=true;forecastError='';
+    try{
+      for(const date of dates){
+        const saved=forecastCache[date];if(saved?.retryAt>Date.now())continue;
+        if(cache?.key===date&&Date.now()-cache.at<900000){forecastCache[date]={rows:normalise(cache.body),at:cache.at,retryAt:cache.at+900000};continue;}
+        try{
+          const body=await request('https://public.api.energyzero.nl/v1/prices?date='+date+'&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY');
+          const parsed=normalise(body);
+          forecastCache[date]={rows:parsed,at:Date.now(),retryAt:Date.now()+(parsed.length?900000:300000)};
+        }catch(e){forecastCache[date]={rows:saved?.rows||[],at:saved?.at||0,retryAt:Date.now()+300000};forecastError='Nog niet alle kwartierprijzen beschikbaar';}
+      }
+      for(const key of Object.keys(forecastCache))if(!dates.includes(key))delete forecastCache[key];
+      save(FORECAST_CACHE,JSON.stringify(forecastCache));
+    }finally{forecastBusy=false;publish();}
+  }
   const style=document.createElement('style');style.textContent=`
     #be-epex-control{display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;flex-wrap:wrap;box-sizing:border-box;padding:8px 2px 4px;color:inherit}
     #be-epex-legend{display:flex;align-items:center;gap:12px;margin-right:auto;flex-wrap:wrap;font:11px/1.3 system-ui,sans-serif}
@@ -89,6 +117,16 @@
     @media(max-width:700px){#be-epex-control{justify-content:flex-end;width:100%;padding-top:6px}#be-epex-switch{border-left:0}}
     @media(prefers-reduced-motion:reduce){#be-epex-switch .be-epex-thumb{transition:none}}
   `;document.documentElement.appendChild(style);
+  style.textContent+=`#be-epex-forecast-switch{display:inline-flex;align-items:center;gap:5px;appearance:none;background:transparent;color:inherit;border:0;padding:3px 0;font:11px/1.3 system-ui,sans-serif;cursor:pointer}#be-epex-forecast-switch[aria-pressed="false"]{opacity:.5;text-decoration:line-through}#be-epex-forecast-switch .be-soc-series-swatch{height:2px;background:var(--be-epex-forecast-color,#9ccced)!important}#be-epex-forecast-status{font:11px/1.4 system-ui,sans-serif;opacity:.7}#be-epex-forecast-switch:focus-visible{outline:2px solid #9ccced;outline-offset:3px;border-radius:3px}`;
+  function mountForecast(){
+    const cv=document.getElementById('soc-forecast-chart');if(!cv)return;
+    const legend=document.querySelector('[data-be-soc-legend="soc-forecast-chart"]');if(!legend)return;
+    const existing=document.getElementById('be-epex-forecast-switch');if(existing){if(existing.parentElement!==legend)legend.appendChild(existing);return;}
+    const button=document.createElement('button');button.id='be-epex-forecast-switch';button.type='button';button.className='be-soc-series-toggle';button.setAttribute('aria-label','EPEX per kwartier op forecast');
+    button.innerHTML='<span class="be-soc-series-swatch" aria-hidden="true"></span><span data-epex-label>EPEX</span>';
+    button.addEventListener('click',()=>{forecastEnabled=!forecastEnabled;save(FORECAST_KEY,forecastEnabled?'aan':'uit');publish();refreshForecast();});
+    legend.appendChild(button);publish();refreshForecast();
+  }
   function mount(){
     const host=document.getElementById('be-tarief-row');
     if(!host||host.querySelector('#be-epex-control'))return;
@@ -97,7 +135,7 @@
     button.setAttribute('role','switch');button.setAttribute('aria-label','EPEX day-ahead');
     button.innerHTML='<span>EPEX</span><span class="be-epex-track" aria-hidden="true"><span class="be-epex-thumb"></span></span><span class="be-epex-state" aria-hidden="true"></span>';
     button.addEventListener('click',()=>{enabled=!enabled;save(KEY,enabled?'aan':'uit');publish();refresh();});
-    status=document.createElement('span');status.id='be-epex-status';var voortgang=document.createElement('progress');voortgang.max=1;voortgang.value=0;voortgang.hidden=true;voortgang.style.cssText='width:100%;height:10px;accent-color:'+D.paars;voortgang.setAttribute('aria-label','Voortgang kwartierexport');box.appendChild(voortgang);
+    status=document.createElement('span');status.id='be-epex-status';
     status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
     source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
@@ -109,7 +147,10 @@
   // The main plugin also bridges into the page, where its Chart instance lives.
   function chartBridge(){
     if(window.__beEpexBridge)return;window.__beEpexBridge=true;
-    let data={enabled:false,rows:[]},registered=false;
+    let data={enabled:false,rows:[]},library=null,attachedChart=null,attachedForecast=null;
+    const forecastPending=new WeakSet();
+    const forecastPaints=new WeakMap();
+    const dayClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',year:'numeric'});
     function config(){try{data=JSON.parse(document.getElementById('be-epex-addon').textContent);}catch(_){}}
     function points(c){
       const x=c.options.scales?.x||{},min=x.min??-Infinity,max=x.max??Infinity,out=[];
@@ -122,9 +163,88 @@
       }
       return out;
     }
-    function install(){
+    function forecastSlots(c){
+      const slots=c.$beEpexForecastSlots||[];
+      return slots.length&&window.BESOCExtras?.forecastGrid(c,slots).valid?slots:[];
+    }
+    function indexAt(slots,t){
+      if(!slots.length||t<slots[0].t||t>slots.at(-1).t+slots.at(-1).dt)return null;
+      let lo=0,hi=slots.length;
+      while(lo<hi){const mid=(lo+hi)>>>1;if(slots[mid].t<=t)lo=mid+1;else hi=mid;}
+      const i=Math.max(0,lo-1),step=slots[i+1]?slots[i+1].t-slots[i].t:slots[i].dt;
+      if(!(step>0)||step>slots[i].dt+1)return null;
+      return i+(t-slots[i].t)/step;
+    }
+    function forecastSignature(c){
+      return JSON.stringify([data.forecastEnabled,data.allin,data.btw,data.opslag,data.eb,data.forecastRows,
+        forecastSlots(c).map(s=>[s.t,s.dt]),document.documentElement.getAttribute('data-be-dark'),document.documentElement.getAttribute('data-be-dark-style')]);
+    }
+    function requestForecast(c){
+      if(document.hidden||forecastPending.has(c))return;
+      forecastPending.add(c);
+      (typeof requestAnimationFrame==='function'?requestAnimationFrame:f=>setTimeout(f,0))(()=>{
+        forecastPending.delete(c);if(c.canvas.isConnected===false||document.hidden)return;
+        if(c.$beEpexForecastSignature!==forecastSignature(c)){
+          if(window.BEChartRefresh)window.BEChartRefresh.request(c,'update');else c.update('none');
+        }
+      });
+    }
+    function announceForecast(c){
+      const dates=[...new Set(forecastSlots(c).map(s=>dayClock.format(new Date(s.t)).replace(/\//g,'-')))];
+      let n=document.getElementById('be-epex-forecast-range');
+      if(!n){n=document.createElement('script');n.type='application/json';n.id='be-epex-forecast-range';document.documentElement.appendChild(n);}
+      const text=JSON.stringify(dates);if(n.textContent!==text){n.textContent=text;document.dispatchEvent(new Event('be-epex-forecast-range'));}
+    }
+    function forecastColor(c){
+      function lighter(channels){return 'rgb('+channels.map(v=>Math.round(Number(v)+(255-Number(v))*.12)).join(',')+')';}
+      const annotations=c.config.options.plugins?.annotation?.annotations||{};
+      for(const [key,a] of Object.entries(annotations)){
+        if(!a||typeof a!=='object')continue;
+        if(!/day[ _-]?ahead|epex|dynamisch/i.test(key+' '+(a?.label?.content||'')))continue;
+        for(const candidate of [a.borderColor,a.backgroundColor]){
+          if(typeof candidate!=='string')continue;
+          const rgb=candidate.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)/i);
+          if(rgb)return lighter(rgb.slice(1,4));
+          if(/^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(candidate))return lighter([1,3,5].map(i=>parseInt(candidate.slice(i,i+2),16)));
+        }
+      }
+      return '#9ccced';
+    }
+    function forecastPaint(c,color){
+      if(!c.ctx?.createLinearGradient)return color;
+      let saved=forecastPaints.get(c.ctx);
+      if(!saved||saved.color!==color){const paint=c.ctx.createLinearGradient(0,0,1,0);paint.addColorStop(0,color);paint.addColorStop(1,color);saved={color,paint};forecastPaints.set(c.ctx,saved);}
+      return saved.paint;
+    }
+    function forecast(c){
+      const slots=forecastSlots(c),opts=c.config.options,active=!!data.forecastEnabled&&slots.length>1;
+      opts.scales=opts.scales||{};
+      const color=forecastColor(c),paint=forecastPaint(c,color);
+      const swatch=document.getElementById('be-epex-forecast-switch');if(swatch)swatch.style.setProperty('--be-epex-forecast-color',color);
+      opts.scales.beEpex={type:'linear',axis:'y',display:false,
+        grid:{display:false,drawOnChartArea:false},border:{display:false},
+        title:{display:false},ticks:{display:false}};
+      let ds=c.data.datasets.find(d=>d.beEpexForecast);
+      if(!active){c.data.datasets=c.data.datasets.filter(d=>!d.beEpexForecast);c.$beEpexForecastRows=[];c.$beEpexForecastSignature=forecastSignature(c);return;}
+      if(!ds){ds={beEpexForecast:true,type:'line',yAxisID:'beEpex',parsing:false,pointRadius:0,pointHitRadius:6,fill:false,spanGaps:false,order:-30};c.data.datasets.push(ds);}
+      const rows=[...new Map((data.forecastRows||[]).filter(r=>Number.isFinite(r.start)&&r.end-r.start===900000&&Number.isFinite(r.price)).map(r=>[r.start,r])).values()].sort((a,b)=>a.start-b.start);
+      const out=[],quoted=[];let end=null,lastValue=null;
+      for(const r of rows){
+        const from=Math.max(r.start,slots[0].t),to=Math.min(r.end,slots.at(-1).t+slots.at(-1).dt);
+        if(to<=from)continue;
+        const x=indexAt(slots,from),z=indexAt(slots,to);if(x===null||z===null)continue;
+        const value=data.allin?r.price*data.btw+data.opslag+data.eb:r.price;
+        if(end!==null&&from>end){out.push({x:indexAt(slots,end),y:lastValue},{x:indexAt(slots,end),y:null});}
+        out.push({x,y:value});end=to;lastValue=value;quoted.push({...r,value});
+      }
+      if(end!==null)out.push({x:indexAt(slots,end),y:lastValue});
+      Object.assign(ds,{label:data.allin?'EPEX · all-in':'EPEX · kaal',borderColor:paint,backgroundColor:paint,beEpexForecastColor:color,borderWidth:1,stepped:false,tension:.3,cubicInterpolationMode:'monotone',data:out});
+      c.$beEpexForecastRows=quoted;c.$beEpexForecastSignature=forecastSignature(c);
+    }
+    function install(force=false){
       const C=typeof Chart!=='undefined'?Chart:window.Chart;if(!C)return;
-      if(!registered){C.register({id:'beEpexOverlay',beforeUpdate(c){
+      if(C!==library){C.register({id:'beEpexOverlay',beforeUpdate(c){
+        if(c.canvas.id==='soc-forecast-chart'){forecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         // Write raw configuration, never assign Chart.js option resolvers to themselves.
         const opts=c.config.options;
@@ -137,6 +257,7 @@
         ds.label=data.allin?'EPEX · all-in':'EPEX · kaal';ds.data=points(c);
         ds.tooltip={callbacks:{label:z=>ds.label+': € '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:5})+'/kWh'}};
       },afterUpdate(c){
+        if(c.canvas.id==='soc-forecast-chart'){announceForecast(c);requestForecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         const host=document.getElementById('be-epex-legend');if(!host)return;
         const bar=host.parentElement,rect=c.canvas.getBoundingClientRect(),barRect=bar.getBoundingClientRect();
@@ -154,19 +275,24 @@
           const label=document.createElement('span');label.textContent=item.label;button.append(swatch,label);
           button.addEventListener('click',()=>{c.setDatasetVisibility(item.index,!c.isDatasetVisible(item.index));c.update('none');});host.append(button);
         });
-      }});registered=true;}
-      const c=C.getChart('be-tarief-chart');if(c)c.update('none');
+      }});library=C;}
+      const c=C.getChart('be-tarief-chart');if(c&&(force||c!==attachedChart)){attachedChart=c;c.update('none');}
+      const f=C.getChart('soc-forecast-chart');attachedForecast=f;if(f)requestForecast(f);
     }
-    document.addEventListener('be-epex-data',()=>{config();install();});
-    document.addEventListener('be-tarief-update',()=>{config();install();});
+    document.addEventListener('be-epex-data',()=>{config();install(true);});
+    document.addEventListener('be-tarief-update',()=>{config();install(true);});
+    document.addEventListener('be-dark-change',()=>{config();install(true);});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){config();install();}});
     config();install();
+    setInterval(()=>{const C=window.Chart;if(C?.getChart&&(C!==library||C.getChart('be-tarief-chart')!==attachedChart||C.getChart('soc-forecast-chart')!==attachedForecast)){config();install();}},1000);
   }
   const bridge=document.createElement('script');bridge.textContent='('+chartBridge.toString()+')();';document.documentElement.appendChild(bridge);bridge.remove();
   let pending=false;
-  const observer=new MutationObserver(()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;mount();},150);});
+  const observer=new MutationObserver(()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;mount();mountForecast();},150);});
   observer.observe(document.body||document.documentElement,{childList:true,subtree:true});
   document.addEventListener('be-actueel-allin-update',publish);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();refresh();}});
+  document.addEventListener('be-epex-forecast-range',()=>{mountForecast();refreshForecast();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();mountForecast();refresh();refreshForecast();}});
   window.addEventListener('storage',e=>{if(e.key===KEY){enabled=e.newValue==='aan';publish();refresh();}});
-  mount();setInterval(refresh,60000);
+  mount();mountForecast();setInterval(()=>{refresh();refreshForecast();},60000);
 })();

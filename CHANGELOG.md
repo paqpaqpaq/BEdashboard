@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.6.5 — 6 november 2026
+
+- EPEX-kwartierprijzen in de forecastgrafiek
+
 ## 6.6.4 — 5 november 2026
 
 - Prestatieverbeteringen zonder verlies van functionaliteit

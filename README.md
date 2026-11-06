@@ -2,11 +2,11 @@
 
 Financieel overzicht, aanvullende prijzen en een eigen SOC-berekening voor het Balansenergie-dashboard.
 
-## Download — versie 6.6.4 (stabiel)
+## Download — versie 6.6.5 (stabiel)
 
 - **[Userscript installeren](https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js)** — Safari/Userscripts of Chrome/Edge/Tampermonkey.
-- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.4/BE_dashboard_6_6_4.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
-- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.4/Balansenergie-All-in-v6.6.4.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.6.4).
+- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.5/BE_dashboard_6_6_5.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
+- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.5/Balansenergie-All-in-v6.6.5.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.6.5).
 
 Vervang de bestaande versie en herlaad het dashboard. Gebruik één hoofdvariant tegelijk: schakel de versie 6-beta en losse SOC-, BID-, EPEX- en break-even-plugins uit wanneer je deze versie installeert. De beta gebruikt een apart installatiekanaal en wordt daardoor niet automatisch vervangen door de stabiele versie. Bestaande instellingen en lokaal bewaarde historie blijven behouden in dezelfde browser en voor dezelfde installatie.
 
@@ -15,6 +15,7 @@ Gebruik bij een userscript de functie **Bijwerken** op je bestaande installatie.
 ## Wat verandert er van 5 naar 6?
 
 - **Een eigen Financieel-scherm:** maandstaat, stroomresultaten, gemiddelde import- en exporttarieven, voorschotten, vaste kosten, belastingen en saldo bij elkaar. Kies een maand, contractjaar of eigen periode en bekijk de prognose voor de resterende contractperiode. Het oorspronkelijke BE-resultatenscherm blijft beschikbaar.
+- **EPEX in de forecast:** kwartierprijzen in de SOC-forecastgrafiek, met een eigen schakelaar in de legenda en prijsinformatie in de gezamenlijke tooltip.
 - **Dagtotalen bij het vermogen:** in Actueel staat bij net, batterij, verbruik en PV-opwek ook het dagtotaal in kWh. `~` betekent dat een deel van de meetgegevens ontbreekt.
 - **Day-ahead verwerken:** geplande importkwartieren gebruiken de dynamische prijs van Balans, of de aangeleverde combinatie met aFRR. De lopende telling en voorlopige dagcache bewaren deze marktkeuze ook na herladen. Ontbrekende planning of prijzen blijven ongeprijsd; beschikbare Balans-dagbedragen hebben altijd voorrang in Financieel.
 - **Coulombtelling in/uit:** een onafhankelijke blauwe SOC-lijn in Actueel en Forecast, berekend uit het accuvermogen op het BE-dashboard. Met bewaarde historie, handmatig herijken en automatische ijking rond 10% en 95%. De forecast blijft binnen 5–100%. De chemische inhoud en kWh in SOC-tooltips zijn met `~` gemarkeerde schattingen op basis van de spanningscurve; ze blijven afhankelijk van de SOC-telling. De vooruitblik volgt de verwachte SOC-beweging van Balans SOC p50, inclusief geplande im- en export, vanaf de eigen actuele SOC. Dit is een prognose; bij ontbrekende p50-bron blijft de PV-/verbruiksraming beschikbaar.

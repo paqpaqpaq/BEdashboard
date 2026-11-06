@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.6.4
+// @version      6.6.5
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -462,7 +462,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.4'
+    '6.6.5'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11948,7 +11948,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.4' +
+        'Instellingen v6.6.5' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12394,7 +12394,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.4. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.5. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12717,7 +12717,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.4</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.5</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13765,6 +13765,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   const read=(key)=>{try{return localStorage.getItem(key);}catch(_){return null;}};
   const save=(key,value)=>{try{localStorage.setItem(key,value);}catch(_){}};
   let enabled=read(KEY)==='aan', rows=[],cache=null,busy=false,retryAt=0,error='',button,status;
+  const FORECAST_KEY='be_epex_forecast_enabled_v1',FORECAST_CACHE='be_epex_forecast_prices_v1';
+  let forecastEnabled=read(FORECAST_KEY)!=='uit',forecastCache={},forecastBusy=false,forecastError='';
+  try{forecastCache=JSON.parse(read(FORECAST_CACHE))||{};}catch(_){}
   try{cache=JSON.parse(read(CACHE));if(cache)rows=normalise(cache.body);}catch(_){cache=null;}
   function normalise(body){
     if(!body || body.interval!=='RESPONSE_INTERVAL_QUARTER' || !Array.isArray(body.base))throw Error('Onbekend EnergyZero-prijsformaat');
@@ -13785,8 +13788,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   }
   function publish(){
     const s=settings();
-    stateNode.textContent=JSON.stringify({enabled,rows,allin:s.aan!==false,btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
-    document.dispatchEvent(new Event('be-epex-data'));
+    const forecastRows=Object.values(forecastCache).flatMap(c=>Array.isArray(c?.rows)?c.rows:[]).sort((a,b)=>a.start-b.start);
+    const text=JSON.stringify({enabled,rows,forecastEnabled,forecastRows,allin:typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit',btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
+    if(stateNode.textContent!==text){stateNode.textContent=text;document.dispatchEvent(new Event('be-epex-data'));}
     if(button){
       button.setAttribute('aria-checked',String(enabled));
       button.querySelector('.be-epex-state').textContent=enabled?'AAN':'UIT';
@@ -13796,10 +13800,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       status.textContent=enabled&&error?'!':enabled&&busy&&!rows.length?'…':'';
       status.title=error||'Prijzen ophalen';status.hidden=!status.textContent;
     }
+    const fb=document.getElementById('be-epex-forecast-switch');
+    if(fb){fb.setAttribute('aria-pressed',String(forecastEnabled));fb.title='EPEX-kwartierprijs '+(forecastEnabled?'verbergen':'tonen');fb.querySelector('[data-epex-label]').textContent=(typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit')?'EPEX · all-in':'EPEX · kaal';}
+    const note=document.getElementById('be-epex-forecast-status');
+    if(note){const message=forecastError||(forecastBusy&&!forecastRows.length?'Prijzen ophalen…':'');if(note.textContent!==message)note.textContent=message;}
 
   }
-  function range(){
-    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  function range(at=Date.now()){
+    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(at));
     const part=t=>parts.find(p=>p.type===t).value;
     const date=part('day')+'-'+part('month')+'-'+part('year');
     return {date,key:date};
@@ -13825,6 +13833,26 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }catch(e){error=e.message+(rows.length?' · eerder opgehaalde prijzen zichtbaar':'');retryAt=Date.now()+300000;}
     finally{busy=false;publish();}
   }
+  async function refreshForecast(){
+    if(!forecastEnabled||forecastBusy||document.hidden||!document.getElementById('soc-forecast-chart'))return;
+    let dates=[];try{dates=JSON.parse(document.getElementById('be-epex-forecast-range')?.textContent||'[]');}catch(_){}
+    dates=[...new Set(dates)].filter(d=>/^\d{2}-\d{2}-\d{4}$/.test(d)).slice(0,3);
+    if(!dates.length)return;
+    forecastBusy=true;forecastError='';
+    try{
+      for(const date of dates){
+        const saved=forecastCache[date];if(saved?.retryAt>Date.now())continue;
+        if(cache?.key===date&&Date.now()-cache.at<900000){forecastCache[date]={rows:normalise(cache.body),at:cache.at,retryAt:cache.at+900000};continue;}
+        try{
+          const body=await request('https://public.api.energyzero.nl/v1/prices?date='+date+'&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY');
+          const parsed=normalise(body);
+          forecastCache[date]={rows:parsed,at:Date.now(),retryAt:Date.now()+(parsed.length?900000:300000)};
+        }catch(e){forecastCache[date]={rows:saved?.rows||[],at:saved?.at||0,retryAt:Date.now()+300000};forecastError='Nog niet alle kwartierprijzen beschikbaar';}
+      }
+      for(const key of Object.keys(forecastCache))if(!dates.includes(key))delete forecastCache[key];
+      save(FORECAST_CACHE,JSON.stringify(forecastCache));
+    }finally{forecastBusy=false;publish();}
+  }
   const style=document.createElement('style');style.textContent=`
     #be-epex-control{display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;flex-wrap:wrap;box-sizing:border-box;padding:8px 2px 4px;color:inherit}
     #be-epex-legend{display:flex;align-items:center;gap:12px;margin-right:auto;flex-wrap:wrap;font:11px/1.3 system-ui,sans-serif}
@@ -13847,6 +13875,16 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     @media(max-width:700px){#be-epex-control{justify-content:flex-end;width:100%;padding-top:6px}#be-epex-switch{border-left:0}}
     @media(prefers-reduced-motion:reduce){#be-epex-switch .be-epex-thumb{transition:none}}
   `;document.documentElement.appendChild(style);
+  style.textContent+=`#be-epex-forecast-switch{display:inline-flex;align-items:center;gap:5px;appearance:none;background:transparent;color:inherit;border:0;padding:3px 0;font:11px/1.3 system-ui,sans-serif;cursor:pointer}#be-epex-forecast-switch[aria-pressed="false"]{opacity:.5;text-decoration:line-through}#be-epex-forecast-switch .be-soc-series-swatch{height:2px;background:var(--be-epex-forecast-color,#9ccced)!important}#be-epex-forecast-status{font:11px/1.4 system-ui,sans-serif;opacity:.7}#be-epex-forecast-switch:focus-visible{outline:2px solid #9ccced;outline-offset:3px;border-radius:3px}`;
+  function mountForecast(){
+    const cv=document.getElementById('soc-forecast-chart');if(!cv)return;
+    const legend=document.querySelector('[data-be-soc-legend="soc-forecast-chart"]');if(!legend)return;
+    const existing=document.getElementById('be-epex-forecast-switch');if(existing){if(existing.parentElement!==legend)legend.appendChild(existing);return;}
+    const button=document.createElement('button');button.id='be-epex-forecast-switch';button.type='button';button.className='be-soc-series-toggle';button.setAttribute('aria-label','EPEX per kwartier op forecast');
+    button.innerHTML='<span class="be-soc-series-swatch" aria-hidden="true"></span><span data-epex-label>EPEX</span>';
+    button.addEventListener('click',()=>{forecastEnabled=!forecastEnabled;save(FORECAST_KEY,forecastEnabled?'aan':'uit');publish();refreshForecast();});
+    legend.appendChild(button);publish();refreshForecast();
+  }
   function mount(){
     const host=document.getElementById('be-tarief-row');
     if(!host||host.querySelector('#be-epex-control'))return;
@@ -13867,7 +13905,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   // The main plugin also bridges into the page, where its Chart instance lives.
   function chartBridge(){
     if(window.__beEpexBridge)return;window.__beEpexBridge=true;
-    let data={enabled:false,rows:[]},library=null,attachedChart=null;
+    let data={enabled:false,rows:[]},library=null,attachedChart=null,attachedForecast=null;
+    const forecastPending=new WeakSet();
+    const forecastPaints=new WeakMap();
+    const dayClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',year:'numeric'});
     function config(){try{data=JSON.parse(document.getElementById('be-epex-addon').textContent);}catch(_){}}
     function points(c){
       const x=c.options.scales?.x||{},min=x.min??-Infinity,max=x.max??Infinity,out=[];
@@ -13880,9 +13921,88 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
       return out;
     }
+    function forecastSlots(c){
+      const slots=c.$beEpexForecastSlots||[];
+      return slots.length&&window.BESOCExtras?.forecastGrid(c,slots).valid?slots:[];
+    }
+    function indexAt(slots,t){
+      if(!slots.length||t<slots[0].t||t>slots.at(-1).t+slots.at(-1).dt)return null;
+      let lo=0,hi=slots.length;
+      while(lo<hi){const mid=(lo+hi)>>>1;if(slots[mid].t<=t)lo=mid+1;else hi=mid;}
+      const i=Math.max(0,lo-1),step=slots[i+1]?slots[i+1].t-slots[i].t:slots[i].dt;
+      if(!(step>0)||step>slots[i].dt+1)return null;
+      return i+(t-slots[i].t)/step;
+    }
+    function forecastSignature(c){
+      return JSON.stringify([data.forecastEnabled,data.allin,data.btw,data.opslag,data.eb,data.forecastRows,
+        forecastSlots(c).map(s=>[s.t,s.dt]),document.documentElement.getAttribute('data-be-dark'),document.documentElement.getAttribute('data-be-dark-style')]);
+    }
+    function requestForecast(c){
+      if(document.hidden||forecastPending.has(c))return;
+      forecastPending.add(c);
+      (typeof requestAnimationFrame==='function'?requestAnimationFrame:f=>setTimeout(f,0))(()=>{
+        forecastPending.delete(c);if(c.canvas.isConnected===false||document.hidden)return;
+        if(c.$beEpexForecastSignature!==forecastSignature(c)){
+          if(window.BEChartRefresh)window.BEChartRefresh.request(c,'update');else c.update('none');
+        }
+      });
+    }
+    function announceForecast(c){
+      const dates=[...new Set(forecastSlots(c).map(s=>dayClock.format(new Date(s.t)).replace(/\//g,'-')))];
+      let n=document.getElementById('be-epex-forecast-range');
+      if(!n){n=document.createElement('script');n.type='application/json';n.id='be-epex-forecast-range';document.documentElement.appendChild(n);}
+      const text=JSON.stringify(dates);if(n.textContent!==text){n.textContent=text;document.dispatchEvent(new Event('be-epex-forecast-range'));}
+    }
+    function forecastColor(c){
+      function lighter(channels){return 'rgb('+channels.map(v=>Math.round(Number(v)+(255-Number(v))*.12)).join(',')+')';}
+      const annotations=c.config.options.plugins?.annotation?.annotations||{};
+      for(const [key,a] of Object.entries(annotations)){
+        if(!a||typeof a!=='object')continue;
+        if(!/day[ _-]?ahead|epex|dynamisch/i.test(key+' '+(a?.label?.content||'')))continue;
+        for(const candidate of [a.borderColor,a.backgroundColor]){
+          if(typeof candidate!=='string')continue;
+          const rgb=candidate.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)/i);
+          if(rgb)return lighter(rgb.slice(1,4));
+          if(/^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(candidate))return lighter([1,3,5].map(i=>parseInt(candidate.slice(i,i+2),16)));
+        }
+      }
+      return '#9ccced';
+    }
+    function forecastPaint(c,color){
+      if(!c.ctx?.createLinearGradient)return color;
+      let saved=forecastPaints.get(c.ctx);
+      if(!saved||saved.color!==color){const paint=c.ctx.createLinearGradient(0,0,1,0);paint.addColorStop(0,color);paint.addColorStop(1,color);saved={color,paint};forecastPaints.set(c.ctx,saved);}
+      return saved.paint;
+    }
+    function forecast(c){
+      const slots=forecastSlots(c),opts=c.config.options,active=!!data.forecastEnabled&&slots.length>1;
+      opts.scales=opts.scales||{};
+      const color=forecastColor(c),paint=forecastPaint(c,color);
+      const swatch=document.getElementById('be-epex-forecast-switch');if(swatch)swatch.style.setProperty('--be-epex-forecast-color',color);
+      opts.scales.beEpex={type:'linear',axis:'y',display:false,
+        grid:{display:false,drawOnChartArea:false},border:{display:false},
+        title:{display:false},ticks:{display:false}};
+      let ds=c.data.datasets.find(d=>d.beEpexForecast);
+      if(!active){c.data.datasets=c.data.datasets.filter(d=>!d.beEpexForecast);c.$beEpexForecastRows=[];c.$beEpexForecastSignature=forecastSignature(c);return;}
+      if(!ds){ds={beEpexForecast:true,type:'line',yAxisID:'beEpex',parsing:false,pointRadius:0,pointHitRadius:6,fill:false,spanGaps:false,order:-30};c.data.datasets.push(ds);}
+      const rows=[...new Map((data.forecastRows||[]).filter(r=>Number.isFinite(r.start)&&r.end-r.start===900000&&Number.isFinite(r.price)).map(r=>[r.start,r])).values()].sort((a,b)=>a.start-b.start);
+      const out=[],quoted=[];let end=null,lastValue=null;
+      for(const r of rows){
+        const from=Math.max(r.start,slots[0].t),to=Math.min(r.end,slots.at(-1).t+slots.at(-1).dt);
+        if(to<=from)continue;
+        const x=indexAt(slots,from),z=indexAt(slots,to);if(x===null||z===null)continue;
+        const value=data.allin?r.price*data.btw+data.opslag+data.eb:r.price;
+        if(end!==null&&from>end){out.push({x:indexAt(slots,end),y:lastValue},{x:indexAt(slots,end),y:null});}
+        out.push({x,y:value});end=to;lastValue=value;quoted.push({...r,value});
+      }
+      if(end!==null)out.push({x:indexAt(slots,end),y:lastValue});
+      Object.assign(ds,{label:data.allin?'EPEX · all-in':'EPEX · kaal',borderColor:paint,backgroundColor:paint,beEpexForecastColor:color,borderWidth:1,stepped:false,tension:.3,cubicInterpolationMode:'monotone',data:out});
+      c.$beEpexForecastRows=quoted;c.$beEpexForecastSignature=forecastSignature(c);
+    }
     function install(force=false){
       const C=typeof Chart!=='undefined'?Chart:window.Chart;if(!C)return;
       if(C!==library){C.register({id:'beEpexOverlay',beforeUpdate(c){
+        if(c.canvas.id==='soc-forecast-chart'){forecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         // Write raw configuration, never assign Chart.js option resolvers to themselves.
         const opts=c.config.options;
@@ -13895,6 +14015,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         ds.label=data.allin?'EPEX · all-in':'EPEX · kaal';ds.data=points(c);
         ds.tooltip={callbacks:{label:z=>ds.label+': € '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:5})+'/kWh'}};
       },afterUpdate(c){
+        if(c.canvas.id==='soc-forecast-chart'){announceForecast(c);requestForecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         const host=document.getElementById('be-epex-legend');if(!host)return;
         const bar=host.parentElement,rect=c.canvas.getBoundingClientRect(),barRect=bar.getBoundingClientRect();
@@ -13914,20 +14035,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         });
       }});library=C;}
       const c=C.getChart('be-tarief-chart');if(c&&(force||c!==attachedChart)){attachedChart=c;c.update('none');}
+      const f=C.getChart('soc-forecast-chart');attachedForecast=f;if(f)requestForecast(f);
     }
     document.addEventListener('be-epex-data',()=>{config();install(true);});
     document.addEventListener('be-tarief-update',()=>{config();install(true);});
+    document.addEventListener('be-dark-change',()=>{config();install(true);});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){config();install();}});
     config();install();
-    setInterval(install,1000);
+    setInterval(()=>{const C=window.Chart;if(C?.getChart&&(C!==library||C.getChart('be-tarief-chart')!==attachedChart||C.getChart('soc-forecast-chart')!==attachedForecast)){config();install();}},1000);
   }
   const bridge=document.createElement('script');bridge.textContent='('+chartBridge.toString()+')();';document.documentElement.appendChild(bridge);bridge.remove();
   let pending=false;
-  const observer=new MutationObserver(()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;mount();},150);});
+  const observer=new MutationObserver(()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;mount();mountForecast();},150);});
   observer.observe(document.body||document.documentElement,{childList:true,subtree:true});
   document.addEventListener('be-actueel-allin-update',publish);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();refresh();}});
+  document.addEventListener('be-epex-forecast-range',()=>{mountForecast();refreshForecast();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();mountForecast();refresh();refreshForecast();}});
   window.addEventListener('storage',e=>{if(e.key===KEY){enabled=e.newValue==='aan';publish();refresh();}});
-  mount();setInterval(refresh,60000);
+  mount();mountForecast();setInterval(()=>{refresh();refreshForecast();},60000);
 })();
 
 
@@ -14520,7 +14645,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.6.4. BE data only. */
+/* Coulombtelling in/uit — 6.6.5. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -14864,6 +14989,27 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   }
   function pick(chart,pointer){
     const scale=chart.scales?.x;if(!scale)return null;
+    const slots=chart.$beEpexForecastSlots;
+    if(chart.canvas?.id==='soc-forecast-chart'&&scale.type==='category'&&Array.isArray(slots)&&slots.length>1&&
+       chart.data.datasets.some((d,i)=>d.beEpexForecast&&chart.isDatasetVisible(i))){
+      // CategoryScale.getValueForPixel rounds to the native sample (sometimes
+      // hourly). Read its pixel spacing directly to retain quarter resolution.
+      const end=slots.length-1,left=scale.getPixelForValue(0),right=scale.getPixelForValue(end);
+      if(finite(left)&&finite(right)&&right!==left){
+        const at=Math.max(0,Math.min(end,(pointer.x-left)/(right-left)*end));
+        const k=Math.min(end-1,Math.floor(at)),a=slots[k]?.t,b=slots[k+1]?.t;
+        if(finite(a)&&finite(b)&&b>a){
+          const time=Math.floor(Math.round(a+(b-a)*(at-k))/900000)*900000;
+          if(time>=slots[0].t&&time<=slots[end].t){
+            let lo=0,hi=end;
+            while(lo<hi){const m=(lo+hi+1)>>1;if(slots[m].t<=time)lo=m;else hi=m-1;}
+            const x=lo===end?end:lo+(time-slots[lo].t)/(slots[lo+1].t-slots[lo].t);
+            const px=scale.getPixelForValue(x);
+            if(finite(px))return {x,px,time,epexQuarter:true};
+          }
+        }
+      }
+    }
     let x=scale.getValueForPixel(pointer.x);if(!finite(x))return null;
     if(scale.type==='category')x=Math.round(x);
     // Real-time axes follow the pointer continuously. A sparse native series
@@ -14877,25 +15023,28 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(!chart.isDatasetVisible(i))return;
       const meta=chart.getDatasetMeta(i);if(meta.type&&meta.type!=='line')return;
       if(d.borderWidth===0||meta.dataset?.options?.borderWidth===0)return;
-      const own=d.beOwnSOC,group=own?'be':'native:'+i;
-      const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
-      const baseColor=own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
-      const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
+      const own=d.beOwnSOC,price=d.beEpexForecast===true,group=own?'be':'native:'+i;
+      const quote=price&&finite(selected.time)?(chart.$beEpexForecastRows||[]).find(r=>r.start<=selected.time&&selected.time<r.end&&r.end-r.start===900000):null;
+      const sampled=price?{value:finite(quote?.value)?quote.value:null,approx:false}:valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
+      const baseColor=price&&d.beEpexForecastColor?d.beEpexForecastColor:own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
+      const color=typeof baseColor==='string'?(!own&&!price&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
-      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
-        energyKwh:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
+      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,unit:price?'eur-kwh':'soc',
+        energyKwh:price?null:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
     });
     const xScale=chart.scales.x,times=configs.get(chart)?.times;
     const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
-    const time=['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
-    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    const time=finite(selected.time)?selected.time:['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
+    let title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    if(selected.epexQuarter)title+='–'+new Date(time+900000).toLocaleTimeString('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit'});
     return {...selected,title,rows};
   }
   function format(row){
     if(!finite(row.value))return '—';
+    if(row.unit==='eur-kwh')return '€ '+row.value.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+'/kWh';
     const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
@@ -15427,7 +15576,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -15441,7 +15590,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
   function forecastValues(chart){
-    const pending=notice=>({actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice});
+    const pending=notice=>{chart.$beEpexForecastSlots=[];return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
     const items=payload?.items;if(!items?.length)return pending('Vooruitblik wacht op prognosegegevens.');
     if(!ext.sameForecastDay(forecastFetch))return pending('Vooruitblik wacht op vernieuwde prognosegegevens voor vandaag.');
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
@@ -15451,6 +15600,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const anchor=last?{...last,soc:visualSoc(last)}:null;
     const grid=ext.forecastGrid(chart,slots,anchor);
     if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.');
+    chart.$beEpexForecastSlots=slots;
     const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);
     return {actual:slots.map(q=>core.at(visible,q.t,c.maxGapMs)),
       future:planned||ext.project(slots,anchor,c,power),basis:planned?'BE-planning':'PV/verbruik',notice:''};
@@ -15470,7 +15620,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     if(labels.filter?.beOwnSocLegendFilter)return;
     const previous=labels.filter;
     function filter(item,data){
-      return !data.datasets[item.datasetIndex]?.beOwnSOC&&(!previous||previous.call(this,item,data));
+      return !data.datasets[item.datasetIndex]?.beOwnSOC&&!data.datasets[item.datasetIndex]?.beEpexForecast&&(!previous||previous.call(this,item,data));
     }
     filter.beOwnSocLegendFilter=true;
     labels.filter=filter;
@@ -15511,7 +15661,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       const rect=canvas.getBoundingClientRect(),scale=chart.width>0?rect.width/chart.width:1;
       row.style.paddingLeft=Math.max(0,(chart.chartArea?.left||0)*scale)+'px';
     }
-    for(const button of row.querySelectorAll('button')){
+    for(const button of row.querySelectorAll('button[data-be-soc-group]')){
       const visible=cfg['show_'+button.dataset.beSocGroup]!==false;
       button.setAttribute('aria-pressed',String(visible));
     }
@@ -15631,7 +15781,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.6.4. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.5. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -16508,7 +16658,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.4'+
+      '\nDashboardversie: 6.6.5'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

@@ -19,6 +19,27 @@
   }
   function pick(chart,pointer){
     const scale=chart.scales?.x;if(!scale)return null;
+    const slots=chart.$beEpexForecastSlots;
+    if(chart.canvas?.id==='soc-forecast-chart'&&scale.type==='category'&&Array.isArray(slots)&&slots.length>1&&
+       chart.data.datasets.some((d,i)=>d.beEpexForecast&&chart.isDatasetVisible(i))){
+      // CategoryScale.getValueForPixel rounds to the native sample (sometimes
+      // hourly). Read its pixel spacing directly to retain quarter resolution.
+      const end=slots.length-1,left=scale.getPixelForValue(0),right=scale.getPixelForValue(end);
+      if(finite(left)&&finite(right)&&right!==left){
+        const at=Math.max(0,Math.min(end,(pointer.x-left)/(right-left)*end));
+        const k=Math.min(end-1,Math.floor(at)),a=slots[k]?.t,b=slots[k+1]?.t;
+        if(finite(a)&&finite(b)&&b>a){
+          const time=Math.floor(Math.round(a+(b-a)*(at-k))/900000)*900000;
+          if(time>=slots[0].t&&time<=slots[end].t){
+            let lo=0,hi=end;
+            while(lo<hi){const m=(lo+hi+1)>>1;if(slots[m].t<=time)lo=m;else hi=m-1;}
+            const x=lo===end?end:lo+(time-slots[lo].t)/(slots[lo+1].t-slots[lo].t);
+            const px=scale.getPixelForValue(x);
+            if(finite(px))return {x,px,time,epexQuarter:true};
+          }
+        }
+      }
+    }
     let x=scale.getValueForPixel(pointer.x);if(!finite(x))return null;
     if(scale.type==='category')x=Math.round(x);
     // Real-time axes follow the pointer continuously. A sparse native series
@@ -32,25 +53,28 @@
       if(!chart.isDatasetVisible(i))return;
       const meta=chart.getDatasetMeta(i);if(meta.type&&meta.type!=='line')return;
       if(d.borderWidth===0||meta.dataset?.options?.borderWidth===0)return;
-      const own=d.beOwnSOC,group=own?'be':'native:'+i;
-      const sampled=valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
-      const baseColor=own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
-      const color=typeof baseColor==='string'?(!own&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
+      const own=d.beOwnSOC,price=d.beEpexForecast===true,group=own?'be':'native:'+i;
+      const quote=price&&finite(selected.time)?(chart.$beEpexForecastRows||[]).find(r=>r.start<=selected.time&&selected.time<r.end&&r.end-r.start===900000):null;
+      const sampled=price?{value:finite(quote?.value)?quote.value:null,approx:false}:valueAt(meta,selected.x,d.stepped??meta.dataset?.options?.stepped);
+      const baseColor=price&&d.beEpexForecastColor?d.beEpexForecastColor:own?(own==='forecast'?'var(--be-coulomb-forecast,rgba(8,145,178,.55))':'var(--be-coulomb-line,#0891b2)'):meta.dataset?.options?.borderColor||d.borderColor;
+      const color=typeof baseColor==='string'?(!own&&!price&&root.BETheme?.isDark?.()?root.BETheme.color(baseColor,'text',true):baseColor):'#6b7280';
       const y=chart.scales[meta.yAxisID||d.yAxisID||'y'];
-      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,
-        energyKwh:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
+      const row={label:own?'Coulombtelling in/uit':String(d.label||'Lijn '+(i+1)),color,...sampled,unit:price?'eur-kwh':'soc',
+        energyKwh:price?null:root.BEMeasuredVoltage?.energyKwh(sampled.value,capacity)??null,
         py:sampled.value===null?null:y?.getPixelForValue(sampled.value)};
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
     });
     const xScale=chart.scales.x,times=configs.get(chart)?.times;
     const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
-    const time=['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
-    const title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    const time=finite(selected.time)?selected.time:['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
+    let title=finite(time)?new Date(time).toLocaleString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:xScale.type==='category'?undefined:'2-digit'}):String(label??selected.x);
+    if(selected.epexQuarter)title+='–'+new Date(time+900000).toLocaleTimeString('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit'});
     return {...selected,title,rows};
   }
   function format(row){
     if(!finite(row.value))return '—';
+    if(row.unit==='eur-kwh')return '€ '+row.value.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+'/kWh';
     const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
