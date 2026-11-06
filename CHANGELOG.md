@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.6.6 — 6 november 2026
+
+- EPEX bron nordpool
+- min max EPEX tarief in forecast grafierk
+
 ## 6.6.5 — 6 november 2026
 
 - EPEX-kwartierprijzen in de forecastgrafiek

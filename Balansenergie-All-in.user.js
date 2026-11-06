@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.6.5
+// @version      6.6.6
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -20,6 +20,7 @@
 // @connect      api.tennet.eu
 // @connect      api.acc.tennet.eu
 // @connect      public.api.energyzero.nl
+// @connect      dataportal-api.nordpoolgroup.com
 // ==/UserScript==
 (function () {
   'use strict';
@@ -462,7 +463,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.5'
+    '6.6.6'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11948,7 +11949,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.5' +
+        'Instellingen v6.6.6' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12394,7 +12395,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.5. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.6. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12717,7 +12718,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.5</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.6</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13758,18 +13759,28 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
 (function () {
   'use strict';
-  const ID='be-epex-addon', KEY='be_epex_enabled_v1', CACHE='be_epex_energyzero_prices_v1';
+  const ID='be-epex-addon', KEY='be_epex_enabled_v1', CACHE='be_epex_nordpool_prices_v1';
   if(document.getElementById(ID))return;
   const stateNode=document.createElement('script');stateNode.type='application/json';stateNode.id=ID;
   document.documentElement.appendChild(stateNode);
   const read=(key)=>{try{return localStorage.getItem(key);}catch(_){return null;}};
   const save=(key,value)=>{try{localStorage.setItem(key,value);}catch(_){}};
   let enabled=read(KEY)==='aan', rows=[],cache=null,busy=false,retryAt=0,error='',button,status;
-  const FORECAST_KEY='be_epex_forecast_enabled_v1',FORECAST_CACHE='be_epex_forecast_prices_v1';
+  const FORECAST_KEY='be_epex_forecast_enabled_v1',FORECAST_CACHE='be_epex_nordpool_forecast_prices_v1';
   let forecastEnabled=read(FORECAST_KEY)!=='uit',forecastCache={},forecastBusy=false,forecastError='';
   try{forecastCache=JSON.parse(read(FORECAST_CACHE))||{};}catch(_){}
-  try{cache=JSON.parse(read(CACHE));if(cache)rows=normalise(cache.body);}catch(_){cache=null;}
+  try{cache=JSON.parse(read(CACHE));if(cache)rows=Array.isArray(cache.rows)?cache.rows:normalise(cache.body);}catch(_){cache=null;}
   function normalise(body){
+    if(Array.isArray(body?.multiAreaEntries)){
+      if(body.currency!=='EUR'||body.market!=='DayAhead'||!body.deliveryAreas?.includes('NL'))throw Error('Onbekende Nord Pool-markt');
+      const rows=body.multiAreaEntries.filter(r=>{const v=r?.entryPerArea?.NL;return (typeof v==='number'||typeof v==='string'&&v.trim()!=='')&&Number.isFinite(Number(v));}).map(r=>{
+        const start=Date.parse(r.deliveryStart),end=Date.parse(r.deliveryEnd),price=Number(r.entryPerArea.NL)/1000;
+        if(!Number.isFinite(start)||!Number.isFinite(end)||end-start!==900000)throw Error('Onbekende Nord Pool-kwartiertijden');
+        return {start,end,price};
+      }).sort((a,b)=>a.start-b.start);
+      for(let i=1;i<rows.length;i++)if(rows[i].start<rows[i-1].end)throw Error('Overlappende Nord Pool-prijzen');
+      return rows;
+    }
     if(!body || body.interval!=='RESPONSE_INTERVAL_QUARTER' || !Array.isArray(body.base))throw Error('Onbekend EnergyZero-prijsformaat');
     const rows=body.base.map(r=>{
       const value=r?.price?.value;
@@ -13812,6 +13823,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     const date=part('day')+'-'+part('month')+'-'+part('year');
     return {date,key:date};
   }
+  function nordPoolUrl(date){
+    const parts=date.split('-'),iso=parts[0].length===4?date:parts[2]+'-'+parts[1]+'-'+parts[0];
+    return 'https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices?date='+iso+'&market=DayAhead&deliveryArea=NL&currency=EUR';
+  }
   function request(url){
     return new Promise((resolve,reject)=>{
       const fn=typeof GM_xmlhttpRequest==='function'?GM_xmlhttpRequest:typeof GM!=='undefined'&&typeof GM.xmlHttpRequest==='function'?GM.xmlHttpRequest.bind(GM):null;
@@ -13827,9 +13842,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     const r=range();if(cache&&cache.key===r.key&&Date.now()-cache.at<900000&&coversNow(rows)){publish();return;}
     busy=true;publish();
     try{
-      const body=await request('https://public.api.energyzero.nl/v1/prices?date='+r.date+'&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY');
+      const body=await request(nordPoolUrl(r.date));
       const parsed=normalise(body);if(!coversNow(parsed))throw Error('Geen actuele day-ahead-prijzen beschikbaar');
-      rows=parsed;cache={key:r.key,at:Date.now(),body};save(CACHE,JSON.stringify(cache));error='';
+      const previous=await request(nordPoolUrl(range(Date.now()-86400000).date)).then(normalise).catch(()=>rows.filter(r=>r.end<=parsed[0].start));
+      rows=[...new Map([...previous,...parsed].map(r=>[r.start,r])).values()].sort((a,b)=>a.start-b.start);
+      cache={key:r.key,at:Date.now(),body,rows};save(CACHE,JSON.stringify(cache));error='';
     }catch(e){error=e.message+(rows.length?' · eerder opgehaalde prijzen zichtbaar':'');retryAt=Date.now()+300000;}
     finally{busy=false;publish();}
   }
@@ -13837,14 +13854,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     if(!forecastEnabled||forecastBusy||document.hidden||!document.getElementById('soc-forecast-chart'))return;
     let dates=[];try{dates=JSON.parse(document.getElementById('be-epex-forecast-range')?.textContent||'[]');}catch(_){}
     dates=[...new Set(dates)].filter(d=>/^\d{2}-\d{2}-\d{4}$/.test(d)).slice(0,3);
-    if(!dates.length)return;
+    if(!dates.length){const today=range().date,[d,m,y]=today.split('-').map(Number);dates=[today,range(Date.UTC(y,m-1,d+1,12)).date];}
     forecastBusy=true;forecastError='';
     try{
       for(const date of dates){
         const saved=forecastCache[date];if(saved?.retryAt>Date.now())continue;
         if(cache?.key===date&&Date.now()-cache.at<900000){forecastCache[date]={rows:normalise(cache.body),at:cache.at,retryAt:cache.at+900000};continue;}
         try{
-          const body=await request('https://public.api.energyzero.nl/v1/prices?date='+date+'&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY');
+          const body=await request(nordPoolUrl(date));
           const parsed=normalise(body);
           forecastCache[date]={rows:parsed,at:Date.now(),retryAt:Date.now()+(parsed.length?900000:300000)};
         }catch(e){forecastCache[date]={rows:saved?.rows||[],at:saved?.at||0,retryAt:Date.now()+300000};forecastError='Nog niet alle kwartierprijzen beschikbaar';}
@@ -13896,9 +13913,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     status=document.createElement('span');status.id='be-epex-status';
     status.setAttribute('role','status');
     const source=document.createElement('a');source.id='be-epex-source';source.textContent='i';
-    source.href='https://docs.api.energyzero.nl/docs/api/swagger/public/energy-market-service-get-prices/';source.target='_blank';source.rel='noopener noreferrer';
+    source.href='https://data.nordpoolgroup.com/auction/day-ahead/prices?deliveryAreas=NL&currency=EUR';source.target='_blank';source.rel='noopener noreferrer';
     source.setAttribute('aria-label','Bron en toelichting EPEX');
-    source.title='EPEX NL day-ahead. All-in: kale prijs × btw + € 0,02 opslag + energiebelasting. Opslag is inclusief btw en telt één keer mee. Bron: EnergyZero Public API, Nederlandse day-ahead-kwartierprijzen. Kale prijsreeks (base), zonder btw, belasting of leveranciersopslag.';
+    source.title='Nederlandse day-ahead-kwartierprijzen via Nord Pool. Kale beursprijs in EUR/MWh, omgerekend naar EUR/kWh. All-in: kale prijs × btw + opslag + energiebelasting.';
     const legend=document.createElement('div');legend.id='be-epex-legend';legend.setAttribute('aria-label','Grafieklegenda');
     box.append(legend,button,status,source);host.prepend(box);publish();refresh();
   }
@@ -13908,6 +13925,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     let data={enabled:false,rows:[]},library=null,attachedChart=null,attachedForecast=null;
     const forecastPending=new WeakSet();
     const forecastPaints=new WeakMap();
+    const markCache=new WeakMap();
     const dayClock=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',year:'numeric'});
     function config(){try{data=JSON.parse(document.getElementById('be-epex-addon').textContent);}catch(_){}}
     function points(c){
@@ -13922,8 +13940,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       return out;
     }
     function forecastSlots(c){
-      const slots=c.$beEpexForecastSlots||[];
+      let slots=c.$beEpexForecastSlots||[];
+      if(!slots.length&&Array.isArray(c.data.labels)){
+        const times=c.data.labels.map(label=>typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):label instanceof Date?label.getTime():NaN);
+        if(times.length>1&&times.every((t,k)=>Number.isFinite(t)&&(!k||t>times[k-1])))slots=times.map((t,k)=>({t,dt:k+1<times.length?times[k+1]-t:t-times[k-1]}));
+      }
       return slots.length&&window.BESOCExtras?.forecastGrid(c,slots).valid?slots:[];
+    }
+    function ensureForecastAxis(c){
+      if(c.canvas.id!=='soc-forecast-chart')return;
+      const opts=c.config.options;opts.scales=opts.scales||{};
+      opts.scales.beEpex=opts.scales.beEpex||{type:'linear',axis:'y',display:false,
+        grid:{display:false,drawOnChartArea:false},border:{display:false},title:{display:false},ticks:{display:false}};
     }
     function indexAt(slots,t){
       if(!slots.length||t<slots[0].t||t>slots.at(-1).t+slots.at(-1).dt)return null;
@@ -13942,7 +13970,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       forecastPending.add(c);
       (typeof requestAnimationFrame==='function'?requestAnimationFrame:f=>setTimeout(f,0))(()=>{
         forecastPending.delete(c);if(c.canvas.isConnected===false||document.hidden)return;
-        if(c.$beEpexForecastSignature!==forecastSignature(c)){
+        if(!c.scales?.beEpex||c.$beEpexForecastSignature!==forecastSignature(c)){
+          ensureForecastAxis(c);
           if(window.BEChartRefresh)window.BEChartRefresh.request(c,'update');else c.update('none');
         }
       });
@@ -13976,12 +14005,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     function forecast(c){
       const slots=forecastSlots(c),opts=c.config.options,active=!!data.forecastEnabled&&slots.length>1;
-      opts.scales=opts.scales||{};
+      ensureForecastAxis(c);
       const color=forecastColor(c),paint=forecastPaint(c,color);
       const swatch=document.getElementById('be-epex-forecast-switch');if(swatch)swatch.style.setProperty('--be-epex-forecast-color',color);
-      opts.scales.beEpex={type:'linear',axis:'y',display:false,
-        grid:{display:false,drawOnChartArea:false},border:{display:false},
-        title:{display:false},ticks:{display:false}};
       let ds=c.data.datasets.find(d=>d.beEpexForecast);
       if(!active){c.data.datasets=c.data.datasets.filter(d=>!d.beEpexForecast);c.$beEpexForecastRows=[];c.$beEpexForecastSignature=forecastSignature(c);return;}
       if(!ds){ds={beEpexForecast:true,type:'line',yAxisID:'beEpex',parsing:false,pointRadius:0,pointHitRadius:6,fill:false,spanGaps:false,order:-30};c.data.datasets.push(ds);}
@@ -13999,9 +14025,42 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       Object.assign(ds,{label:data.allin?'EPEX · all-in':'EPEX · kaal',borderColor:paint,backgroundColor:paint,beEpexForecastColor:color,borderWidth:1,stepped:false,tension:.3,cubicInterpolationMode:'monotone',data:out});
       c.$beEpexForecastRows=quoted;c.$beEpexForecastSignature=forecastSignature(c);
     }
+    function drawForecastMarks(c){
+      if(c.canvas.id!=='soc-forecast-chart')return;
+      const i=c.data.datasets.findIndex(d=>d.beEpexForecast),ds=c.data.datasets[i],slots=forecastSlots(c);
+      if(!ds||!slots.length||(c.isDatasetVisible?!c.isDatasetVisible(i):ds.hidden))return;
+      const a=c.chartArea,x=c.scales.x,y=c.scales.beEpex,ctx=c.ctx;if(!a||!x||!y||!ctx)return;
+      function time(value){
+        if(value instanceof Date)return value.getTime();
+        if(typeof value==='string'){
+          const k=c.data.labels?.indexOf(value);
+          if(k>=0)return c.data.labels.lastIndexOf(value)===k?slots[k]?.t:null;
+          if(/^\d{4}-\d\d-\d\d[T ]/.test(value))return Date.parse(value);
+          if(!/^[-+]?\d+(?:\.\d+)?$/.test(value))return null;
+          value=Number(value);
+        }
+        if(!Number.isFinite(value))return null;
+        if(value>=1e11)return value;if(value>=1e9)return value*1000;
+        if(value<0||value>slots.length)return null;
+        const k=Math.min(Math.floor(value),slots.length-1),q=slots[k];
+        return q?q.t+(value-k)*(slots[k+1]?slots[k+1].t-q.t:q.dt):null;
+      }
+      const start=time(x.min??0),end=time(x.max??slots.length-1);if(!Number.isFinite(start)||!Number.isFinite(end))return;
+      const rows=c.$beEpexForecastRows||[],key=start+':'+end;let saved=markCache.get(c);
+      if(!saved||saved.rows!==rows||saved.key!==key){
+        let high=null,low=null;for(const r of rows){if(r.end<=start||r.start>end||!Number.isFinite(r.value))continue;if(!high||r.value>high.value)high=r;if(!low||r.value<low.value)low=r;}
+        const extrema=[];if(high)extrema.push({t:Math.max(start,high.start),value:high.value,high:true});if(low&&low.value!==high?.value)extrema.push({t:Math.max(start,low.start),value:low.value});
+        saved={rows,key,extrema};markCache.set(c,saved);
+      }
+      const dark=document.documentElement.getAttribute('data-be-dark')==='aan',back=dark?(document.documentElement.getAttribute('data-be-dark-style')==='grafiet'?'#1c1f26':'#37322b'):'#fff';
+      const backdrop=forecastPaint(c,back);ctx.save();ctx.beginPath();ctx.rect(a.left,a.top,a.right-a.left,a.bottom-a.top);ctx.clip();ctx.font='600 10px system-ui,-apple-system,sans-serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      function label(m,py){const q=indexAt(slots,m.t);if(q===null)return;const px=x.getPixelForValue(q),text=(Math.abs(m.value)<.005?0:m.value).toFixed(2),width=ctx.measureText(text).width,left=Math.max(a.left+3,Math.min(a.right-width-3,px+6)),top=Math.max(a.top+12,Math.min(a.bottom-3,py));ctx.lineWidth=3;ctx.strokeStyle=backdrop;ctx.strokeText(text,left,top);ctx.fillStyle=dark?'#edf4fb':'#405a70';ctx.fillText(text,left,top);}
+      for(const m of saved.extrema){const q=indexAt(slots,m.t);if(q===null)continue;const px=x.getPixelForValue(q),py=y.getPixelForValue(m.value);if(!Number.isFinite(px)||!Number.isFinite(py)||px<a.left||px>a.right)continue;ctx.fillStyle=ds.borderColor;ctx.beginPath();ctx.arc(px,py,2.1,0,Math.PI*2);ctx.fill();label(m,py+(m.high?-8:16));}
+      ctx.restore();
+    }
     function install(force=false){
       const C=typeof Chart!=='undefined'?Chart:window.Chart;if(!C)return;
-      if(C!==library){C.register({id:'beEpexOverlay',beforeUpdate(c){
+      if(C!==library){C.register({id:'beEpexOverlay',beforeInit:ensureForecastAxis,beforeUpdate(c){
         if(c.canvas.id==='soc-forecast-chart'){forecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         // Write raw configuration, never assign Chart.js option resolvers to themselves.
@@ -14014,7 +14073,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         if(!ds){ds={beEpex:true,label:'EPEX NL',borderColor:'#429ee8',backgroundColor:'#429ee8',borderWidth:2,pointRadius:0,pointHitRadius:8,fill:false,spanGaps:false,stepped:'before',tension:0,order:-10};c.data.datasets.push(ds);}
         ds.label=data.allin?'EPEX · all-in':'EPEX · kaal';ds.data=points(c);
         ds.tooltip={callbacks:{label:z=>ds.label+': € '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:5})+'/kWh'}};
-      },afterUpdate(c){
+      },afterDraw:drawForecastMarks,afterUpdate(c){
         if(c.canvas.id==='soc-forecast-chart'){announceForecast(c);requestForecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         const host=document.getElementById('be-epex-legend');if(!host)return;
@@ -14035,7 +14094,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         });
       }});library=C;}
       const c=C.getChart('be-tarief-chart');if(c&&(force||c!==attachedChart)){attachedChart=c;c.update('none');}
-      const f=C.getChart('soc-forecast-chart');attachedForecast=f;if(f)requestForecast(f);
+      const f=C.getChart('soc-forecast-chart');attachedForecast=f;if(f){ensureForecastAxis(f);requestForecast(f);}
     }
     document.addEventListener('be-epex-data',()=>{config();install(true);});
     document.addEventListener('be-tarief-update',()=>{config();install(true);});
@@ -14645,7 +14704,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.6.5. BE data only. */
+/* Coulombtelling in/uit — 6.6.6. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -15576,7 +15635,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.5',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.6',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -15590,7 +15649,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
   function forecastValues(chart){
-    const pending=notice=>{chart.$beEpexForecastSlots=[];return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
+    const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
     const items=payload?.items;if(!items?.length)return pending('Vooruitblik wacht op prognosegegevens.');
     if(!ext.sameForecastDay(forecastFetch))return pending('Vooruitblik wacht op vernieuwde prognosegegevens voor vandaag.');
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
@@ -15598,9 +15657,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const c=settings(),power=Number.isFinite(payload.battery_power_kw)?payload.battery_power_kw:Infinity;
     const visible=result?.points||[],last=latest();
     const anchor=last?{...last,soc:visualSoc(last)}:null;
-    const grid=ext.forecastGrid(chart,slots,anchor);
-    if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.');
+    const nativeGrid=ext.forecastGrid(chart,slots);
+    if(!nativeGrid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+nativeGrid.reason+'.');
     chart.$beEpexForecastSlots=slots;
+    const grid=ext.forecastGrid(chart,slots,anchor);
+    if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.',true);
     const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);
     return {actual:slots.map(q=>core.at(visible,q.t,c.maxGapMs)),
       future:planned||ext.project(slots,anchor,c,power),basis:planned?'BE-planning':'PV/verbruik',notice:''};
@@ -15781,7 +15842,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.6.5. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.6. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -16658,7 +16719,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.5'+
+      '\nDashboardversie: 6.6.6'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
