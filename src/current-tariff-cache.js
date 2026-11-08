@@ -5,9 +5,13 @@
   var TTL=30*60*1000,QUARTER=900000,PREFIX='be_current_tariffs_v1:',memory=new Map(),expires=new Map(),timer;
   var fields=['onbalans_import','onbalans_export'],PRICE_MODEL=2;
   function planningContext(payload){
-    var plans=payload&&payload.dayAheadPlans,windows=payload&&payload.dayAheadUnavailableWindows,planned=new Set();
-    (Array.isArray(plans)?plans:[]).forEach(function(p){if(p&&p.direction==='import'&&Number.isFinite(p.start)&&p.start%QUARTER===0&&p.end===p.start+QUARTER)planned.add(p.start);});
-    return {authoritative:Array.isArray(plans)||Array.isArray(windows),planned:planned,
+    var plans=payload&&payload.dayAheadPlans,windows=payload&&payload.dayAheadUnavailableWindows,planned=new Set(),exported=new Set();
+    (Array.isArray(plans)?plans:[]).forEach(function(p){
+      if(!p||!Number.isFinite(p.start)||p.start%QUARTER!==0||p.end!==p.start+QUARTER)return;
+      if(p.direction==='import')planned.add(p.start);
+      if(p.direction==='export')exported.add(p.start);
+    });
+    return {authoritative:Array.isArray(plans)||Array.isArray(windows),planned:planned,exported:exported,
       unknown:(Array.isArray(windows)?windows:[]).filter(function(w){return Array.isArray(w)&&Number.isFinite(w[0])&&Number.isFinite(w[1])&&w[1]>w[0];})};
   }
   function unknownPlanning(context,start){
@@ -26,7 +30,8 @@
       var state=context.authoritative?(planned.has(p.start)?'planned':unknownPlanning(context,p.start)?'unavailable':'none')
         :['planned','unavailable','none'].includes(p.dayAheadState)?p.dayAheadState:
           Object.keys(p.values||{}).some(function(key){return key.indexOf('day_ahead_')===0;})?'unavailable':'none';
-      return Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
+      var dayAheadExport=context.authoritative?context.exported.has(p.start):p.dayAheadExport===true;
+      return Object.assign({},p,{dayAheadState:state,dayAheadExport:dayAheadExport,priceModel:PRICE_MODEL});
     });
   }
   // A partial response can omit old price rows. Its explicit plans/windows still
@@ -35,8 +40,11 @@
     var context=planningContext(payload);
     return preparePrices(prices).map(function(p){
       if(!p)return p;
-      var state=context.planned.has(p.start)?'planned':unknownPlanning(context,p.start)?'unavailable':null;
-      return state===null?p:Object.assign({},p,{dayAheadState:state,priceModel:PRICE_MODEL});
+      var unknown=unknownPlanning(context,p.start);
+      var state=context.planned.has(p.start)?'planned':unknown?'unavailable':p.dayAheadState;
+      var dayAheadExport=context.exported.has(p.start)||(!unknown&&p.dayAheadExport===true);
+      return state===p.dayAheadState&&dayAheadExport===p.dayAheadExport?p:
+        Object.assign({},p,{dayAheadState:state,dayAheadExport:dayAheadExport,priceModel:PRICE_MODEL});
     });
   }
   function importMarket(p,afrr){
@@ -63,7 +71,7 @@
         if(q&&Number.isFinite(q.value)&&Number.isFinite(q.at)&&q.at<=now&&now-q.at<TTL)quotes[field]={value:q.value,at:q.at};
       });
       if(!Object.keys(quotes).length)return;
-      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,priceModel:PRICE_MODEL,dayAheadState:p.dayAheadState||'none',
+      clean[p.start]={start:p.start,end:p.end,afrr:!!p.afrr,directions:Array.isArray(p.directions)?p.directions.slice():null,sourceUpdatedAt:p.sourceUpdatedAt,quotes:quotes,priceModel:PRICE_MODEL,dayAheadState:p.dayAheadState||'none',dayAheadExport:p.dayAheadExport===true,
         samples:(p.dayAheadState==='planned'||p.dayAheadState==='unavailable'?[]:Array.isArray(p.samples)?p.samples:[]).filter(function(s){return s&&Number.isFinite(s.t)&&s.t>=p.start&&s.t<p.end&&s.t<=now&&now-s.t<TTL&&Number.isFinite(s.ki)&&Number.isFinite(s.ke);})};
     });
     write(id,clean);return clean;
@@ -82,7 +90,7 @@
       var revision=Date.parse(p.updatedAt);
       if(Number.isFinite(revision)&&Number.isFinite(row.sourceUpdatedAt)&&revision<row.sourceUpdatedAt)return;
       if(Number.isFinite(revision))row.sourceUpdatedAt=revision;
-      row.priceModel=PRICE_MODEL;row.dayAheadState=p.dayAheadState;
+      row.priceModel=PRICE_MODEL;row.dayAheadState=p.dayAheadState;row.dayAheadExport=p.dayAheadExport;
       if(p.dayAheadState!=='none'){delete row.quotes.onbalans_import;row.samples=[];}
       var discovery=(payload.afrrDiscovery||[]).find(function(d){return d.start===p.start;});
       row.afrr=Array.isArray(payload.afrrEventIsps)?payload.afrrEventIsps.indexOf(p.start)!==-1:!!p.afrr;
@@ -100,7 +108,7 @@
   function get(id,start){return id?read(id)[start]||null:null;}
   function restore(id,source){
     var rows=(source||[]).filter(function(p){return !p.temporaryTariffs;}),saved=id?read(id):{};
-    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,dayAheadState:p.dayAheadState,priceModel:PRICE_MODEL,values:{},provisional:true,temporaryTariffs:true});});
+    Object.keys(saved).forEach(function(key){var p=saved[key];if(!rows.some(function(r){return r.start===p.start;}))rows.push({start:p.start,end:p.end,afrr:p.afrr,directions:p.directions,dayAheadState:p.dayAheadState,dayAheadExport:p.dayAheadExport,priceModel:PRICE_MODEL,values:{},provisional:true,temporaryTariffs:true});});
     return rows.sort(function(a,b){return a.start-b.start;});
   }
   try{Array.from({length:localStorage.length},function(_,i){return localStorage.key(i);}).filter(function(key){return key&&key.indexOf(PREFIX)===0;}).forEach(function(key){read(key.slice(PREFIX.length));});}catch(_){}

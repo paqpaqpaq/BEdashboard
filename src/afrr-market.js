@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.6.8. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.9. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -10,6 +10,7 @@
   const HOSTS={production:'https://api.tennet.eu',acceptance:'https://api.acc.tennet.eu'};
   const PATH='/publications/v1/balance-delta-high-res/latest';
   const MOL_PATH='/publications/v1/merit-order-list';
+  const SETTLEMENT_PATH='/publications/v1/settlement-prices';
   const REQUEST_REVISION='connection-check-v1';
   const clock=new Intl.DateTimeFormat('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   let host,shadow,config={},state=null,molState=null,budgetState=null,bidState={},bidError='',coordinator,timer,busy=false,inFlight=false,localError='',destroyed=false;
@@ -41,6 +42,34 @@
   }
   function meritPath(q){
     return MOL_PATH+'?date_from='+encodeURIComponent(utcParameter(q-QUARTER))+'&date_to='+encodeURIComponent(utcParameter(q+QUARTER));
+  }
+  function settlementPath(range){
+    return SETTLEMENT_PATH+'?date_from='+encodeURIComponent(utcParameter(range.start))+'&date_to='+encodeURIComponent(utcParameter(range.end));
+  }
+  function parseSettlement(body){
+    if(body?.error==='No data found')return {quarters:[]};
+    const response=body?.Response;
+    if(response?.informationType!=='SETTLEMENT_PRICES'||!Array.isArray(response.TimeSeries))
+      throw new Fault('format','Geen TenneT-verrekenprijzen in het antwoord.');
+    const quarters=new Map();
+    for(const series of response.TimeSeries){
+      if(series.currency_Unit_name!=='EUR'||series.price_Measurement_Unit_name!=='MWh')
+        throw new Fault('format','Onverwachte eenheid in TenneT-verrekenprijzen.');
+      for(const period of Array.isArray(series.Period)?series.Period:[series.Period]){
+        for(const p of period?.Points||[]){
+          const start=sourceTime(p.timeInterval_start),end=sourceTime(p.timeInterval_end);
+          if(!Number.isFinite(start)||quarter(start)!==start||end!==start+QUARTER)continue;
+          const shortage=numeric(p.shortage),surplus=numeric(p.surplus);
+          if(shortage===null&&surplus===null)continue;
+          const row={start,end,ki:shortage===null?null:shortage/1000,ke:surplus===null?null:surplus/1000};
+          const previous=quarters.get(start);
+          if(previous&&(previous.ki!==row.ki||previous.ke!==row.ke))
+            throw new Fault('format','Tegenstrijdige TenneT-verrekenprijzen voor één kwartier.');
+          quarters.set(start,row);
+        }
+      }
+    }
+    return {quarters:[...quarters.values()]};
   }
   function parseMerit(body){
     if(body?.error)throw new Fault('no-data','De biedladder is nog niet beschikbaar.');
@@ -303,7 +332,7 @@
         const id='power:'+customer,saved=powerRows([...(r[id]?.rows||[]),...rows],now);
         return {write:rows.length?[{id,rows:saved}]:[],value:saved};
       }),
-      clear:()=>transaction(['live','mol'],()=>({write:['live','mol'].map(id=>({id,scope:'',nextAt:0})),value:null})),
+      clear:()=>transaction(['live','mol','settlement'],()=>({write:['live','mol','settlement'].map(id=>({id,scope:'',nextAt:0})),value:null})),
       retry:(scope,id='live')=>transaction([id],r=>{
         const s=r[id];
         if(!s||s.scope!==scope)return {value:s};
@@ -349,15 +378,17 @@
         const q=quarter(now),budget=r.budget||{id:'budget',attempts:[],molAttempts:[]};
         const attempts=(s.attempts||[]).filter(t=>t>now-60000);
         const all=(budget.attempts||[]).filter(t=>t>now-60000),daily=(budget.molAttempts||[]).filter(t=>t>now-86400000);
+        const settlements=(budget.settlementAttempts||[]).filter(t=>t>now-86400000);
         const blocked=Math.max(s.nextAt||0,s.leaseUntil||0,budget.nextAt||0,
           all.length>=8?all[0]+60000:0,id==='live'&&attempts.length>=5?attempts[0]+60000:0,
-          id==='mol'&&daily.length>=500?daily[0]+86400000:0);
+          id==='mol'&&daily.length>=500?daily[0]+86400000:0,
+          id==='settlement'&&settlements.length>=25?settlements[0]+86400000:0);
         const alreadyLoaded=id==='mol'&&s.good?.quarters.some(p=>p.start===q);
         const exhausted=id==='mol'&&s.target===q&&s.tries>=3;
         if(s.authBlocked||blocked>now||alreadyLoaded||exhausted)return {value:{reserved:false,state:s,retryAt:alreadyLoaded||exhausted?q+QUARTER+1000:blocked}};
-        const next={...s,owner:tab,leaseUntil:now+LEASE,requestRevision:REQUEST_REVISION,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+60000,
+        const next={...s,owner:tab,leaseUntil:now+LEASE,requestRevision:REQUEST_REVISION,nextAt:id==='live'?publicationAfter(now+INTERVAL):now+(id==='settlement'?QUARTER:60000),
           lastAttempt:now,attempts:[...attempts,now],target:q,tries:s.target===q?(s.tries||0)+1:1};
-        const nextBudget={id:'budget',nextAt:now+1100,attempts:[...all,now],molAttempts:id==='mol'?[...daily,now]:daily};
+        const nextBudget={id:'budget',nextAt:now+1100,attempts:[...all,now],molAttempts:id==='mol'?[...daily,now]:daily,settlementAttempts:id==='settlement'?[...settlements,now]:settlements};
         return {write:[next,nextBudget],value:{reserved:true,state:next}};
       }),
       success:(scope,tab,data,now,id='live')=>transaction([id],r=>{
@@ -370,6 +401,10 @@
           const loaded=good.quarters.some(p=>p.start===quarter(now));
           nextAt=loaded?quarter(now)+QUARTER+1000:now+60000;
           if(!loaded)error='Biedladder van het huidige kwartier nog niet gepubliceerd; maximaal drie pogingen per kwartier.';
+        }else if(id==='settlement'){
+          const rows=new Map((s.good?.quarters||[]).map(p=>[p.start,p]));
+          data.quarters.forEach(p=>{if(p.end<=now)rows.set(p.start,p);});
+          good={quarters:[...rows.values()].filter(p=>p.end>now-2*86400000),fetchedAt:now};
         }else{
           const previous=s.good,advances=!previous||data.latest.end>previous.latest.end;
           const merged=new Map((previous?.rows||[]).map(p=>[p.start,p]));
@@ -503,7 +538,7 @@
         try{
           if(typeof r.responseText!=='string'||r.responseText.length>4000000)throw new Fault('format','Onbruikbaar of te groot API-antwoord.');
           let body;try{body=JSON.parse(r.responseText);}catch(_){throw new Fault('format','TenneT gaf geen JSON-dataset terug (HTTP 200).');}
-          const parsed=channel==='mol'?parseMerit(body):parsePayload(body);settled=true;clearTimeout(watchdog);resolve(parsed);
+          const parsed=channel==='mol'?parseMerit(body):channel==='settlement'?parseSettlement(body):parsePayload(body);settled=true;clearTimeout(watchdog);resolve(parsed);
         }catch(e){const fault=e instanceof Fault?e:new Fault('format','De dataset kon niet worden verwerkt.');fault.status=200;failed(fault);}
       }
       try{
@@ -513,7 +548,7 @@
         watchdog=setTimeout(()=>{
           networkFailure('watchdog');try{handle?.abort?.();}catch(_){}
         },TIMEOUT+1500);
-        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
+        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):channel==='settlement'?settlementPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
           user:'',password:'',overrideMimeType:'',responseType:'text',
           onloadstart:()=>{lastEvent='onloadstart';},
           onreadystatechange:r=>{lastEvent='readyState '+r.readyState;},
@@ -875,7 +910,7 @@
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.8'+
+      '\nDashboardversie: 6.6.9'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
@@ -906,6 +941,55 @@
         }
         tbody.append(tr);
       }
+    }
+  }
+  let nextSettlementCheck=0;
+  function publishSettlement(quarters){
+    const json=JSON.stringify(quarters);
+    let node=document.getElementById('be-onbalans-settlement-data');
+    if(!node){
+      if(!quarters.length)return;
+      node=document.createElement('script');
+      node.id='be-onbalans-settlement-data';
+      node.type='application/json';
+      document.documentElement.appendChild(node);
+    }
+    if(node.textContent===json)return;
+    node.textContent=json;
+    document.dispatchEvent(new Event('be-onbalans-settlement-update'));
+  }
+  async function refreshSettlement(){
+    const now=Date.now();
+    if(now<nextSettlementCheck||destroyed||document.hidden||!config.enabled||!config.key||
+       !panelEnabled())return;
+    nextSettlementCheck=now+60000;
+    let tariff;
+    try{tariff=JSON.parse(document.getElementById('be-tarief-data')?.textContent||'null');}catch(_){return;}
+    if(!tariff?.aan||!Array.isArray(tariff.rijen))return;
+    const current={...config};
+    const state=await coordinator.read('settlement');
+    const quarters=state?.scope===current.scope?state.good?.quarters||[]:[];
+    publishSettlement(quarters);
+    const byStart=new Map(quarters.map(p=>[p.start,p]));
+    const missing=tariff.rijen.filter(r=>{
+      if(!r?.onbalansVergelijking||!Number.isFinite(r.start)||quarter(r.start)!==r.start||
+         r.end!==r.start+QUARTER||r.end>now||r.end<=now-86400000)return false;
+      const backup=byStart.get(r.start);
+      return ['ki','ke'].some(key=>!Number.isFinite(r.onbalansVergelijking[key])&&!Number.isFinite(backup?.[key]));
+    });
+    if(!missing.length)return;
+    const reservation=await coordinator.reserve(current.scope,owner,now,'settlement');
+    if(!reservation.reserved){
+      if(reservation.retryAt>now)nextSettlementCheck=Math.max(now+1500,reservation.retryAt);
+      return;
+    }
+    const range={start:Math.min(...missing.map(r=>r.start)),end:Math.max(...missing.map(r=>r.end))};
+    try{
+      const data=await request(current,'settlement',range);
+      const updated=await coordinator.success(current.scope,owner,data,Date.now(),'settlement');
+      if(updated?.scope===current.scope)publishSettlement(updated.good?.quarters||[]);
+    }catch(error){
+      await coordinator.failure(current.scope,owner,error,Date.now(),'settlement');
     }
   }
   async function tick(){
@@ -965,6 +1049,7 @@
         if(s?.nextAt>Date.now())wakeAt=Math.min(wakeAt,s.nextAt);
         wakeAt=Math.min(wakeAt,Date.now()+1100);
       }
+      await refreshSettlement();
       budgetState=await coordinator.read('budget');
       if(!document.hidden)await learnHistory();
       localError='';
@@ -990,7 +1075,7 @@
       config=await loadConfig();
       if(config.key!==key||config.scope!==next.scope)throw new Fault('storage','De userscriptmanager heeft de sleutel niet bewaard. Controleer de opslagtoegang.');
       input.value='';
-      if(same){await coordinator.retry(config.scope);await coordinator.retry(config.scope,'mol');}
+      if(same){await coordinator.retry(config.scope);await coordinator.retry(config.scope,'mol');await coordinator.retry(config.scope,'settlement');}
       if(!same){marketHistory=[];learnedSignature='';historyReadAt=0;}
       connectionCheck={scope:config.scope,phase:'manager'};checkMessage='Verbinding controleren…';
       localError='';shadow.querySelector('[data-settings]').open=false;await tick();

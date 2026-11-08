@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.6.9 — 8 november 2026
+
+- De tariefgrafiek in Actueel toont de onbalansprijzen voor afname en invoeding ook tijdens geplande EPEX-kwartieren.
+- De tooltip vermeldt de prijsbron en het toegepaste tarief.
+- Ontbrekende onbalansprijzen voor afgeronde kwartieren komen waar beschikbaar van TenneT Settlement Prices.
+
 ## 6.6.8 — 8 november 2026
 
 - Gepland volume en totaalbedrag per Day Ahead-reeks in Forecast.

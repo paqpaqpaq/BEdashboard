@@ -8,13 +8,16 @@
     const url=new URL(raw),origin=environment==='acceptance'?'https://api.acc.tennet.eu':'https://api.tennet.eu';
     if(url.origin!==origin||url.username||url.password||url.hash)throw Error('Invalid endpoint');
     if(url.pathname==='/publications/v1/balance-delta-high-res/latest'&&!url.search)return {url,channel:'live'};
-    if(url.pathname!=='/publications/v1/merit-order-list')throw Error('Invalid endpoint');
+    const channel=url.pathname==='/publications/v1/merit-order-list'?'mol':
+      url.pathname==='/publications/v1/settlement-prices'?'settlement':null;
+    if(!channel)throw Error('Invalid endpoint');
     const keys=[...url.searchParams.keys()];
     if(keys.length!==2||!keys.includes('date_from')||!keys.includes('date_to'))throw Error('Invalid range');
     function date(name){const m=url.searchParams.get(name)?.match(/^(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);if(!m)throw Error('Invalid range');return Date.UTC(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+m[6]);}
     const from=date('date_from'),to=date('date_to');
-    if(!(to>from&&to-from<=3600000))throw Error('Invalid range');
-    return {url,channel:'mol'};
+    if(!(to>from&&to-from<=(channel==='mol'?3600000:86400000)))throw Error('Invalid range');
+    if(channel==='settlement'&&(from%900000||to%900000||to>Date.now()))throw Error('Invalid range');
+    return {url,channel};
   }
   chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     if(message.type!=='be-afrr-fetch')return;
@@ -26,9 +29,14 @@
       const retryAt=await serialize(async()=>{
         const now=Date.now(),saved=(await chrome.storage.local.get(BUDGET))[BUDGET]||{};
         const all=(saved.all||[]).filter(t=>t>now-60000),live=(saved.live||[]).filter(t=>t>now-60000),mol=(saved.mol||[]).filter(t=>t>now-86400000);
-        const until=Math.max(saved.nextAt||0,all.length>=8?all[0]+60000:0,channel==='live'&&live.length>=5?live[0]+60000:0,channel==='mol'&&mol.length>=500?mol[0]+86400000:0);
+        const settlements=(saved.settlements||[]).filter(t=>t>now-86400000);
+        const until=Math.max(saved.nextAt||0,all.length>=8?all[0]+60000:0,
+          channel==='live'&&live.length>=5?live[0]+60000:0,channel==='mol'&&mol.length>=500?mol[0]+86400000:0,
+          channel==='settlement'&&settlements.length>=25?settlements[0]+86400000:0);
         if(until>now)return until;
-        await chrome.storage.local.set({[BUDGET]:{nextAt:now+1100,all:[...all,now],live:channel==='live'?[...live,now]:live,mol:channel==='mol'?[...mol,now]:mol}});
+        await chrome.storage.local.set({[BUDGET]:{nextAt:now+1100,all:[...all,now],
+          live:channel==='live'?[...live,now]:live,mol:channel==='mol'?[...mol,now]:mol,
+          settlements:channel==='settlement'?[...settlements,now]:settlements}});
         return 0;
       });
       if(retryAt){reply({status:429,headers:'Retry-After: '+Math.max(1,Math.ceil((retryAt-Date.now())/1000))});return;}

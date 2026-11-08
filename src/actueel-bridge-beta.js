@@ -116,11 +116,38 @@
  });
  var TG_KW=900000;
  var TG={rijen:[],aan:false,allin:true},tgRevision=0,tgSource=null;
+ var tgSettlement=new Map(),tgSettlementSource=null;
+ function tgLeesSettlement(){
+  var raw=document.getElementById('be-onbalans-settlement-data')?.textContent||'[]';
+  if(raw===tgSettlementSource)return;
+  tgSettlementSource=raw;
+  var rows=JSON.parse(raw);
+  tgSettlement=new Map((Array.isArray(rows)?rows:[]).filter(function(r){
+   return r&&Number.isFinite(r.start)&&r.start%TG_KW===0&&r.end===r.start+TG_KW&&r.end<=Date.now();
+  }).map(function(r){return [r.start,r];}));
+  tgRevision++;
+ }
+ function tgVergelijking(r,live){
+  if(!r.onbalansVergelijking)return null;
+  var prices=r.onbalansVergelijking,backfill=live?null:tgSettlement.get(r.start);
+  var comparison={};
+  ['ki','ke'].forEach(function(key){
+   var primary=prices[key],backup=backfill?.[key],known=Number.isFinite(primary);
+   var value=known?primary:backup;
+   comparison[key]=Number.isFinite(value)?(TG.allin?allin(value,key==='ke'):value):null;
+   comparison[key+'Bron']=known?'Balans':Number.isFinite(backup)?'TenneT':null;
+  });
+  return comparison;
+ }
+ function tgPrijs(v){
+  return Number.isFinite(v)?v.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'—';
+ }
  function tgLees(n){var raw=n.textContent||'{}';if(raw===tgSource)return;TG=Object.assign(TG,JSON.parse(raw));tgSource=raw;tgRevision++;}
  function tgMarkt(q,kort){
   if(q.marktImport==='Prijsbron onbekend')return kort?'bron?':'prijsbron onbekend';
   if(q.gemengdImport||q.marktImport==='Dynamisch + aFRR')return kort?'dyn.+aFRR':'dynamisch + aFRR';
   if(q.marktImport==='Dynamisch')return kort?'dyn.':'dynamisch';
+  if(q.dayAheadExport)return kort?'dyn. uit':'dynamische invoeding';
   if(q.wacht)return kort?'wacht':'geen prijs';
   return q.afrr?'aFRR':kort?'onb.':'onbalans';
  }
@@ -189,11 +216,19 @@
        var out=[q.carried?'Laatst bekende prijs':Date.now()<q.end?'Lopend · voorlopig':q.provisional===false?'Definitief':'Voorlopig'];
        if(q.gemengdImport)out.push('Afname: ongewogen gemiddelde van dynamisch en aFRR; indicatieve API-prijs.');
        if(q.marktImport==='Prijsbron onbekend')out.push('Day-aheadplanning niet beschikbaar; afnameprijs onbekend.');
+       if(q.vergelijking){
+        if(Number.isFinite(q.pi))out.push('Toegepaste afname ('+(q.marktImport||'—')+'): '+tgPrijs(q.pi)+' / kWh');
+        if(Number.isFinite(q.pe))out.push('Toegepaste invoeding ('+(q.marktExport||'—')+'): '+tgPrijs(q.pe)+' / kWh');
+       }
        return out;
       },
       label:function(z){
        var tm=z.parsed.x,q=(z.chart.$beKwartieren||[]).find(function(r){return r.start<=tm&&tm<r.end;});
-       var prijs=Number.isFinite(z.parsed.y)?z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3}):'—';
+       var prijs=tgPrijs(z.parsed.y);
+       if(q?.vergelijking&&z.datasetIndex<2){
+        var invoeding=z.datasetIndex===1,bron=q.vergelijking[invoeding?'keBron':'kiBron'];
+        return 'Onbalans '+(invoeding?'invoeding':'afname')+(bron?' · '+bron:'')+': '+prijs+' / kWh';
+       }
        return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh';
       }}}}}});
   return tgChart;
@@ -233,8 +268,25 @@
    if(mn!=null&&r.end<mn)return;
    if(mx!=null&&r.start>mx)return;
    if(gezien[r.start])return; gezien[r.start]=true;
-   kw.push(r);
    var live=r.start<=nu&&nu<r.end;
+   var vergelijking=tgVergelijking(r,live);
+   if(vergelijking){
+    kw.push(Object.assign({},r,{vergelijking:vergelijking,wacht:vergelijking.ki===null&&vergelijking.ke===null}));
+    if(live){
+     var observed=Date.parse(r.updatedAt);
+     var from=Number.isFinite(observed)&&observed>=r.start&&observed<=nu?observed:nu;
+     if(from>r.start){
+      imp.push({x:r.start,y:null});exp.push({x:r.start,y:null});
+     }
+     imp.push({x:from,y:vergelijking.ki,beLive:true},{x:nu,y:vergelijking.ki,beLive:true});
+     exp.push({x:from,y:vergelijking.ke,beLive:true},{x:nu,y:vergelijking.ke,beLive:true});
+    }else{
+     imp.push({x:r.start,y:vergelijking.ki,beLive:false},{x:r.end,y:vergelijking.ki,beLive:false});
+     exp.push({x:r.start,y:vergelijking.ke,beLive:false},{x:r.end,y:vergelijking.ke,beLive:false});
+    }
+    return;
+   }
+   kw.push(r);
    if(live){
     // Never connect a settled quarter to a later first observation: stepped
     // interpolation would falsely backdate its price to the quarter boundary.
@@ -277,6 +329,10 @@
   try{tgLees(n);tgVul();}
   catch(e){console.error('[BE tariefgrafiek bridge]',e);}
  });
+ document.addEventListener('be-onbalans-settlement-update',function(){
+  try{tgLeesSettlement();tgVul();}catch(e){console.error('[BE onbalansvergelijking]',e);}
+ });
+ try{tgLeesSettlement();}catch(e){}
  var initial=document.getElementById('be-actueel-allin-data');
  try{if(initial)st=Object.assign(st,JSON.parse(initial.textContent||'{}'));}catch(e){}
  var initialTarief=document.getElementById('be-tarief-data');
