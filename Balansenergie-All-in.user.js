@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.6.7
+// @version      6.6.8
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -463,7 +463,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.7'
+    '6.6.8'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -11949,7 +11949,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.7' +
+        'Instellingen v6.6.8' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12395,7 +12395,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.7. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.6.8. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12657,7 +12657,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     function money(v) { return v === null || !Number.isFinite(v) ? 'Nog onbekend' : new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR'}).format(Math.abs(v) < 0.005 ? 0 : v); }
     function date(s) { return new Intl.DateTimeFormat('nl-NL', {day:'numeric',month:'short',year:'numeric', timeZone:'UTC'}).format(beOvDate(s)); }
     function signedClass(v) { return v === null ? '' : v >= 0 ? 'positive' : 'negative'; }
-    function save() { try { localStorage.setItem('be_overzicht_settings_v1', JSON.stringify(beOvSettings)); } catch (_) {} }
+    function save() {
+      try {
+        localStorage.setItem('be_overzicht_settings_v1', JSON.stringify(beOvSettings));
+        document.dispatchEvent(new Event('be-financial-settings-update'));
+      } catch (_) {}
+    }
     function $(id) { return shadow.getElementById(id); }
     function status(text, error) { $('status').textContent = text; $('status').className = error ? 'notice warning' : 'notice'; }
     function button(label, attr) { return '<button type="button" ' + (attr || '') + '>' + label + '</button>'; }
@@ -12718,7 +12723,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.7</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.8</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13802,10 +13807,24 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   function settings(){
     try{return JSON.parse(document.getElementById('be-actueel-allin-data')?.textContent||'{}');}catch(_){return {};}
   }
+  const FINANCE_SETTINGS = 'be_overzicht_settings_v1';
+  function planPriceSettings() {
+    let finance;
+    try { finance = JSON.parse(read(FINANCE_SETTINGS) || '{}') || {}; }
+    catch (_) { finance = {}; }
+    const {tax = true, vat = true, rates} = finance;
+    return {
+      allin: Boolean(tax && vat),
+      rates: {'2025':0.10154, '2026':0.09161, ...rates}
+    };
+  }
   function publish(){
     const s=settings();
+    const storedMode=read('be_cfg_actueel_allin');
+    const allin=storedMode===null?s.aan!==false:storedMode!=='uit';
+    const planPrice=planPriceSettings();
     const forecastRows=Object.values(forecastCache).flatMap(c=>Array.isArray(c?.rows)?c.rows:[]).sort((a,b)=>a.start-b.start);
-    const text=JSON.stringify({enabled,rows,forecastEnabled,forecastRows,allin:typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit',btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
+    const text=JSON.stringify({enabled,rows,forecastEnabled,forecastRows,planPrice,allin,btw:Number.isFinite(s.btw)?s.btw:1.21,opslag:Number.isFinite(s.opslag)?s.opslag:.02,eb:Number.isFinite(s.eb)?s.eb:.11085});
     if(stateNode.textContent!==text){stateNode.textContent=text;document.dispatchEvent(new Event('be-epex-data'));}
     if(button){
       button.setAttribute('aria-checked',String(enabled));
@@ -13817,7 +13836,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       status.title=error||'Prijzen ophalen';status.hidden=!status.textContent;
     }
     const fb=document.getElementById('be-epex-forecast-switch');
-    if(fb){fb.setAttribute('aria-pressed',String(forecastEnabled));fb.title='EPEX-kwartierprijs '+(forecastEnabled?'verbergen':'tonen');fb.querySelector('[data-epex-label]').textContent=(typeof s.aan==='boolean'?s.aan:read('be_cfg_actueel_allin')!=='uit')?'EPEX · all-in':'EPEX · kaal';}
+    if(fb){fb.setAttribute('aria-pressed',String(forecastEnabled));fb.title='EPEX-kwartierprijs '+(forecastEnabled?'verbergen':'tonen');fb.querySelector('[data-epex-label]').textContent=planPrice.allin?'EPEX · all-in':'EPEX · excl. EB/btw';}
     const note=document.getElementById('be-epex-forecast-status');
     if(note){const message=forecastError||(forecastBusy&&!forecastRows.length?'Prijzen ophalen…':'');if(note.textContent!==message)note.textContent=message;}
 
@@ -13898,6 +13917,17 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     @media(prefers-reduced-motion:reduce){#be-epex-switch .be-epex-thumb{transition:none}}
   `;document.documentElement.appendChild(style);
   style.textContent+=`#be-epex-forecast-switch{display:inline-flex;align-items:center;gap:5px;appearance:none;background:transparent;color:inherit;border:0;padding:3px 0;font:11px/1.3 system-ui,sans-serif;cursor:pointer}#be-epex-forecast-switch[aria-pressed="false"]{opacity:.5;text-decoration:line-through}#be-epex-forecast-switch .be-soc-series-swatch{height:2px;background:var(--be-epex-forecast-color,#9ccced)!important}#be-epex-forecast-status{font:11px/1.4 system-ui,sans-serif;opacity:.7}#be-epex-forecast-switch:focus-visible{outline:2px solid #9ccced;outline-offset:3px;border-radius:3px}`;
+  style.textContent+=`
+    .be-epex-plan-strip{position:relative;box-sizing:border-box;width:100%;min-width:0;flex:none;margin:4px 0 6px}
+    .be-epex-plan-badge{position:absolute;box-sizing:border-box;height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px 6px;border:1px solid #d9e3ec;border-radius:7px;background:#f6f9fc;color:#33485d;font:600 11px/1.2 system-ui,sans-serif;white-space:nowrap}
+    .be-epex-plan-amount{font-size:11px;font-variant-numeric:tabular-nums}
+    .be-epex-plan-mode{margin-left:4px;color:#617487;font-size:9px;font-weight:500}
+    .be-epex-plan-cost{color:#a92027}.be-epex-plan-credit{color:#14714c}
+    html[data-be-dark="aan"] .be-epex-plan-badge{background:#272e37;border-color:#445260;color:#edf4fb}
+    html[data-be-dark="aan"] .be-epex-plan-mode{color:#b5c2cf}
+    html[data-be-dark="aan"] .be-epex-plan-cost{color:#fca5a5}
+    html[data-be-dark="aan"] .be-epex-plan-credit{color:#86efac}
+  `;
   function mountForecast(){
     const cv=document.getElementById('soc-forecast-chart');if(!cv)return;
     const legend=document.querySelector('[data-be-soc-legend="soc-forecast-chart"]');if(!legend)return;
@@ -13967,7 +13997,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       return i+(t-slots[i].t)/step;
     }
     function forecastSignature(c){
-      return JSON.stringify([data.forecastEnabled,data.allin,data.btw,data.opslag,data.eb,data.forecastRows,
+      return JSON.stringify([data.forecastEnabled,data.btw,data.opslag,data.planPrice,data.forecastRows,c.$beEpexForecastPlans,
         forecastSlots(c).map(s=>[s.t,s.dt]),document.documentElement.getAttribute('data-be-dark'),document.documentElement.getAttribute('data-be-dark-style')]);
     }
     function requestForecast(c){
@@ -14008,26 +14038,192 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(!saved||saved.color!==color){const paint=c.ctx.createLinearGradient(0,0,1,0);paint.addColorStop(0,color);paint.addColorStop(1,color);saved={color,paint};forecastPaints.set(c.ctx,saved);}
       return saved.paint;
     }
+    function financialForecastPrice(spot, deliveryDay, buying) {
+      const finance = data.planPrice;
+      const factor = finance.allin ? data.btw : 1;
+      const eb = buying && finance.allin ? finance.rates[deliveryDay.slice(-4)] : 0;
+      if (!Number.isFinite(spot) || !Number.isFinite(eb) || eb < 0) return null;
+      const fee = data.opslag * factor / data.btw;
+      // Exportvergoeding vóór de contractverrekening van energiebelasting.
+      return (spot + eb) * factor + (buying ? fee : -fee);
+    }
+    function forecastPlanBlocks(plans, quotes, slots) {
+      const quarter = 900000;
+      const byQuarter = new Map();
+      for (const plan of plans || []) {
+        if (!plan || !Number.isFinite(plan.start) || plan.start % quarter !== 0 ||
+            plan.end - plan.start !== quarter || !Number.isFinite(plan.quantityW) ||
+            plan.quantityW === 0 || !['import', 'export'].includes(plan.direction)) continue;
+        const key = plan.direction + ':' + plan.start;
+        const existing = byQuarter.get(key);
+        if (existing && Math.abs(existing.quantityW) !== Math.abs(plan.quantityW)) return [];
+        byQuarter.set(key, plan);
+      }
+
+      const blocks = [];
+      const priceByQuarter = new Map(quotes.map(quote => [quote.start, quote.price]));
+      const sorted = [...byQuarter.values()].sort((a,b) => a.start - b.start || a.direction.localeCompare(b.direction));
+      for (const plan of sorted) {
+        const day = dayClock.format(new Date(plan.start));
+        const buying = plan.direction === 'import';
+        let block = blocks.at(-1);
+        if (!block || block.day !== day || block.direction !== plan.direction ||
+            (!buying && block.end !== plan.start)) {
+          block = {start:plan.start, end:plan.start, day, direction:plan.direction, spans:[], kwh:0, total:0, missing:''};
+          blocks.push(block);
+        }
+        const span = block.spans.at(-1);
+        if (span && span[1] === plan.start) span[1] = plan.end;
+        else block.spans.push([plan.start, plan.end]);
+        const kwh = Math.abs(plan.quantityW) * (plan.end - plan.start) / 3600000000;
+        block.kwh += kwh;
+        block.end = plan.end;
+
+        const spot = priceByQuarter.get(plan.start);
+        const price = financialForecastPrice(spot, day, buying);
+        if (price === null) {
+          block.total = null;
+          block.missing = !Number.isFinite(spot) ? 'Prijs ontbreekt' : 'EB ontbreekt';
+        } else if (block.total !== null) {
+          block.total += (buying ? -1 : 1) * kwh * price;
+        }
+      }
+      const last = slots.at(-1);
+      return blocks.filter(block => block.end > slots[0].t && block.start < last.t + last.dt)
+        .sort((a,b) => a.start - b.start);
+    }
+    function clearPlanLabels(chart) {
+      chart.$beEpexPlanStrip?.node.remove();
+      delete chart.$beEpexPlanStrip;
+    }
+    function renderPlanLabels(chart) {
+      const blocks = chart.$beEpexPlanBlocks || [];
+      const {canvas, chartArea:area, scales:{x}, ctx} = chart;
+      const frame = canvas.parentElement;
+      const slots = forecastSlots(chart);
+      const series = chart.data.datasets.findIndex(ds => ds.beEpexForecast);
+      if (!blocks.length || !slots.length || !area || !x || !frame?.parentElement ||
+          !chart.width || series < 0 || !chart.isDatasetVisible(series)) {
+        clearPlanLabels(chart);
+        return;
+      }
+      let state = chart.$beEpexPlanStrip;
+      if (!state) {
+        const node = document.createElement('div');
+        node.className = 'be-epex-plan-strip';
+        node.setAttribute('aria-label', 'Geplande Day Ahead-blokken');
+        chart.$beEpexPlanStrip = state = {node, key:null};
+      }
+      const strip = state.node;
+      if (strip.nextElementSibling !== frame) frame.insertAdjacentElement('beforebegin', strip);
+      const canvasBox = canvas.getBoundingClientRect(), stripBox = strip.getBoundingClientRect();
+      const scale = canvasBox.width / chart.width;
+      const offset = canvasBox.left - stripBox.left;
+      const min = Math.max(0, offset + area.left * scale);
+      const max = Math.min(stripBox.width, offset + area.right * scale);
+      if (max <= min) {
+        clearPlanLabels(chart);
+        return;
+      }
+
+      const positions = [];
+      const horizonEnd = slots.at(-1).t + slots.at(-1).dt;
+      for (const block of blocks) {
+        let visibleLeft = Infinity, visibleRight = -Infinity;
+        for (const [start, end] of block.spans) {
+          const from = indexAt(slots, Math.max(start, slots[0].t));
+          const to = indexAt(slots, Math.min(end, horizonEnd));
+          if (from === null || to === null || to <= from) continue;
+          const p1 = offset + x.getPixelForValue(from) * scale;
+          const p2 = offset + x.getPixelForValue(to) * scale;
+          const left = Math.max(min, Math.min(p1, p2));
+          const right = Math.min(max, Math.max(p1, p2));
+          if (Number.isFinite(left) && right > left) {
+            visibleLeft = Math.min(visibleLeft, left);
+            visibleRight = Math.max(visibleRight, right);
+          }
+        }
+        if (visibleRight > visibleLeft) positions.push({block, center:(visibleLeft + visibleRight) / 2});
+      }
+      if (!positions.length) {
+        clearPlanLabels(chart);
+        return;
+      }
+      const key = JSON.stringify([positions, min, max, data.planPrice.allin]);
+      if (key === state.key) return;
+      state.key = key;
+
+      const money = new Intl.NumberFormat('nl-NL', {style:'currency', currency:'EUR'});
+      const volumeFormat = new Intl.NumberFormat('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2});
+      const badges = [];
+      ctx.save();
+      ctx.font = '600 11px system-ui, sans-serif';
+      for (const {block,center} of positions) {
+        const volume = volumeFormat.format(block.kwh) + ' kWh';
+        const sign = block.total > .005 ? '+' : block.total < -.005 ? '−' : '';
+        const amount = block.total === null ? block.missing : sign + money.format(Math.abs(sign ? block.total : 0));
+        let priceMode = '';
+        if (block.total !== null) {
+          priceMode = data.planPrice.allin ? (block.direction === 'import' ? 'All-in' : 'Incl. btw') : 'Excl. EB/btw';
+        }
+        const width = Math.min(max - min, Math.ceil(Math.max(
+          ctx.measureText(volume).width,
+          ctx.measureText(amount + (priceMode ? '  ' + priceMode : '')).width
+        )) + 16);
+        const left = Math.max(min, Math.min(max - width, center - width / 2));
+        badges.push({volume,amount,priceMode,sign,width,left});
+      }
+      ctx.restore();
+
+      const lanes = [], nodes = [];
+      for (const badge of badges.sort((a,b) => a.left - b.left)) {
+        let lane = lanes.findIndex(right => right + 5 <= badge.left);
+        if (lane < 0) lane = lanes.length;
+        lanes[lane] = badge.left + badge.width;
+        const node = document.createElement('div');
+        node.className = 'be-epex-plan-badge';
+        node.style.left = badge.left + 'px';
+        node.style.top = (lane * 38) + 'px';
+        node.style.width = badge.width + 'px';
+        const volume = document.createElement('span');
+        volume.textContent = badge.volume;
+        const amount = document.createElement('span');
+        amount.className = 'be-epex-plan-amount' + (badge.sign === '−' ? ' be-epex-plan-cost' : badge.sign === '+' ? ' be-epex-plan-credit' : '');
+        amount.textContent = badge.amount;
+        if (badge.priceMode) {
+          const modeNode = document.createElement('small');
+          modeNode.className = 'be-epex-plan-mode';
+          modeNode.textContent = badge.priceMode;
+          amount.append(modeNode);
+        }
+        node.append(volume, amount);
+        nodes.push(node);
+      }
+      strip.style.height = (lanes.length * 38 - 4) + 'px';
+      strip.replaceChildren(...nodes);
+    }
     function forecast(c){
       const slots=forecastSlots(c),opts=c.config.options,active=!!data.forecastEnabled&&slots.length>1;
       ensureForecastAxis(c);
       const color=forecastColor(c),paint=forecastPaint(c,color);
       const swatch=document.getElementById('be-epex-forecast-switch');if(swatch)swatch.style.setProperty('--be-epex-forecast-color',color);
       let ds=c.data.datasets.find(d=>d.beEpexForecast);
-      if(!active){c.data.datasets=c.data.datasets.filter(d=>!d.beEpexForecast);c.$beEpexForecastRows=[];c.$beEpexForecastSignature=forecastSignature(c);return;}
+      if(!active){c.$beEpexPlanBlocks=[];c.data.datasets=c.data.datasets.filter(d=>!d.beEpexForecast);c.$beEpexForecastRows=[];c.$beEpexForecastSignature=forecastSignature(c);return;}
       if(!ds){ds={beEpexForecast:true,type:'line',yAxisID:'beEpex',parsing:false,pointRadius:0,pointHitRadius:6,fill:false,spanGaps:false,order:-30};c.data.datasets.push(ds);}
       const rows=[...new Map((data.forecastRows||[]).filter(r=>Number.isFinite(r.start)&&r.end-r.start===900000&&Number.isFinite(r.price)).map(r=>[r.start,r])).values()].sort((a,b)=>a.start-b.start);
+      c.$beEpexPlanBlocks = forecastPlanBlocks(c.$beEpexForecastPlans, rows, slots);
       const out=[],quoted=[];let end=null,lastValue=null;
       for(const r of rows){
         const from=Math.max(r.start,slots[0].t),to=Math.min(r.end,slots.at(-1).t+slots.at(-1).dt);
         if(to<=from)continue;
         const x=indexAt(slots,from),z=indexAt(slots,to);if(x===null||z===null)continue;
-        const value=data.allin?r.price*data.btw+data.opslag+data.eb:r.price;
+        const value = financialForecastPrice(r.price, dayClock.format(new Date(r.start)), true);
+        if (value === null) continue;
         if(end!==null&&from>end){out.push({x:indexAt(slots,end),y:lastValue},{x:indexAt(slots,end),y:null});}
         out.push({x,y:value});end=to;lastValue=value;quoted.push({...r,value});
       }
       if(end!==null)out.push({x:indexAt(slots,end),y:lastValue});
-      Object.assign(ds,{label:data.allin?'EPEX · all-in':'EPEX · kaal',borderColor:paint,backgroundColor:paint,beEpexForecastColor:color,borderWidth:1,stepped:false,tension:.3,cubicInterpolationMode:'monotone',data:out});
+      Object.assign(ds,{label:data.planPrice.allin?'EPEX · all-in':'EPEX · excl. EB/btw',borderColor:paint,backgroundColor:paint,beEpexForecastColor:color,borderWidth:1,stepped:false,tension:.3,cubicInterpolationMode:'monotone',data:out});
       c.$beEpexForecastRows=quoted;c.$beEpexForecastSignature=forecastSignature(c);
     }
     function drawForecastMarks(c){
@@ -14078,8 +14274,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         if(!ds){ds={beEpex:true,label:'EPEX NL',borderColor:'#429ee8',backgroundColor:'#429ee8',borderWidth:2,pointRadius:0,pointHitRadius:8,fill:false,spanGaps:false,stepped:'before',tension:0,order:-10};c.data.datasets.push(ds);}
         ds.label=data.allin?'EPEX · all-in':'EPEX · kaal';ds.data=points(c);
         ds.tooltip={callbacks:{label:z=>ds.label+': € '+z.parsed.y.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:5})+'/kWh'}};
-      },afterDraw:drawForecastMarks,afterUpdate(c){
-        if(c.canvas.id==='soc-forecast-chart'){announceForecast(c);requestForecast(c);return;}
+      },afterDraw:drawForecastMarks,afterDestroy:clearPlanLabels,afterUpdate(c){
+        if(c.canvas.id==='soc-forecast-chart'){renderPlanLabels(c);announceForecast(c);requestForecast(c);return;}
         if(c.canvas.id!=='be-tarief-chart')return;
         const host=document.getElementById('be-epex-legend');if(!host)return;
         const bar=host.parentElement,rect=c.canvas.getBoundingClientRect(),barRect=bar.getBoundingClientRect();
@@ -14113,9 +14309,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   const observer=new MutationObserver(()=>{if(pending)return;pending=true;setTimeout(()=>{pending=false;mount();mountForecast();},150);});
   observer.observe(document.body||document.documentElement,{childList:true,subtree:true});
   document.addEventListener('be-actueel-allin-update',publish);
+  document.addEventListener('be-financial-settings-update',publish);
+  window.addEventListener('pageshow',publish);
   document.addEventListener('be-epex-forecast-range',()=>{mountForecast();refreshForecast();});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){mount();mountForecast();refresh();refreshForecast();}});
-  window.addEventListener('storage',e=>{if(e.key===KEY){enabled=e.newValue==='aan';publish();refresh();}});
+  window.addEventListener('storage',e=>{
+    if(e.key===KEY){enabled=e.newValue==='aan';publish();refresh();}
+    if(e.key==='be_cfg_actueel_allin'||e.key===FINANCE_SETTINGS||e.key===null)publish();
+  });
   mount();mountForecast();setInterval(()=>{refresh();refreshForecast();},60000);
 })();
 
@@ -14709,7 +14910,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.6.7. BE data only. */
+/* Coulombtelling in/uit — 6.6.8. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -15640,7 +15841,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.8',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -15654,7 +15855,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
   function forecastValues(chart){
-    const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
+    const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];chart.$beEpexForecastPlans=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
     const items=payload?.items;if(!items?.length)return pending('Vooruitblik wacht op prognosegegevens.');
     if(!ext.sameForecastDay(forecastFetch))return pending('Vooruitblik wacht op vernieuwde prognosegegevens voor vandaag.');
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
@@ -15665,6 +15866,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const nativeGrid=ext.forecastGrid(chart,slots);
     if(!nativeGrid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+nativeGrid.reason+'.');
     chart.$beEpexForecastSlots=slots;
+    chart.$beEpexForecastPlans=Array.isArray(payload.day_ahead_plans)?payload.day_ahead_plans:[];
     const grid=ext.forecastGrid(chart,slots,anchor);
     if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.',true);
     const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);
@@ -15847,7 +16049,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.6.7. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.6.8. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -16724,7 +16926,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.7'+
+      '\nDashboardversie: 6.6.8'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

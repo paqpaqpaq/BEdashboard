@@ -887,7 +887,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.6.8',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -901,7 +901,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
   }
   function forecastValues(chart){
-    const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
+    const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];chart.$beEpexForecastPlans=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};
     const items=payload?.items;if(!items?.length)return pending('Vooruitblik wacht op prognosegegevens.');
     if(!ext.sameForecastDay(forecastFetch))return pending('Vooruitblik wacht op vernieuwde prognosegegevens voor vandaag.');
     const slots=items.flatMap(i=>(i.hours||[]).map((t,k)=>({t:Date.parse(t),dt:(i.interval_minutes||15)*60000,
@@ -912,6 +912,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const nativeGrid=ext.forecastGrid(chart,slots);
     if(!nativeGrid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+nativeGrid.reason+'.');
     chart.$beEpexForecastSlots=slots;
+    chart.$beEpexForecastPlans=Array.isArray(payload.day_ahead_plans)?payload.day_ahead_plans:[];
     const grid=ext.forecastGrid(chart,slots,anchor);
     if(!grid.valid)return pending('Vooruitblik wacht op een geldige tijdkoppeling: '+grid.reason+'.',true);
     const native=ext.nativeSOC(chart,slots),planned=native&&ext.projectNative(slots,native,anchor,c);

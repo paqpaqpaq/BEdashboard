@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.6.8 — 8 november 2026
+
+- Gepland volume en totaalbedrag per Day Ahead-reeks in Forecast.
+- EPEX-prijzen en min/max in Forecast volgen de prijsstand in Financieel.
+
 ## 6.6.7 — 8 november 2026
 
 - Gemiddelde tarieven per kWh naast de inkoop- en verkooptotalen in Financieel.
