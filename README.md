@@ -2,11 +2,11 @@
 
 Financieel overzicht, aanvullende prijzen en een eigen SOC-berekening voor het Balansenergie-dashboard.
 
-## Download — versie 6.6.6 (stabiel)
+## Download — versie 6.6.7 (stabiel)
 
 - **[Userscript installeren](https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js)** — Safari/Userscripts of Chrome/Edge/Tampermonkey.
-- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.6/BE_dashboard_6_6_6.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
-- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.6/Balansenergie-All-in-v6.6.6.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.6.6).
+- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.7/BE_dashboard_6_6_7.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
+- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/releases/download/v6.6.7/Balansenergie-All-in-v6.6.7.txt)** · [Alle downloads](https://github.com/paqpaqpaq/BEdashboard/releases/tag/v6.6.7).
 
 Vervang de bestaande versie en herlaad het dashboard. Gebruik één hoofdvariant tegelijk: schakel de versie 6-beta en losse SOC-, BID-, EPEX- en break-even-plugins uit wanneer je deze versie installeert. De beta gebruikt een apart installatiekanaal en wordt daardoor niet automatisch vervangen door de stabiele versie. Bestaande instellingen en lokaal bewaarde historie blijven behouden in dezelfde browser en voor dezelfde installatie.
 

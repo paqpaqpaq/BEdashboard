@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.6.7 — 8 november 2026
+
+- Gemiddelde tarieven per kWh naast de inkoop- en verkooptotalen in Financieel.
+
 ## 6.6.6 — 6 november 2026
 
 - EPEX bron nordpool
