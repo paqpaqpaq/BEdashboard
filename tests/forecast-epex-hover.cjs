@@ -15,6 +15,10 @@ const chart={canvas:{id:'soc-forecast-chart',getBoundingClientRect:()=>({left:0,
  scales:{x:{type:'category',getValueForPixel:x=>Math.round(x/100),getPixelForValue:x=>x*100,getLabelForValue:x=>chart.data.labels[x]},y:{getPixelForValue:y=>200-y},yEpex:{getPixelForValue:y=>100-y*100}},
  getDatasetMeta:i=>metas[i],isDatasetVisible:i=>i===0||showPrice,
  $beEpexForecastSlots:[{t:T,dt:3600000},{t:T+3600000,dt:3600000}],
+ $beEpexForecastPlans:[
+   {start:T+Q,end:T+2*Q,direction:'import',quantityW:5956},
+   {start:T+2*Q,end:T+3*Q,direction:'export',quantityW:5000}
+ ],
  $beEpexForecastRows:[.1,.2,null,-.05].map((value,i)=>({start:T+i*Q,end:T+(i+1)*Q,price:.01,value}))};
 hover.attach(chart,{capacity:40,times:[new Date(T).toISOString(),new Date(T+3600000).toISOString()]});
 let info=hover.info(chart,{x:26});
@@ -24,13 +28,20 @@ assert.equal(info.rows[0].energyKwh,12);
 assert.equal(info.rows[1].value,.2,'the exact display price wins over raw price and duplicate plotted endpoints');
 assert.equal(info.rows[1].unit,'eur-kwh');assert.equal(info.rows[1].energyKwh,null);assert.equal(info.rows[1].approx,false);
 assert(info.title.includes('12:15–12:30'));
+assert.equal(info.rows[2].label,'Geplande EPEX-import');
+assert.equal(info.rows[2].value,5.956);
+assert.equal(info.rows[2].py,null,'planned power has no SOC or price marker');
 assert.equal(hover.info(chart,{x:50}).rows[1].value,null,'missing quarter cannot carry the previous bid/price');
+assert.equal(hover.info(chart,{x:50}).rows[2].label,'Geplande EPEX-export');
+assert.equal(hover.info(chart,{x:50}).rows[2].value,5,'planned power is available without an EPEX quote');
+assert.equal(hover.info(chart,{x:99}).rows.length,2,'an unplanned quarter has no planned power row');
 assert.equal(hover.info(chart,{x:99}).rows[1].value,-.05,'negative EPEX is preserved');
 assert.equal(hover.info(chart,{x:100}).rows[1].value,null,'price does not carry into a new hour');
 events.mousemove({clientX:26,clientY:80});
 assert.equal(nodes[0].children[2].children[2].textContent,'€ 0,200/kWh');
+assert.equal(nodes[0].children[3].children[2].textContent,'5,956 kW');
 assert(!nodes[0].children[2].children[2].textContent.includes('%'));
 assert.equal(nodes[0].children[1].children[2].textContent,'≈ 30% · ~ 12,0 kWh');
 showPrice=false;info=hover.info(chart,{x:26});assert.equal(info.x,0);assert.equal(info.rows.length,1,'hidden EPEX restores the original category hover');
 showPrice=true;delete chart.$beEpexForecastSlots;info=hover.info(chart,{x:26});assert.equal(info.x,0);assert.equal(info.rows[1].value,null,'missing validated times cannot guess a price');
-console.log('PASS forecast EPEX hover: quarter precision on hourly categories, exact quote selection, same-time SOC, missing/negative values, EUR display and unchanged native mode.');
+console.log('PASS forecast EPEX hover: quarter precision on hourly categories, exact quote selection, same-time SOC, planned kW, missing/negative values, EUR display and unchanged native mode.');

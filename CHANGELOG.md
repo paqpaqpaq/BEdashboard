@@ -4,6 +4,7 @@
 
 - Gepland volume en totaalbedrag per Day Ahead-reeks in Forecast.
 - EPEX-prijzen en min/max in Forecast volgen de prijsstand in Financieel.
+- Gepland EPEX-vermogen per kwartier in de Forecast-tooltip.
 
 ## 6.6.7 — 8 november 2026
 

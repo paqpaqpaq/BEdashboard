@@ -346,6 +346,27 @@
       if(!groups.has(group)){groups.set(group,rows.length);rows.push(row);}
       else if(rows[groups.get(group)].value===null&&row.value!==null)rows[groups.get(group)]=row;
     });
+    if (selected.epexQuarter) {
+      const wattsByDirection = new Map();
+      for (const plan of chart.$beEpexForecastPlans || []) {
+        if (plan?.start !== selected.time || plan.end !== selected.time + 900000 ||
+            !['import', 'export'].includes(plan.direction) || !finite(plan.quantityW)) continue;
+        const watts = Math.abs(plan.quantityW);
+        if (!watts) continue;
+        const previous = wattsByDirection.get(plan.direction);
+        wattsByDirection.set(plan.direction, previous === undefined || previous === watts ? watts : null);
+      }
+      for (const [direction, watts] of wattsByDirection) {
+        if (watts === null) continue;
+        rows.push({
+          label: 'Geplande EPEX-' + direction,
+          color: root.BETheme?.isDark?.() ? '#acd2ef' : '#315b79',
+          value: watts / 1000,
+          unit: 'kw',
+          py: null
+        });
+      }
+    }
     const xScale=chart.scales.x,times=configs.get(chart)?.times;
     const label=times?.[selected.x]??chart.data.labels?.[selected.x]??xScale.getLabelForValue?.(selected.x);
     const time=finite(selected.time)?selected.time:['time','timeseries'].includes(xScale.type)||xScale.type==='linear'&&selected.x>1e11?selected.x:typeof label==='string'&&/^\d{4}-\d\d-\d\d[T ]/.test(label)?Date.parse(label):null;
@@ -356,6 +377,7 @@
   function format(row){
     if(!finite(row.value))return '—';
     if(row.unit==='eur-kwh')return '€ '+row.value.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+'/kWh';
+    if(row.unit==='kw')return row.value.toLocaleString('nl-NL',{minimumFractionDigits:3,maximumFractionDigits:3})+' kW';
     const energy=finite(row.energyKwh)?'~ '+row.energyKwh.toLocaleString('nl-NL',{minimumFractionDigits:1,maximumFractionDigits:1}):'—';
     return (row.approx?'≈ ':'')+row.value.toLocaleString('nl-NL',{maximumFractionDigits:0})+'% · '+energy+' kWh';
   }
