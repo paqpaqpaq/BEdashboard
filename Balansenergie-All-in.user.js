@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.6.9
+// @version      6.7
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -471,7 +471,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.6.9'
+    '6.7'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -491,10 +491,53 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var EB       = 0.11085;
   var OPSLAG   = 0.02;
 
-  var LEV_DAG = 0.2184;
-  var TRA_DAG = 1.3861;
+  var LEV_DAG = 0.21839;  // vaste leveringskosten Balans, incl. btw
+  var TRA_DAG = 1.30365;  // netbeheer Enexis 2026 zoals Balans factureert, incl. btw
   var VER_DAG = 628.96 / 365;
   var VAST_DAG = VER_DAG - LEV_DAG - TRA_DAG;
+
+  // 6.7: tarieven per kalenderjaar. Balans rekent EB en vermindering per jaar
+  // (jaarafrekening 2025/2026: EB 0,12286 resp. 0,11085 incl. btw; vermindering
+  // 635,19/365 resp. 628,96/365 per dag). Instellingen in Financieel winnen.
+  // 2027: Belastingplan 2027 na rectificatie (16-09-2026), nog niet door de Eerste Kamer.
+  var EB_JAAR  = {'2025': 0.10154, '2026': 0.09161, '2027': 0.08802};   // excl. btw, schijf 1
+  var VER_JAAR = {'2025': 524.95,  '2026': 519.80,  '2027': 519.58};    // excl. btw, per jaar
+  // Netbeheer incl. btw per dag zoals Balans Enexis factureert (2025: 1,30390; 2026: 1,30365).
+  // 2027 staat nog niet vast; dan geldt het algemene netbeheerbedrag.
+  var NET_JAAR = {'2025': 1.30390, '2026': 1.30365};
+  function beJaarVan(key) {
+    var m = /^(\d{4})/.exec(String(key || ''));
+    return m ? m[1] : String(new Date().getFullYear());
+  }
+  function beJaarDagen(y) { return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365; }
+  function beOk(v) { return typeof v === 'number' && isFinite(v) && v >= 0; }
+  function beJaarInst() { return (typeof beOvSettings !== 'undefined' && beOvSettings) ? beOvSettings : null; }
+  // EB per kWh incl. btw voor de datum/maand in key; onbekend jaar valt terug op EB.
+  function ebVoor(key) {
+    var y = beJaarVan(key), s = beJaarInst(), r = s && s.rates ? s.rates[y] : undefined;
+    if (!beOk(r)) r = EB_JAAR[y];
+    return beOk(r) ? r * BTW : EB;
+  }
+  function netbeheerVoor(key) {
+    var y = beJaarVan(key), s = beJaarInst(), n = s && s.networkRates ? s.networkRates[y] : undefined;
+    if (!beOk(n) && !s) n = NET_JAAR[y];
+    if (!beOk(n)) n = s && beOk(s.network) ? s.network : TRA_DAG;
+    return n;
+  }
+  // Vaste dagpost incl. btw: vermindering − levering − netbeheer, per jaar.
+  function vastDag(key) {
+    var y = beJaarVan(key), s = beJaarInst(), c = s && s.credit ? s.credit[y] : undefined;
+    if (!beOk(c)) c = VER_JAAR[y];
+    var ver = beOk(c) ? c * BTW / beJaarDagen(+y) : VER_DAG;
+    var lev = s && beOk(s.supplier) ? s.supplier : LEV_DAG;
+    return ver - lev - netbeheerVoor(key);
+  }
+  // Som van vastDag over een datumbereik (YYYY-MM-DD, inclusief), zodat de jaargrens klopt.
+  function vastBereik(van, n) {
+    var d = new Date(van + 'T12:00:00Z'), som = 0;
+    for (var i = 0; i < n; i++) { som += vastDag(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+    return som;
+  }
 
   var LS = {
     voorschot:    'be_cfg_voorschot',
@@ -5795,8 +5838,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     // Match the priced portion used by Actueel, while retaining all measured kWh.
     var ebImp = r.voorlopig && Number.isFinite(r.geprijsdeImportKwh) ? r.geprijsdeImportKwh : imp;
     var ebExp = r.voorlopig && Number.isFinite(r.geprijsdeExportKwh) ? r.geprijsdeExportKwh : exp;
-    var ebInk = -ebImp * EB;
-    var ebVerk = Math.max(0, ebExp - onges) * EB;
+    var ebTarief = Number.isFinite(r.ebTarief) ? r.ebTarief : ebVoor(r.key);
+    var ebInk = -ebImp * ebTarief;
+    var ebVerk = Math.max(0, ebExp - onges) * ebTarief;
 
     var eb =
       ebInk +
@@ -5808,7 +5852,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
     var vast =
       getal(dagen) *
-      VAST_DAG;
+      vastDag(r.key);
 
     var allinInk =
       balansInk +
@@ -7643,11 +7687,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var vs=contractVoorschot(deel,deel.van>vandaag?deel.dagen:verstreken);
       betaald+=betaaldMaand;
       if(verstreken>0)maandenBekend++;
-      var vastWerkelijk=verstreken*VAST_DAG;
+      var vastWerkelijk=vastBereik(deel.van,verstreken),vastDeel=vastBereik(deel.van,deel.dagen);
       werkelijk+=a?a.stroom:0; vastTot+=vastWerkelijk;
-      jaarStroom+=prog; jaarVast+=deel.dagen*VAST_DAG;
+      jaarStroom+=prog; jaarVast+=vastDeel;
       var stroom=a?a.stroom:prog;
-      var vast=a?vastWerkelijk:deel.dagen*VAST_DAG;
+      var vast=a?vastWerkelijk:vastDeel;
       cum+=stroom+vast+vs;
       var sub=null;
       if(r.key===vandaag.slice(0,7)) {
@@ -12023,7 +12067,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.6.9' +
+        'Instellingen v6.7' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12469,7 +12513,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    * ============================================================
    */
 
-  /* Financieel v6.6.9. Eigen scherm; geen herschrijving van Balans-kaarten.
+  /* Financieel v6.7. Eigen scherm; geen herschrijving van Balans-kaarten.
    * De API-bedragen zijn volgens dezelfde prijsmetadata genormaliseerd als v5.
    * Saldering/EB zijn expliciete ramingen per contractjaar, geen maandafrekening.
    */
@@ -12477,18 +12521,25 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     vat: true, tax: true, salderen: true, eligible: 100, schema: 2,
     paymentMode: 'schema', payments: {}, taxAllocation: 'tijd', eligibleConfirmed: false,
     supplier: LEV_DAG, network: TRA_DAG,
-    rates: {'2025': 0.10154, '2026': 0.09161},
-    credit: {'2025': 524.95, '2026': 519.80}
+    rates: Object.assign({}, EB_JAAR),
+    credit: Object.assign({}, VER_JAAR),
+    networkRates: Object.assign({}, NET_JAAR)
   };
   var beOvSettings = (function () {
     try {
       var s = JSON.parse(localStorage.getItem('be_overzicht_settings_v1') || '{}');
       // be_cfg_saldering uit v5 bepaalde alleen de zichtbaarheid van de kaart.
       // De eerste testversie las dat ten onrechte als uitschakeling van EB-verrekening.
+      // Lege jaarvelden (null) overschrijven de standaardtarieven niet.
+      function gevuld(o) { var r = {}; Object.keys(o || {}).forEach(function (k) { if (typeof o[k] === 'number' && isFinite(o[k]) && o[k] >= 0) r[k] = o[k]; }); return r; }
+      // 6.7: oude standaarddagbedragen uit eerdere versies vervangen door de gefactureerde.
+      if (s.network === 1.3861) delete s.network;
+      if (s.supplier === 0.2184) delete s.supplier;
       return Object.assign({}, beOvDefault, s, {
         schema: 2, salderen: s.schema === 2 ? s.salderen !== false : true,
-        rates: Object.assign({}, beOvDefault.rates, s.rates || {}),
-        credit: Object.assign({}, beOvDefault.credit, s.credit || {})
+        rates: Object.assign({}, beOvDefault.rates, gevuld(s.rates)),
+        credit: Object.assign({}, beOvDefault.credit, gevuld(s.credit)),
+        networkRates: Object.assign({}, beOvDefault.networkRates, gevuld(s.networkRates))
       });
     } catch (_) { return Object.assign({}, beOvDefault); }
   })();
@@ -12625,9 +12676,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       // niet automatisch meer dan de 5.000 kWh-grens voor niet-duurzame invoeding gebruikt.
       var eligible=settings.eligibleConfirmed?eligibleBase:Math.min(5000,eligibleBase);
       var creditKwh = settings.salderen ? Math.min(imp, eligible) : 0;
+      // 6.7: laat zien hoeveel kWh het plafond kost; voorheen gebeurde dat stil.
+      var cappedKwh = settings.salderen ? Math.max(0, Math.min(imp, eligibleBase) - creditKwh) : 0;
       var grossTax = 0, unknownRate = false;
       pre.forEach(function(r){var rate=settings.rates[r.key.slice(0,4)];if(r.imp>0&&!(beOvFinite(rate)&&rate>=0))unknownRate=true;else if(r.imp>0)grossTax+=r.imp*rate;});
       var refundEx = !creditKwh ? 0 : unknownRate ? null : grossTax * creditKwh / imp;
+      var grossTaxForCap = grossTax;
       if(creditKwh>0&&settings.taxAllocation!=='afname'&&!unknownRate){
         var through=pre.reduce(function(last,r){return r.key>last?r.key:last;},key),sumRates=0,countDays=0;
         for(var dateKey=key;dateKey<=through;dateKey=beOvAdd(dateKey,1)){
@@ -12642,6 +12696,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         var eligibleRow=r.key<'2027-01-01'?r.exp*settings.eligible/100:0;
         var fraction=eligibleBase>0?eligibleRow/eligibleBase:0;
         r.saldKwh=creditKwh*fraction;
+        r.salderingPlafondKwh=cappedKwh;r.salderingPlafondRate=imp>0?grossTaxForCap/imp:0;
         r.taxable=r.imp-(imp>0&&r.key<'2027-01-01'?r.imp*creditKwh/imp:0);
         var rate = settings.rates[r.key.slice(0, 4)];
         r.ebGrossEx=r.imp<1e-9?0:beOvFinite(rate)&&rate>=0?r.imp*rate:null;
@@ -12670,17 +12725,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     total.vatTrade = (total.verkoop - total.inkoop) - (total.sellEx - total.buyEx);
     return total;
   }
+  function beOvNetwork(settings, y) {
+    var v = settings.networkRates ? settings.networkRates[y] : undefined;
+    return beOvFinite(v) && v >= 0 ? v : settings.network;
+  }
   function beOvFixed(a, b, settings) {
-    var n = beOvDays(a, b), credit = 0, unknown = false;
+    var n = beOvDays(a, b), credit = 0, network = 0, unknown = false;
     for (var k = a; k <= b; k = beOvAdd(k, 1)) {
       var y = k.slice(0, 4), amount = settings.credit[y];
       var yearDays = beOvDays(y + '-01-01', y + '-12-31');
+      network += beOvNetwork(settings, y);
       if (!beOvFinite(amount)) unknown = true;
       else credit += amount / yearDays * (settings.vat ? BTW : 1);
     }
     var factor = settings.vat ? 1 : 1 / BTW;
-    return {days: n, supplier: n * settings.supplier * factor, network: n * settings.network * factor,
-      credit: unknown ? null : credit, net: unknown ? null : credit - n * (settings.supplier + settings.network) * factor,
+    return {days: n, supplier: n * settings.supplier * factor, network: network * factor,
+      credit: unknown ? null : credit, net: unknown ? null : credit - (n * settings.supplier + network) * factor,
       advance: settings.paymentMode==='actual' ? ((settings.payments||{})[KLANT]||[]).filter(function(p){return p.datum>=a&&p.datum<=b;}).reduce(function(sum,p){return sum+p.bedrag;},0) : n ? beVoorschotSom(a, n) : 0};
   }
   function beOvStatementData(all,r,settings,through) {
@@ -12797,7 +12857,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.6.9</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.7</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13165,6 +13225,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(prediction)html+='<p class="help">~ Seizoensraming met de maandfactoren uit 5.0 en '+forecast.base+' recente complete dagen.'+(forecast.history?' Beschikbare volledige maanden van vorig jaar wegen 60% mee.':' Geen volledige vergelijkbare maand van vorig jaar beschikbaar.')+' De eerste prognosemaand verwerkt ook de verwachte contractcorrectie voor saldering; het eindsaldo sluit daarop aan. Geen weers- of prijsvoorspelling.</p>';
       else if(forecast.reason!=='afgelopen')html+='<p class="help">'+(blocked?'Geen totaalprognose: ontbrekende of onvolledige historie. Een totaalprognose zou ontbrekende historie verbergen.':'Prognose beschikbaar vanaf 7 complete brondagen in de laatste 28 dagen.')+'</p>';
       if(comparison)html+='<p class="help">Zonder EB of btw is het saldo een vergelijking, geen factuurbedrag.</p>';
+      var plafond={};all.forEach(function(d){if(d.salderingPlafondKwh>0.5&&d.key>=ledgerRange.a&&d.key<=ledgerRange.b)plafond[d.contract]=d;});
+      Object.keys(plafond).forEach(function(c){var d=plafond[c],eur=d.salderingPlafondKwh*d.salderingPlafondRate*BTW;
+        html+='<p class="notice warning">Saldeerplafond actief (contract vanaf '+date(c)+'): '+fmt(d.salderingPlafondKwh)+' kWh teruglevering telt niet mee voor EB-verrekening, ongeveer '+money(eur)+' incl. btw. Saldeert je leverancier alles, vink dan bij Instellingen “bevestigd door mijn contract/nota” aan.</p>';});
       if(todayRow&&(todayRow.deelresultaat||todayRow.voorlopig))html+='<p class="help">Vandaag is nog onvolledig. Vaste dagkosten en voorschot lopen t/m vandaag.'+(todayRow.prijsOnvolledig?' Niet alle gemeten stroom heeft al een prijs; alleen het geprijsde deel telt mee.':'')+'</p>';
       html+='</section>';
       $('content').innerHTML=html;
@@ -13183,9 +13246,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         '<label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input id="cfg-eligible-confirmed" type="checkbox">Deze saldeerbare hoeveelheid is bevestigd door mijn contract/nota</label><p class="help">De bron splitst duurzame en niet-duurzame teruglevering niet uit. Zonder bevestiging rekent deze raming met maximaal 5.000 kWh. Voor EB-verrekening moet de leverancier daadwerkelijk salderen op dezelfde kleine aansluiting.</p>'+
         '<div id="advance-history"></div><div class="grid settings-grid"><label>Voorschotten in het saldo<select id="cfg-payment-mode"><option value="schema">Maandbedragen naar rato van dagen</option><option value="actual">Mijn ingevoerde werkelijke betalingen</option></select></label><label>EB-verdeling bij jaarwisseling<select id="cfg-tax-allocation"><option value="tijd">Tijdsevenredige raming</option><option value="afname">Afnamegewogen raming</option></select></label></div>'+
         '<details><summary>Werkelijke voorschotbetalingen invoeren</summary><p class="help">Vul ontvangen betaalbewijzen over. Deze lokale lijst verandert geen incasso of bedrag bij de leverancier. Kies hierboven werkelijke betalingen om ze in het saldo te gebruiken.</p><div id="actual-payments"></div><button type="button" id="add-payment">+ Betaling toevoegen</button></details>'+
-        '<h3 style="margin-top:18px">Jaartarieven voor het rekenmodel</h3><div class="table-wrap"><table><thead><tr><th>Jaar</th><th>EB excl. btw, €/kWh</th><th>Vaste belastingvermindering excl. btw, €/jaar</th></tr></thead><tbody>';
-      Array.from(years).sort().forEach(function(y){html+='<tr><td>'+y+'</td><td><input aria-label="EB '+y+'" data-rate="'+y+'" type="number" min="0" max="10" step="0.00001" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.rates[y])?beOvSettings.rates[y]:'')+'"></td><td><input aria-label="Belastingvermindering '+y+'" data-credit="'+y+'" type="number" min="0" step="0.01" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.credit[y])?beOvSettings.credit[y]:'')+'"></td></tr>';});
-      html+='</tbody></table></div><p class="help">2025: EB 0,10154 en vermindering 524,95; 2026: EB 0,09161 en vermindering 519,80 (excl. btw). De jaartarieven en de grens op 1 januari 2027 worden gescheiden. Hogere verbruiksschijven geven “Nog onbekend” in plaats van een onjuist bedrag. Kies de tariefverdeling die op je contract/nota staat; standaard is de raming tijdsevenredig.</p><div class="actions" style="margin-top:16px"><button class="primary" type="submit">Instellingen opslaan</button><span id="save-status" role="status"></span></div></form>';
+        '<h3 style="margin-top:18px">Jaartarieven voor het rekenmodel</h3><div class="table-wrap"><table><thead><tr><th>Jaar</th><th>EB excl. btw, €/kWh</th><th>Vaste belastingvermindering excl. btw, €/jaar</th><th>Netbeheer incl. btw, €/dag</th></tr></thead><tbody>';
+      Array.from(years).sort().forEach(function(y){html+='<tr><td>'+y+'</td><td><input aria-label="EB '+y+'" data-rate="'+y+'" type="number" min="0" max="10" step="0.00001" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.rates[y])?beOvSettings.rates[y]:'')+'"></td><td><input aria-label="Belastingvermindering '+y+'" data-credit="'+y+'" type="number" min="0" step="0.01" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.credit[y])?beOvSettings.credit[y]:'')+'"></td><td><input aria-label="Netbeheer '+y+'" data-network="'+y+'" type="number" min="0" step="0.00001" placeholder="Standaard" value="'+(beOvFinite((beOvSettings.networkRates||{})[y])?beOvSettings.networkRates[y]:'')+'"></td></tr>';});
+      html+='</tbody></table></div><p class="help">2025: EB 0,10154 en vermindering 524,95; 2026: EB 0,09161 en vermindering 519,80; 2027 (Belastingplan, voorlopig): EB 0,08802 en vermindering 519,58 (excl. btw). De jaartarieven en de grens op 1 januari 2027 worden gescheiden. Hogere verbruiksschijven geven “Nog onbekend” in plaats van een onjuist bedrag. Kies de tariefverdeling die op je contract/nota staat; standaard is de raming tijdsevenredig. Netbeheer per jaar staat op je jaarafrekening (Enexis t/m 3×25 A zoals Balans factureert: 1,30390 in 2025 en 1,30365 in 2026, standaard ingevuld); leeg = het algemene netbeheerbedrag hierboven. Andere netbeheerder of grotere aansluiting: neem het bedrag van je eigen nota over. Deze jaartarieven gelden sinds 6.7 ook voor de andere kaarten.</p><div class="actions" style="margin-top:16px"><button class="primary" type="submit">Instellingen opslaan</button><span id="save-status" role="status"></span></div></form>';
       $('settings-body').innerHTML=html; $('cfg-salderen').value=beOvSettings.salderen?'aan':'uit';
       $('cfg-eligible-confirmed').checked=!!beOvSettings.eligibleConfirmed;
       beVoorschotInstellingen($('advance-history'));
@@ -13209,12 +13272,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
           var payments=Object.assign({},beOvSettings.payments||{});
           payments[KLANT]=Array.from($('actual-payments').querySelectorAll('.payment-row')).map(function(div){var inputs=div.querySelectorAll('input'),day=inputs[0].value,value=inputs[1].value,amount=Number(value);
             if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||beOvISO(beOvDate(day))!==day||day>iso(new Date())||value===''||!beOvFinite(amount)||amount<0)throw Error('Controleer de betaaldatums en bedragen van de werkelijke betalingen.');return {datum:day,bedrag:amount};});
-          var rates=Object.assign({},beOvSettings.rates),credits=Object.assign({},beOvSettings.credit);
-          shadow.querySelectorAll('[data-rate],[data-credit]').forEach(function(input){var map=input.hasAttribute('data-rate')?rates:credits,year=input.dataset.rate||input.dataset.credit;
+          var rates=Object.assign({},beOvSettings.rates),credits=Object.assign({},beOvSettings.credit),networks=Object.assign({},beOvSettings.networkRates||{});
+          shadow.querySelectorAll('[data-rate],[data-credit],[data-network]').forEach(function(input){var map=input.hasAttribute('data-rate')?rates:input.hasAttribute('data-credit')?credits:networks,year=input.dataset.rate||input.dataset.credit||input.dataset.network;
             if(input.value===''){map[year]=null;return;}var value=+input.value;if(!beOvFinite(value)||value<0)throw Error('Een jaartarief moet nul of positief zijn.');map[year]=value;});
           cfg.start=new Date(start+'T00:00:00');cfg.voorschot=advance;cfg.voorschotHistorie=history;
           localStorage.setItem(LS.startdatum,start);localStorage.setItem(LS.voorschot,String(advance));localStorage.setItem('be_cfg_voorschot_historie',JSON.stringify(history));
-          Object.assign(beOvSettings,{schema:2,eligible:eligible,eligibleConfirmed:$('cfg-eligible-confirmed').checked,supplier:supplier,network:network,salderen:$('cfg-salderen').value==='aan',rates:rates,credit:credits,payments:payments,paymentMode:$('cfg-payment-mode').value,taxAllocation:$('cfg-tax-allocation').value});save();
+          Object.assign(beOvSettings,{schema:2,eligible:eligible,eligibleConfirmed:$('cfg-eligible-confirmed').checked,supplier:supplier,network:network,salderen:$('cfg-salderen').value==='aan',rates:rates,credit:credits,networkRates:networks,payments:payments,paymentMode:$('cfg-payment-mode').value,taxAllocation:$('cfg-tax-allocation').value});save();
           $('save-status').textContent='Opgeslagen.';
           var selectedYear=$('year').value;$('year').innerHTML='';for(var y=cfg.start.getFullYear();y<=new Date().getFullYear()+1;y++)$('year').add(new Option(String(y),String(y)));$('year').value=selectedYear;
           if(!$('year').value)$('year').value=String(new Date().getFullYear());
@@ -13889,7 +13952,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     const {tax = true, vat = true, rates} = finance;
     return {
       allin: Boolean(tax && vat),
-      rates: {'2025':0.10154, '2026':0.09161, ...rates}
+      rates: {'2025':0.10154, '2026':0.09161, '2027':0.08802, ...Object.fromEntries(Object.entries(rates||{}).filter(([,v])=>Number.isFinite(v)&&v>=0))}
     };
   }
   function publish(){
@@ -14984,7 +15047,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   else document.addEventListener('DOMContentLoaded', inject, {once: true});
 })();
 
-/* Coulombtelling in/uit — 6.6.9. BE data only. */
+/* Coulombtelling in/uit — 6.7. BE data only. */
 (function(){
   'use strict';
   function coulombPage(){
@@ -15937,7 +16000,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.6.9',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -16145,7 +16208,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
 
-/* Regelvermogen & biedingen — 6.6.9. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.7. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -17057,7 +17120,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.6.9'+
+      '\nDashboardversie: 6.7'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

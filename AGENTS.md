@@ -84,3 +84,15 @@
 - Normal refreshes do not move the mounted host or focus an element. The original
   collapsed-chart symptom has not been reproduced in a live browser; do not claim
   that emptying the SVG alone explained that part of the report.
+
+## Version 6.7 — annual settlement rates
+
+- EB, belastingvermindering and netbeheer are keyed per calendar year from one
+  table (`EB_JAAR`, `VER_JAAR`, `NET_JAAR`, overridable in Financieel settings).
+  Legacy cards (`bereken`, Voorschot & verrekening) and Financieel share them.
+- Defaults were checked against one Balans Stroom jaarafrekening (Enexis,
+  21-10-2025 t/m 21-10-2026): vermindering, netbeheer and leveringskosten match
+  to the cent. That invoice showed extra "Netcorrectie" lines (July–October 2026)
+  whose relation to dashboard results is not yet verified; do not claim otherwise.
+- 2027 EB/vermindering are Belastingplan 2027 values, pending parliament.
+  Enexis 2027 netbeheer was not yet set; an empty year falls back to the general amount.

@@ -46,7 +46,7 @@
     const {tax = true, vat = true, rates} = finance;
     return {
       allin: Boolean(tax && vat),
-      rates: {'2025':0.10154, '2026':0.09161, ...rates}
+      rates: {'2025':0.10154, '2026':0.09161, '2027':0.08802, ...Object.fromEntries(Object.entries(rates||{}).filter(([,v])=>Number.isFinite(v)&&v>=0))}
     };
   }
   function publish(){

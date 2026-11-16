@@ -1,5 +1,14 @@
 # Changelog
 
+## 6.7 — 16 november 2026
+
+- Aanpassing eindafrekening berekening: energiebelasting, belastingvermindering en netbeheer per kalenderjaar, afgestemd op een Balans-jaarafrekening.
+- EB 2025 € 0,10154, 2026 € 0,09161, 2027 € 0,08802 (voorlopig); vermindering 2025 € 524,95, 2026 € 519,80, 2027 € 519,58 (alle excl. btw).
+- Netbeheer per jaar instelbaar; standaard Enexis t/m 3×25 A zoals Balans factureert: € 1,30390 (2025) en € 1,30365 (2026) per dag incl. btw. Vaste leveringskosten € 0,21839 per dag.
+- Ook de stroomkosten, Voorschot & verrekening en de prognose gebruiken nu de jaartarieven in plaats van alleen het 2026-tarief.
+- Melding in Financieel wanneer het saldeerplafond van 5.000 kWh teruglevering afkapt, met het geraamde bedrag.
+- Lege jaarvelden overschrijven de standaardtarieven niet meer; oude standaarddagbedragen (1,3861 en 0,2184) worden automatisch vervangen.
+
 ## 6.6.9 — 8 november 2026
 
 - De tariefgrafiek in Actueel toont de onbalansprijzen voor afname en invoeding ook tijdens geplande EPEX-kwartieren.
