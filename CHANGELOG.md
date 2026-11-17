@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.7.1 — 17 november 2026
+
+- Regelvermogen & biedingen, blok Details: BID, afstand tot BID en aFRR op-/afregelprijs in €/kWh met drie decimalen (bijv. € 4,000 / kWh in plaats van € 4.000,00 / MWh), gelijk aan de samenvatting. De tabel met bronmetingen blijft in €/MWh.
+
 ## 6.7 — 16 november 2026
 
 - Aanpassing eindafrekening berekening: energiebelasting, belastingvermindering en netbeheer per kalenderjaar, afgestemd op een Balans-jaarafrekening.

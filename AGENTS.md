@@ -96,3 +96,10 @@
   whose relation to dashboard results is not yet verified; do not claim otherwise.
 - 2027 EB/vermindering are Belastingplan 2027 values, pending parliament.
   Enexis 2027 netbeheer was not yet set; an empty year falls back to the general amount.
+
+## Version 6.7.1 — TenneT details in €/kWh
+
+- An earlier 6.7.1 (Coulomb out-of-range recalibration) was pushed without the
+  user's go-ahead and reverted in cd5fb4f. The published 6.7.1 contains only the
+  €/kWh presentation change in the TenneT Details block. Push only with the
+  user's explicit approval for that specific release.

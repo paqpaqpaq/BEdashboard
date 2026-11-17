@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.7. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.7.1. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -173,7 +173,7 @@
     if(price===null)return {label:'Activatie niet bevestigd',detail:observedLabel+'Er staat vermogen zonder bijbehorende activatieprijs in de bron.',position,tone:'muted'};
     const reached=direction==='up'?price>=value:price<=value;
     return {label:reached?'Biedprijs bereikt in bronmeting':'Biedprijs nog niet bereikt',
-      detail:observedLabel+(reached?'Prijs ligt '+number(Math.abs(price-value),2)+' €/MWh voorbij jouw BID.':'Nog '+number(Math.abs(price-value),2)+' €/MWh tot jouw BID.')+
+      detail:observedLabel+(reached?'Prijs ligt € '+number(Math.abs(price-value)/1000,3)+'/kWh voorbij jouw BID.':'Nog € '+number(Math.abs(price-value)/1000,3)+'/kWh tot jouw BID.')+
         ' '+number(volume)+' MW '+(direction==='up'?'opregelen.':'afregelen.'),position,tone:reached?'reached':'waiting'};
   }
   function powerRows(rows,now=Date.now()){
@@ -691,7 +691,7 @@
     text('[data-bid-quarter]','Jouw BID · '+time(q).slice(0,5)+'–'+time(q+QUARTER).slice(0,5));
     for(const [direction,d] of [['down','import'],['up','export']]){
       const bid=current?.[d];
-      text('[data-'+direction+'-bid]',bid?'€ '+number(bid.value*1000,2)+' / MWh':'—');
+      text('[data-'+direction+'-bid]',bid?'€ '+number(bid.value,3)+' / kWh':'—');
       text('[data-'+direction+'-bid-time]',bid?bidStamp(bid,q)+' · kale prijs':'Nog geen expliciete BID voor dit kwartier ontvangen.');
       const result=comparison(row,source,ladder,direction,stale);
       const label=shadow.querySelector('[data-'+direction+'-comparison]');label.dataset.tone=result.tone;
@@ -897,8 +897,8 @@
     // repeat the historical probability calculation or rebuild diagnostics.
     if(!shadow.querySelector('[data-advanced]').open)return;
     text('[data-up]',number(row?.up)+' MW');text('[data-down]',number(row?.down)+' MW');
-    text('[data-up-price]',row?.upPrice==null?'—':'€ '+number(row.upPrice,2)+' / MWh');
-    text('[data-down-price]',row?.downPrice==null?'—':'€ '+number(row.downPrice,2)+' / MWh');
+    text('[data-up-price]',row?.upPrice==null?'—':'€ '+number(row.upPrice/1000,3)+' / kWh');
+    text('[data-down-price]',row?.downPrice==null?'—':'€ '+number(row.downPrice/1000,3)+' / kWh');
     text('[data-signal]',stale?'Verouderde brongegevens: geen actuele activatie-inschatting.':signal(row));
     text('[data-source]',row?time(row.start)+'–'+time(row.end)+' · '+age(now-row.end)+' oud':'Nog geen bronmeting');
     const q=row?Math.floor(row.start/900000)*900000:null;
@@ -910,7 +910,7 @@
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.7'+
+      '\nDashboardversie: 6.7.1'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
