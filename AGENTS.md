@@ -96,3 +96,12 @@
   whose relation to dashboard results is not yet verified; do not claim otherwise.
 - 2027 EB/vermindering are Belastingplan 2027 values, pending parliament.
   Enexis 2027 netbeheer was not yet set; an empty year falls back to the general amount.
+
+## Version 6.7.1 — Coulomb out-of-range recalibration
+
+- Reported 17 November 2026: the Coulomb line vanished in Safari and Chrome. Live
+  inspection in Chrome showed the dataset present but at 206–229%, above the
+  0–100% axis: no 5/10/95/100% BE-SOC calibration since 6 November, with
+  345 kWh in versus 230 kWh out counted since the last anchor.
+- A counted SOC above 100.5% or below -0.5% now recalibrates on the BE-SOC of
+  that sample. Normal-range counting and the boundary trackers are unchanged.
