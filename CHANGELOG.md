@@ -1,9 +1,5 @@
 # Changelog
 
-## 6.7.1 — 17 november 2026
-
-- Coulombtelling: loopt de teller door opgestapelde drift boven 100% of onder 0% (geen 5/10/95/100%-ijkpunt bereikt), dan ijkt hij opnieuw op de BE-SOC van dat moment ("Buiten bereik · ijking op BE-SOC"). De blauwe lijn verdween daardoor uit de SOC-grafiek (gemeten: 206–229% na tien dagen zonder ijkpunt).
-
 ## 6.7 — 16 november 2026
 
 - Aanpassing eindafrekening berekening: energiebelasting, belastingvermindering en netbeheer per kalenderjaar, afgestemd op een Balans-jaarafrekening.

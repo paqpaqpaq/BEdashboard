@@ -77,11 +77,6 @@
         else{highMode=discharging?'released':'tracking';highMaximum=100;lowMode='ready';lowMinimum=null;}
       }
       if(raw!==null)lastRaw=raw;
-      // 6.7.1: een telling buiten 0–100% is fysiek onmogelijk (opgestapelde
-      // drift zonder 5/10/95/100%-ijkpunt). IJk dan opnieuw op de BE-SOC,
-      // zodat de lijn nooit uit de grafiek loopt.
-      if(!anchor&&!explicit&&stored!==null&&raw!==null&&(stored>100.5||stored<-0.5))
-        anchor={t:r[0],soc:raw,kind:'Buiten bereik · ijking op BE-SOC'};
       if(anchor){
         const before=stored;
         stored=anchor.soc;if(!anchor.silent||raw===anchor.soc)uncertain=false;

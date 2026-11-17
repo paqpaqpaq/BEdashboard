@@ -124,11 +124,6 @@
         else{highMode=discharging?'released':'tracking';highMaximum=100;lowMode='ready';lowMinimum=null;}
       }
       if(raw!==null)lastRaw=raw;
-      // 6.7.1: een telling buiten 0–100% is fysiek onmogelijk (opgestapelde
-      // drift zonder 5/10/95/100%-ijkpunt). IJk dan opnieuw op de BE-SOC,
-      // zodat de lijn nooit uit de grafiek loopt.
-      if(!anchor&&!explicit&&stored!==null&&raw!==null&&(stored>100.5||stored<-0.5))
-        anchor={t:r[0],soc:raw,kind:'Buiten bereik · ijking op BE-SOC'};
       if(anchor){
         const before=stored;
         stored=anchor.soc;if(!anchor.silent||raw===anchor.soc)uncertain=false;
@@ -914,7 +909,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.7.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.7',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
