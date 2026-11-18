@@ -2,7 +2,7 @@
 
 ## 6.8 — 18 november 2026
 
-- Onbalansprijzen terug. Sinds 17-11-2026 levert Balans in `current-prices` alleen nog de prijs van kwartieren waarin de accu iets deed. De plugin vult ontbrekende afname- en invoedingsprijzen nu zelf aan:
+- Onbalansprijzen terug. Sinds 18 november 2026 levert Balans in `current-prices` alleen nog de prijs van kwartieren waarin de accu iets deed. De plugin vult ontbrekende afname- en invoedingsprijzen nu zelf aan:
   - **Tenergy** (publieke pagina, minuutwaarden): live-lijn van het lopende kwartier; de laatste minuut van een afgesloten kwartier staat ~1–2 min na afloop vast. Op 17-11 in 7 van 8 vergeleken kwartieren exact gelijk aan de Balans-prijs.
   - **TenneT settlement-prices** (eigen TenneT-sleutel): officiële prijs, overschrijft Tenergy en vult oudere gaten. Alleen voor kwartieren die echt ontbreken, binnen het bestaande dagbudget.
   - Rangorde: prijs van Balans zelf > TenneT > Tenergy. Gevulde kwartieren dragen `beOnbalansBron`.
