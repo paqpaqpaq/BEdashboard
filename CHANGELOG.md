@@ -1,5 +1,14 @@
 # Changelog
 
+## 6.8 — 18 november 2026
+
+- Onbalansprijzen terug. Sinds 17-11-2026 levert Balans in `current-prices` alleen nog de prijs van kwartieren waarin de accu iets deed. De plugin vult ontbrekende afname- en invoedingsprijzen nu zelf aan:
+  - **Tenergy** (publieke pagina, minuutwaarden): live-lijn van het lopende kwartier; de laatste minuut van een afgesloten kwartier staat ~1–2 min na afloop vast. Op 17-11 in 7 van 8 vergeleken kwartieren exact gelijk aan de Balans-prijs.
+  - **TenneT settlement-prices** (eigen TenneT-sleutel): officiële prijs, overschrijft Tenergy en vult oudere gaten. Alleen voor kwartieren die echt ontbreken, binnen het bestaande dagbudget.
+  - Rangorde: prijs van Balans zelf > TenneT > Tenergy. Gevulde kwartieren dragen `beOnbalansBron`.
+- Cache van 60 dagen in de browser; bij een nieuw bezoek direct aangevuld, ook in het lokale archief.
+- Nieuwe netwerktoegang: `services.tenergy.nl` (userscript `@connect`, extensie host-permission). Controle in de console: `BETenergy.status()`.
+
 ## 6.7.1 — 17 november 2026
 
 - Regelvermogen & biedingen, blok Details: BID, afstand tot BID en aFRR op-/afregelprijs in €/kWh met drie decimalen (bijv. € 4,000 / kWh in plaats van € 4.000,00 / MWh), gelijk aan de samenvatting. De tabel met bronmetingen blijft in €/MWh.

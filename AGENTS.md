@@ -103,3 +103,20 @@
   user's go-ahead and reverted in cd5fb4f. The published 6.7.1 contains only the
   €/kWh presentation change in the TenneT Details block. Push only with the
   user's explicit approval for that specific release.
+
+## Version 6.8 — imbalance prices without Balans
+
+- From 17-11-2026 00:00 `current-prices` only carries the applied price for
+  quarters with battery activity; `settlement_prices_api`,
+  `afrr_activated_energy_api` and `results_summary_api` return 403, and
+  `current-prices` rejects ranges older than ~27 h. Verified live 18-11-2026.
+- Missing `onbalans_import/export` are filled from a localStorage cache
+  (`be_onbalans_tenergy_v1`): Tenergy minute data (last minute per quarter) and
+  TenneT settlement-prices for quarters listed in `be_onbalans_vraag_v1`.
+  Precedence: Balans' own value > TenneT > Tenergy closed > Tenergy running.
+  Never overwrite a Balans value; mark filled rows with `beOnbalansBron`.
+- Fetching runs in the userscript/extension world (`src/tenergy.js`, TenneT in
+  `afrr-market.js`); the MAIN-world dashboard only reads the cache.
+- BIDs: `bid_fallback` still appears briefly at the start of a quarter before
+  `confirmed` replaces it; capture is live-only. `confirmed` afrr values are the
+  settled price, not the bid.

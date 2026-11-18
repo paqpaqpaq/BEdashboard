@@ -1,4 +1,4 @@
-/* Regelvermogen & biedingen — 6.7.1. No embedded credentials. */
+/* Regelvermogen & biedingen — 6.8. No embedded credentials. */
 (function () {
   'use strict';
   const INTERVAL=12000, QUARTER=900000, TIMEOUT=10000, LEASE=15000;
@@ -910,7 +910,7 @@
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.7.1'+
+      '\nDashboardversie: 6.8'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
@@ -992,6 +992,55 @@
       await coordinator.failure(current.scope,owner,error,Date.now(),'settlement');
     }
   }
+  // 6.8: officiële TenneT-verrekenprijzen voor kwartieren die het dashboard echt mist.
+  // Het paginadeel zet in localStorage welke afgesloten kwartieren nog geen officiële
+  // prijs hebben; hier wordt alleen dat opgevraagd, binnen het bestaande dagbudget.
+  const OB_OPSLAG='be_onbalans_tenergy_v1',OB_STATUS='be_onbalans_tenergy_status_v1',OB_VRAAG='be_onbalans_vraag_v1',OB_LAATST='be_onbalans_tennet_laatst';
+  let nextOfficieel=0;
+  function meldOfficieel(fout){
+    try{const st=JSON.parse(localStorage.getItem(OB_STATUS)||'{}')||{};st.laatsteTennet=Date.now();st.foutTennet=fout||'';localStorage.setItem(OB_STATUS,JSON.stringify(st));}catch(_){}
+  }
+  function schrijfOfficieel(quarters){
+    let cache;try{cache=JSON.parse(localStorage.getItem(OB_OPSLAG)||'{}')||{};}catch(_){cache={};}
+    let n=0;
+    for(const q of quarters){
+      if(!Number.isFinite(q?.start)||(!Number.isFinite(q.ki)&&!Number.isFinite(q.ke)))continue;
+      const oud=cache[q.start];
+      const tg=oud&&oud.bron!=='tennet'?{ki:oud.ki,ke:oud.ke}:oud?.tg;
+      cache[q.start]={ki:Number.isFinite(q.ki)?q.ki:oud?.ki??null,ke:Number.isFinite(q.ke)?q.ke:oud?.ke??null,bron:'tennet',klaar:true,...(tg?{tg}:{})};
+      n++;
+    }
+    if(!n)return 0;
+    try{localStorage.setItem(OB_OPSLAG,JSON.stringify(cache));}catch(_){}
+    document.dispatchEvent(new Event('be-onbalans-tenergy-update'));
+    return n;
+  }
+  async function refreshOfficieel(){
+    const now=Date.now();
+    if(now<nextOfficieel||destroyed||document.hidden||!config.enabled||!config.key)return;
+    nextOfficieel=now+60000;
+    let vraag;try{vraag=JSON.parse(localStorage.getItem(OB_VRAAG)||'{}')||{};}catch(_){return;}
+    const starts=(Array.isArray(vraag.officieel)?vraag.officieel:[]).filter(s=>Number.isFinite(s)&&s%QUARTER===0).sort((a,b)=>a-b);
+    if(!starts.length)return;
+    // Recente kwartieren dekt Tenergy al: officieel hooguit elk uur. Oudere gaten sneller.
+    const oudGat=starts[0]<now-34*3600000,laatst=Number(localStorage.getItem(OB_LAATST)||0);
+    if(now-laatst<(oudGat?15*60000:60*60000))return;
+    // Nieuwste blok, hooguit 24 uur per aanvraag; oudere gaten volgen in een volgende ronde.
+    const end=starts[starts.length-1]+QUARTER,start=Math.max(starts.find(s=>s>=end-86400000),end-86400000);
+    const current={...config};
+    const reservation=await coordinator.reserve(current.scope,owner,now,'settlement');
+    if(!reservation.reserved){if(reservation.retryAt>now)nextOfficieel=Math.max(now+1500,reservation.retryAt);return;}
+    try{localStorage.setItem(OB_LAATST,String(now));}catch(_){}
+    try{
+      const data=await request(current,'settlement',{start,end});
+      const updated=await coordinator.success(current.scope,owner,data,Date.now(),'settlement');
+      if(updated?.scope===current.scope)publishSettlement(updated.good?.quarters||[]);
+      schrijfOfficieel(data?.quarters||[]);meldOfficieel('');
+    }catch(error){
+      await coordinator.failure(current.scope,owner,error,Date.now(),'settlement');
+      meldOfficieel(error?.message||String(error));
+    }
+  }
   async function tick(){
     if(busy||destroyed)return;clearTimeout(timer);
     // Resume through visibilitychange, without waking storage/UI every five
@@ -1050,6 +1099,7 @@
         wakeAt=Math.min(wakeAt,Date.now()+1100);
       }
       await refreshSettlement();
+      await refreshOfficieel();
       budgetState=await coordinator.read('budget');
       if(!document.hidden)await learnHistory();
       localError='';
