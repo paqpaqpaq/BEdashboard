@@ -16,7 +16,6 @@ const Q=900000,now=Date.parse('2026-11-18T10:31:00+01:00'),q=now-now%Q;
   assert.equal(rows[1].beOnbalansBron.import,'tennet');
   assert.equal(rows[2].values.onbalans_import,0.5,'a Balans price is never replaced');
   assert.equal(rows[2].values.onbalans_export,0.2);
-  assert.deepEqual(JSON.parse(store.be_onbalans_vraag_v1).officieel,[q-3*Q]);
   const j={prices:[{start:q-Q,end:q,values:{}}]};B.vulAan(j,now);
   assert.equal(j.prices.at(-1).start,q,'running quarter added');
   assert.equal(j.prices.at(-1).beOnbalansBron.import,'tenergy-voorlopig');
@@ -32,7 +31,7 @@ const Q=900000,now=Date.parse('2026-11-18T10:31:00+01:00'),q=now-now%Q;
   const t0=q+11*60000+20000;const events=[];
   const ctx={location:{hostname:'dashboard.balansenergie.nl'},window:{},localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>store[k]=v},
     document:{hidden:false,addEventListener(){},dispatchEvent:e=>events.push(e.type)},Event:class{constructor(t){this.type=t}},
-    setInterval(){},console,Date:class extends Date{constructor(...x){super(...(x.length?x:[t0]))}static now(){return t0}},
+    setInterval(){},console,DOMParser:class{parseFromString(){return{querySelectorAll:()=>[]}}},Date:class extends Date{constructor(...x){super(...(x.length?x:[t0]))}static now(){return t0}},
     GM_xmlhttpRequest:o=>o.onload({status:200,responseText:html})};
   new Function(...Object.keys(ctx),src)(...Object.values(ctx));
   const c=JSON.parse(store.be_onbalans_tenergy_v1);
@@ -41,4 +40,23 @@ const Q=900000,now=Date.parse('2026-11-18T10:31:00+01:00'),q=now-now%Q;
   assert.equal(c[q].ki,0.141);assert.equal(c[q].klaar,false);
   assert.deepEqual(events,['be-onbalans-tenergy-update']);
 }
-console.log('PASS Tenergy/TenneT onbalans: fill order, archive recognition, running quarter, last-minute quarters, official precedence.');
+// Regeltoestand −1 (18-11 14:30): alleen afregelen -> laagste prijs, niet de uitschieter in de laatste minuut.
+{
+  const src=fs.readFileSync(__dirname+'/../src/tenergy.js','utf8');
+  const q=Date.parse('2026-11-18T14:30:00+01:00'),t0=q+16*60000+10000;
+  const take=[40.79,40.79,40.79,40.79,...Array(10).fill(5.79),99.59],feed=[40.79,40.79,40.79,40.79,...Array(11).fill(5.79)];
+  const D=(t,v)=>({Key:'/Date('+t+')/',Value:v});
+  const html='<script>var data = '+JSON.stringify({ChartSeries:[{Id:'PRICES_TAKE',Data:take.map((v,i)=>D(q+i*6e4,v))},{Id:'PRICES_FEED',Data:feed.map((v,i)=>D(q+i*6e4,v))}]})+'; serialChart.updateChart(data, false);</script>';
+  const clock=t=>new Intl.DateTimeFormat('nl-NL',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit'}).format(new Date(t));
+  const rows=Array.from({length:15},(_,i)=>['x','x',clock(q+i*6e4),'0','150,0','0','0','5,79','5,79']);
+  const store={};
+  const ctx={location:{hostname:'dashboard.balansenergie.nl'},window:{},localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>store[k]=v},
+    document:{hidden:false,addEventListener(){},dispatchEvent(){}},Event:class{},setInterval(){},console,
+    DOMParser:class{parseFromString(){return{querySelectorAll:()=>rows.map(r=>({cells:r.map(textContent=>({textContent}))}))}}},
+    Date:class extends Date{constructor(...x){super(...(x.length?x:[t0]))}static now(){return t0}},
+    GM_xmlhttpRequest:o=>o.onload({status:200,responseText:html})};
+  new Function(...Object.keys(ctx),src)(...Object.values(ctx));
+  const r=JSON.parse(store.be_onbalans_tenergy_v1)[q];
+  assert.equal(r.rs,-1);assert.equal(r.ki,0.00579);assert.equal(r.ke,0.00579);assert.equal(r.klaar,true);
+}
+console.log('PASS Tenergy/TenneT onbalans: fill order, archive recognition, running quarter, last-minute fallback, regulation-state quarter price.');

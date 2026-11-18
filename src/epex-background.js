@@ -2,7 +2,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(message?.type!=='be-epex-fetch')return;
   try{
     const url=new URL(message.url);
-    // 6.8: publieke Tenergy-pagina met actuele onbalansprijzen; alleen dit exacte adres.
+    // 6.8.1: publieke Tenergy-pagina met actuele onbalansprijzen; alleen dit exacte adres.
     if(new URL(sender.url).origin==='https://dashboard.balansenergie.nl' &&
        url.href==='https://services.tenergy.nl/public.aspx/actualimbalanceprices'){
       fetch(url.href,{credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)})

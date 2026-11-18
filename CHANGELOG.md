@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.8.1 — 18 november 2026
+
+- Kwartierprijs uit Tenergy volgens de regeltoestand in plaats van de laatste minuut. De plugin bewaart per minuut het geactiveerde op- en afregelvermogen uit de Tenergy-tabel: alleen afregelen → laagste prijs, alleen opregelen → hoogste prijs, beide (regeltoestand 2) → afnemen hoogste en invoeden laagste, geen activatie → laatste minuut. Bijvoorbeeld 18 nov 14:30: 5,79 €/MWh in plaats van een uitschieter van 99,59 in de laatste minuut. Afgesloten kwartieren worden met terugwerkende kracht herberekend zodra de activatiedata er is (minstens 10 van 15 minuten).
+- Ophalen van officiële TenneT-verrekenprijzen verwijderd: TenneT publiceert die pas na meer dan een uur en de API-sleutel is begrensd op 25 verzoeken per dag.
+
 ## 6.8 — 18 november 2026
 
 - Onbalansprijzen terug. Sinds 18 november 2026 levert Balans in `current-prices` alleen nog de prijs van kwartieren waarin de accu iets deed. De plugin vult ontbrekende afname- en invoedingsprijzen nu zelf aan:

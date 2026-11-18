@@ -120,3 +120,14 @@
 - BIDs: `bid_fallback` still appears briefly at the start of a quarter before
   `confirmed` replaces it; capture is live-only. `confirmed` afrr values are the
   settled price, not the bid.
+
+## Version 6.8.1 — regulation-state quarter price, TenneT settlement removed
+
+- TenneT settlement-prices: timestamps and date_from/date_to are Dutch local
+  time (no offset); publication lags >1 h; key limit 25/day, 5/min, 1/s
+  (x-ratelimit headers, 18-11-2026). The 6.8 official fill was removed.
+- Tenergy quarter price follows the regulation state from per-minute activation
+  in the Tenergy table (`be_onbalans_tenergy_act_v1`, ≥10 of 15 minutes):
+  −1 → min, +1 → max, 2 → afnemen max / invoeden min, 0 or no data → last minute.
+  Checked 18-11 14:30: 5.79 €/MWh, equal to a forum user's aFRR settlement.
+  Against TenneT on 17-11, last-minute values matched only 5 of 10 quarters.

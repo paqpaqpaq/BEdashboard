@@ -2,11 +2,11 @@
 
 Financieel overzicht, aanvullende prijzen en een eigen SOC-berekening voor het Balansenergie-dashboard.
 
-## Download — versie 6.8 (stabiel)
+## Download — versie 6.8.1 (stabiel)
 
 - **[Userscript installeren](https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js)** — Safari/Userscripts of Chrome/Edge/Tampermonkey.
-- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
-- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/raw/main/Balansenergie-All-in-v6.8.txt)** · [Wijzigingen](CHANGELOG.md).
+- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_1.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
+- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/raw/main/Balansenergie-All-in-v6.8.1.txt)** · [Wijzigingen](CHANGELOG.md).
 
 Vervang de bestaande versie en herlaad het dashboard. Gebruik één hoofdvariant tegelijk: schakel de versie 6-beta en losse SOC-, BID-, EPEX- en break-even-plugins uit wanneer je deze versie installeert. De beta gebruikt een apart installatiekanaal en wordt daardoor niet automatisch vervangen door de stabiele versie. Bestaande instellingen en lokaal bewaarde historie blijven behouden in dezelfde browser en voor dezelfde installatie.
 
@@ -14,7 +14,7 @@ Gebruik bij een userscript de functie **Bijwerken** op je bestaande installatie.
 
 ## Onbalansprijzen sinds 6.8 — toestemming voor services.tenergy.nl
 
-Balans levert sinds 18 november geen volledige onbalansprijzen meer. Versie 6.8 haalt ze zelf op: live via Tenergy (actuele onbalansprijzen, ~1–2 minuten na het kwartier vastgesteld) en, met een ingestelde TenneT-sleutel, officieel via TenneT. Daarvoor is één nieuwe netwerktoestemming nodig: **services.tenergy.nl**.
+Balans levert sinds 18 november geen volledige onbalansprijzen meer. Versie 6.8 haalt ze zelf op: via Tenergy (actuele onbalansprijzen; per kwartier bepaald volgens de regeltoestand, ~1–2 minuten na het kwartier vastgesteld). Dit is een indicatie: de prijs die Balans zelf registreert gaat altijd voor. Daarvoor is één nieuwe netwerktoestemming nodig: **services.tenergy.nl**.
 
 **Tampermonkey (Chrome, Edge, Firefox)**
 1. De update komt vanzelf; sneller via Tampermonkey-menu → *Hulpprogramma's* → *Controleren op updates van userscripts*.
@@ -22,7 +22,7 @@ Balans levert sinds 18 november geen volledige onbalansprijzen meer. Versie 6.8 
 3. Per ongeluk geweigerd? Tampermonkey-dashboard → script *Balansenergie All-in* → tabblad **Instellingen** → bij *XHR-beveiliging* `services.tenergy.nl` toevoegen aan de witte lijst (en uit de zwarte lijst halen). Opslaan en het dashboard herladen.
 
 **Chrome-/Edge-extensie (zip)**
-1. Download [BE_dashboard_6_8.zip](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8.zip) en pak uit over je bestaande extensiemap (of in een nieuwe map).
+1. Download [BE_dashboard_6_8_1.zip](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_1.zip) en pak uit over je bestaande extensiemap (of in een nieuwe map).
 2. Ga naar `chrome://extensions` (of `edge://extensions`) en klik bij *Balansenergie All-in* op **Herladen**. Nieuwe map? Dan **Uitgepakte extensie laden** en de oude verwijderen.
 3. Controleer onder **Details → Sitetoegang** dat **Op alle vermelde sites** is gekozen.
 
@@ -30,7 +30,7 @@ Balans levert sinds 18 november geen volledige onbalansprijzen meer. Versie 6.8 
 1. Werk het script bij of installeer het opnieuw via de userscript-link hierboven.
 2. Komen er geen prijzen? Safari → *Instellingen* → *Extensies* → **Userscripts** → ook **services.tenergy.nl** toestaan (of *Altijd toestaan op elke website*).
 
-**Controleren:** typ in de browserconsole op het dashboard `BETenergy.status()`. Bij `kwartieren` hoort een getal boven 0 te staan en bij `fout` niets. Met een TenneT-sleutel loopt `tennet` na verloop van tijd op (officiële prijzen).
+**Controleren:** typ in de browserconsole op het dashboard `BETenergy.status()`. Bij `kwartieren` hoort een getal boven 0 te staan en bij `fout` niets.
 
 Je eigen BIDs zijn alleen nog live te zien, in de eerste minuten van een kwartier en met het dashboard open; achteraf ophalen kan niet meer.
 

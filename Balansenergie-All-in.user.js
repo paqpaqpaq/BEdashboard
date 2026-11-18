@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.8
+// @version      6.8.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -472,7 +472,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.8'
+    '6.8.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -2224,15 +2224,15 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
    *  - Tenergy: minuutwaarden, ~1,5 dag terug. Lopend kwartier = dunne live-lijn;
    *    de laatste minuut van een afgesloten kwartier is ~1-2 min na afloop bekend
    *    en kwam op 17-11 in 7 van 8 kwartieren exact overeen met Balans.
-   *  - TenneT settlement-prices (eigen sleutel): officieel, overschrijft Tenergy,
-   *    en vult oudere gaten. Alleen opgevraagd voor kwartieren die echt ontbreken.
-   * Rangorde: prijs van Balans zelf > TenneT > Tenergy afgesloten > Tenergy lopend.
+   *  Indicatief: TenneT publiceert de officiële verrekenprijs pas >1 uur later en
+   *  wijkt bij regeltoestand 2 vaak af (vergelijking 17-11: 5 van 10 kwartieren exact).
+   * Rangorde: prijs van Balans zelf > Tenergy afgesloten > Tenergy lopend.
    * Gevulde kwartieren dragen beOnbalansBron. Bij een nieuw bezoek wordt direct uit
    * de cache aangevuld, ook in het lokale archief. */
   var BETenergy = (function () {
-    var OPSLAG = 'be_onbalans_tenergy_v1', STATUS = 'be_onbalans_tenergy_status_v1', VRAAG = 'be_onbalans_vraag_v1';
-    var KWARTIER = 900000, OFFICIEEL_NA = 20 * 60000, MAX_TERUG = 60 * 86400000;
-    var kwartieren = laad(), ontbreekt = new Set(), vraagTimer = null, laatsteVraag = '';
+    var OPSLAG = 'be_onbalans_tenergy_v1', STATUS = 'be_onbalans_tenergy_status_v1';
+    var KWARTIER = 900000;
+    var kwartieren = laad();
     function laad() {
       try {
         var o = JSON.parse(localStorage.getItem(OPSLAG) || '{}');
@@ -2256,23 +2256,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         if (!eigenE && Number.isFinite(t.ke)) { v.onbalans_export = t.ke; bron.export = label(t); }
         if (bron.import || bron.export) p.beOnbalansBron = bron;
       }
-      // Officieel nog nodig: afgesloten kwartier zonder eigen Balans-prijs en zonder TenneT.
-      if ((!eigenI || !eigenE) && p.start + KWARTIER <= nu - OFFICIEEL_NA && p.start >= nu - MAX_TERUG &&
-          !(t && t.bron === 'tennet')) ontbreekt.add(p.start);
-      else ontbreekt.delete(p.start);
-    }
-    function meldVraag() {
-      clearTimeout(vraagTimer);
-      vraagTimer = setTimeout(function () {
-        var nu = Date.now(), starts = Array.from(ontbreekt).filter(function (s) {
-          var t = kwartieren[s]; return !(t && t.bron === 'tennet') && s >= nu - MAX_TERUG;
-        }).sort(function (a, b) { return a - b; });
-        var vraag = JSON.stringify({ officieel: starts });
-        if (vraag === laatsteVraag) return;
-        laatsteVraag = vraag;
-        try { localStorage.setItem(VRAAG, vraag); } catch (e) {}
-        document.dispatchEvent(new Event('be-onbalans-vraag'));
-      }, 500);
     }
     function vulAan(j, nu) {
       if (!j || !Array.isArray(j.prices)) return j;
@@ -2286,7 +2269,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
           values: { onbalans_import: t.ki, onbalans_export: t.ke },
           beOnbalansBron: { import: label(t), export: label(t) } });
       }
-      meldVraag();
       return j;
     }
     // Lokaal archief (IndexedDB 'prijzen'): direct aanvullen bij lezen.
@@ -2294,7 +2276,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if (!Array.isArray(rows)) return rows;
       var nu = Date.now();
       rows.forEach(function (p) { vulRij(p, nu); });
-      meldVraag();
       return rows;
     }
     function status() {
@@ -2303,8 +2284,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var tennet = keys.filter(function (k) { return kwartieren[k].bron === 'tennet'; }).length;
       return { kwartieren: keys.length, tennet: tennet, tenergy: keys.length - tennet,
         eerste: keys[0] || null, laatste: keys[keys.length - 1] || null,
-        nogOfficieelNodig: ontbreekt.size, laatsteTenergy: st.laatsteHaal || 0, fout: st.fout || '',
-        laatsteTennet: st.laatsteTennet || 0, foutTennet: st.foutTennet || '' };
+        laatsteTenergy: st.laatsteHaal || 0, fout: st.fout || '' };
     }
     return { vulAan: vulAan, vulAanRijen: vulAanRijen, status: status, kwartier: function (q) { return kwartieren[q] || null; } };
   })();
@@ -12170,7 +12150,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.8' +
+        'Instellingen v6.8.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12960,7 +12940,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -14034,24 +14014,79 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     for (const p of s.Data) { const t = epoch(p.Key), v = Number(p.Value); if (Number.isFinite(t) && t % MINUUT === 0 && Number.isFinite(v)) m.set(t, v); }
     return m;
   }
+  const ACTIVATIE = 'be_onbalans_tenergy_act_v1', MIN_DEKKING = 10;
+  // Minuutactivatie uit de tabel (laatste 30 min): [opregelen, afregelen, nood op, nood af] in MW.
+  function leesActivatie(html, nu) {
+    let act;
+    try { act = JSON.parse(localStorage.getItem(ACTIVATIE) || '{}') || {}; } catch (e) { act = {}; }
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const getal = t => { const n = Number(String(t).trim().replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
+    const dag = new Intl.DateTimeFormat('sv-SE', {timeZone: 'Europe/Amsterdam'}).format(new Date(nu));
+    for (const tr of doc.querySelectorAll('table.imbalanceprices tr')) {
+      const c = [...tr.cells].map(td => td.textContent.trim());
+      if (c.length < 9 || !/^\d{1,2}:\d{2}$/.test(c[2])) continue;
+      const vals = c.slice(3, 7).map(getal);
+      if (vals.some(v => v === null)) continue;
+      // Tabeltijd is Nederlandse tijd; tijdstip na nu hoort bij gisteren (rond middernacht).
+      let t = Date.parse(dag + 'T' + c[2].padStart(5, '0') + ':00' + offset(nu));
+      if (t > nu + MINUUT) t -= 86400000;
+      if (Number.isFinite(t)) act[t] = vals;
+    }
+    const grens = nu - 2 * 86400000;
+    for (const k of Object.keys(act)) if (+k < grens) delete act[k];
+    try { localStorage.setItem(ACTIVATIE, JSON.stringify(act)); } catch (e) {}
+    return act;
+  }
+  function offset(t) {
+    const p = new Intl.DateTimeFormat('en-US', {timeZone: 'Europe/Amsterdam', timeZoneName: 'longOffset'}).formatToParts(new Date(t));
+    const o = (p.find(x => x.type === 'timeZoneName')?.value || 'GMT+01:00').replace('GMT', '');
+    return o === '' ? '+00:00' : o;
+  }
+  // Kwartierprijs volgens de regeltoestand (TenneT-systematiek, benadering):
+  // alleen afregelen (−1): laagste prijs; alleen opregelen (+1): hoogste prijs;
+  // beide (2): afnemen hoogste, invoeden laagste; geen (0) of te weinig activatiedata: laatste minuut.
+  function kwartierPrijs(q, afnemen, invoeden, act, nu) {
+    const minuten = [];
+    for (let t = q; t < q + KWARTIER && t <= nu; t += MINUUT) if (afnemen.has(t) && invoeden.has(t)) minuten.push(t);
+    if (!minuten.length) return null;
+    const laatste = minuten[minuten.length - 1];
+    const res = { ki: afnemen.get(laatste) / 1000, ke: invoeden.get(laatste) / 1000, minuut: laatste, rs: null, regel: 'laatste minuut' };
+    const metAct = minuten.filter(t => act[t]);
+    if (metAct.length < MIN_DEKKING) return res;
+    const op = metAct.filter(t => act[t][0] > 0 || act[t][2] > 0), af = metAct.filter(t => act[t][1] > 0 || act[t][3] > 0);
+    const prijzen = (lijst, kaart) => lijst.map(t => kaart.get(t));
+    if (op.length && af.length) {
+      res.rs = 2; res.regel = 'regeltoestand 2';
+      res.ki = Math.max(...prijzen(minuten, afnemen)) / 1000; res.ke = Math.min(...prijzen(minuten, invoeden)) / 1000;
+    } else if (af.length) {
+      res.rs = -1; res.regel = 'alleen afregelen';
+      const p = Math.min(...prijzen(af, afnemen), ...prijzen(af, invoeden)) / 1000; res.ki = res.ke = p;
+    } else if (op.length) {
+      res.rs = 1; res.regel = 'alleen opregelen';
+      const p = Math.max(...prijzen(op, afnemen), ...prijzen(op, invoeden)) / 1000; res.ki = res.ke = p;
+    } else { res.rs = 0; res.regel = 'geen activatie'; }
+    res.dekking = metAct.length;
+    return res;
+  }
   function verwerk(html, nu) {
     const m = /data\s*=\s*(\{[\s\S]*?\})\s*;\s*serialChart\.updateChart/.exec(html);
     if (!m) throw Error('Tenergy-pagina zonder grafiekdata');
     const data = JSON.parse(m[1]);
     const afnemen = reeks(data, 'PRICES_TAKE'), invoeden = reeks(data, 'PRICES_FEED');
-    const nieuw = {}, kwartieren = laad();
-    afnemen.forEach((v, t) => {
-      if (t > nu || !invoeden.has(t)) return; // Tenergy zet een vooruitgeschoven laatste punt neer.
-      const q = t - (t % KWARTIER), r = nieuw[q] || (nieuw[q] = { t: -1 });
-      if (t >= r.t) { r.t = t; r.ki = v / 1000; r.ke = invoeden.get(t) / 1000; }
-    });
+    const act = leesActivatie(html, nu), kwartieren = laad();
+    const qs = new Set();
+    afnemen.forEach((v, t) => { if (t <= nu) qs.add(t - (t % KWARTIER)); });
     let aantal = 0;
-    for (const k of Object.keys(nieuw)) {
-      const r = nieuw[k], q = +k;
-      const klaar = q + KWARTIER <= nu && r.t >= q + KWARTIER - MINUUT;
-      if (kwartieren[q] && kwartieren[q].bron === 'tennet') continue; // Officieel gaat voor.
-      if (kwartieren[q] && kwartieren[q].klaar && !klaar) continue; // Afgesloten waarde niet terug naar voorlopig.
-      kwartieren[q] = { ki: r.ki, ke: r.ke, minuut: r.t, klaar, bron: 'tenergy' };
+    for (const q of qs) {
+      const r = kwartierPrijs(q, afnemen, invoeden, act, nu);
+      if (!r) continue;
+      const klaar = q + KWARTIER <= nu && r.minuut >= q + KWARTIER - MINUUT;
+      const oud = kwartieren[q];
+      if (oud && oud.bron === 'tennet') continue; // Officieel gaat voor.
+      if (oud && oud.klaar && !klaar) continue; // Afgesloten waarde niet terug naar voorlopig.
+      // Een eerder bepaalde regeltoestand niet weggooien als de activatie inmiddels uit de tabel is.
+      if (oud && oud.klaar && oud.rs != null && r.rs == null) continue;
+      kwartieren[q] = { ki: r.ki, ke: r.ke, minuut: r.minuut, klaar, bron: 'tenergy', rs: r.rs, regel: r.regel, ...(r.dekking ? { dekking: r.dekking } : {}) };
       aantal++;
     }
     if (!aantal) throw Error('Tenergy gaf geen bruikbare minuutwaarden');
@@ -16176,7 +16211,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.8',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.8.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -17296,7 +17331,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.8'+
+      '\nDashboardversie: 6.8.1'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+
@@ -17378,55 +17413,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       await coordinator.failure(current.scope,owner,error,Date.now(),'settlement');
     }
   }
-  // 6.8: officiële TenneT-verrekenprijzen voor kwartieren die het dashboard echt mist.
-  // Het paginadeel zet in localStorage welke afgesloten kwartieren nog geen officiële
-  // prijs hebben; hier wordt alleen dat opgevraagd, binnen het bestaande dagbudget.
-  const OB_OPSLAG='be_onbalans_tenergy_v1',OB_STATUS='be_onbalans_tenergy_status_v1',OB_VRAAG='be_onbalans_vraag_v1',OB_LAATST='be_onbalans_tennet_laatst';
-  let nextOfficieel=0;
-  function meldOfficieel(fout){
-    try{const st=JSON.parse(localStorage.getItem(OB_STATUS)||'{}')||{};st.laatsteTennet=Date.now();st.foutTennet=fout||'';localStorage.setItem(OB_STATUS,JSON.stringify(st));}catch(_){}
-  }
-  function schrijfOfficieel(quarters){
-    let cache;try{cache=JSON.parse(localStorage.getItem(OB_OPSLAG)||'{}')||{};}catch(_){cache={};}
-    let n=0;
-    for(const q of quarters){
-      if(!Number.isFinite(q?.start)||(!Number.isFinite(q.ki)&&!Number.isFinite(q.ke)))continue;
-      const oud=cache[q.start];
-      const tg=oud&&oud.bron!=='tennet'?{ki:oud.ki,ke:oud.ke}:oud?.tg;
-      cache[q.start]={ki:Number.isFinite(q.ki)?q.ki:oud?.ki??null,ke:Number.isFinite(q.ke)?q.ke:oud?.ke??null,bron:'tennet',klaar:true,...(tg?{tg}:{})};
-      n++;
-    }
-    if(!n)return 0;
-    try{localStorage.setItem(OB_OPSLAG,JSON.stringify(cache));}catch(_){}
-    document.dispatchEvent(new Event('be-onbalans-tenergy-update'));
-    return n;
-  }
-  async function refreshOfficieel(){
-    const now=Date.now();
-    if(now<nextOfficieel||destroyed||document.hidden||!config.enabled||!config.key)return;
-    nextOfficieel=now+60000;
-    let vraag;try{vraag=JSON.parse(localStorage.getItem(OB_VRAAG)||'{}')||{};}catch(_){return;}
-    const starts=(Array.isArray(vraag.officieel)?vraag.officieel:[]).filter(s=>Number.isFinite(s)&&s%QUARTER===0).sort((a,b)=>a-b);
-    if(!starts.length)return;
-    // Recente kwartieren dekt Tenergy al: officieel hooguit elk uur. Oudere gaten sneller.
-    const oudGat=starts[0]<now-34*3600000,laatst=Number(localStorage.getItem(OB_LAATST)||0);
-    if(now-laatst<(oudGat?15*60000:60*60000))return;
-    // Nieuwste blok, hooguit 24 uur per aanvraag; oudere gaten volgen in een volgende ronde.
-    const end=starts[starts.length-1]+QUARTER,start=Math.max(starts.find(s=>s>=end-86400000),end-86400000);
-    const current={...config};
-    const reservation=await coordinator.reserve(current.scope,owner,now,'settlement');
-    if(!reservation.reserved){if(reservation.retryAt>now)nextOfficieel=Math.max(now+1500,reservation.retryAt);return;}
-    try{localStorage.setItem(OB_LAATST,String(now));}catch(_){}
-    try{
-      const data=await request(current,'settlement',{start,end});
-      const updated=await coordinator.success(current.scope,owner,data,Date.now(),'settlement');
-      if(updated?.scope===current.scope)publishSettlement(updated.good?.quarters||[]);
-      schrijfOfficieel(data?.quarters||[]);meldOfficieel('');
-    }catch(error){
-      await coordinator.failure(current.scope,owner,error,Date.now(),'settlement');
-      meldOfficieel(error?.message||String(error));
-    }
-  }
   async function tick(){
     if(busy||destroyed)return;clearTimeout(timer);
     // Resume through visibilitychange, without waking storage/UI every five
@@ -17485,7 +17471,6 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         wakeAt=Math.min(wakeAt,Date.now()+1100);
       }
       await refreshSettlement();
-      await refreshOfficieel();
       budgetState=await coordinator.read('budget');
       if(!document.hidden)await learnHistory();
       localError='';
