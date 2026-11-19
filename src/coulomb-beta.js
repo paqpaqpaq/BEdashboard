@@ -909,7 +909,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.8.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.8.2',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -920,7 +920,10 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
     const color=window.BETheme?.seriesColor(series)||(tag==='forecast'?'rgba(8,145,178,.55)':'#0891b2');
     Object.assign(d,extra,{label,borderColor:color,backgroundColor:color});d.data=points;
     d.borderDash=[];
-    d.segment={borderColor:d.borderColor,borderWidth:d.borderWidth,borderDash:[]};
+    // 6.8.2: geen segment-opties. Chart.js vergelijkt die per punt via JSON.stringify bij
+    // elke update (~30.000x/s bij 14.000 punten en Balans' update per seconde: geheugen liep op
+    // tot GB's). false blokkeert ook overgeërfde segment-opties; kleur en dikte blijven gelijk.
+    d.segment=false;
   }
   function forecastValues(chart){
     const pending=(notice,keepPrices=false)=>{if(!keepPrices){chart.$beEpexForecastSlots=[];chart.$beEpexForecastPlans=[];}return {actual:[],future:[],basis:'Wachten op tijdkoppeling',pending:true,notice};};

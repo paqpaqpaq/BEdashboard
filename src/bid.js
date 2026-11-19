@@ -1,6 +1,6 @@
 (async function () {
     if (window.__beAfrrBid01) return;
-    const QUARTER = 900000, DAY = 86400000, ARCHIVE_DAYS = 7;
+    const QUARTER = 900000, DAY = 86400000, ARCHIVE_DAYS = 7, RECOVERY_REACH = 26 * 3600000;
     const directions = ['import', 'export'];
     const colours = {import: '#b65c72', export: '#73b9a1'};
     function bidColour(direction) {
@@ -524,7 +524,8 @@
       try{
         const work=async()=>{
           try{await readArchive();}catch(_){} // API recovery still works if local storage is unavailable.
-          const at=Date.now(),today=Math.floor(at/DAY)*DAY,horizon=quarter(at)-ARCHIVE_DAYS*DAY,saved=recoveryState();
+          // 6.8.2: current-prices weigert sinds 17-11-2026 bereiken ouder dan ~27 uur (HTTP 400).
+          const at=Date.now(),today=Math.floor(at/DAY)*DAY,horizon=Math.max(quarter(at)-ARCHIVE_DAYS*DAY,quarter(at-RECOVERY_REACH)),saved=recoveryState();
           let range;
           for(let day=today;day+DAY>horizon;day-=DAY){
             const from=Math.max(day,horizon),to=Math.min(day+DAY,at),missing=latestMissing(from,to),previous=saved[day];
@@ -538,7 +539,8 @@
             saved[range.day]={revision:RECOVERY_REVISION,until:range.to,checkedAt:Date.now(),nextAt:Date.now()+(range.day===today?3600000:DAY)};
           }catch(failure){
             delay=Math.max(300000,apiRetryUntil()-Date.now());
-            saved[range.day]={revision:RECOVERY_REVISION,until:range.to,checkedAt:Date.now(),nextAt:Date.now()+delay};
+            // Een geweigerd bereik (400) wordt niet elke 5 minuten opnieuw gevraagd.
+            saved[range.day]={revision:RECOVERY_REVISION,until:range.to,checkedAt:Date.now(),nextAt:Date.now()+(failure&&failure.status===400?DAY:delay)};
           }
           saveRecovery(saved,Date.now());
         };

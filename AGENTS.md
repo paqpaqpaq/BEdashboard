@@ -131,3 +131,15 @@
   −1 → min, +1 → max, 2 → afnemen max / invoeden min, 0 or no data → last minute.
   Checked 18-11 14:30: 5.79 €/MWh, equal to a forum user's aFRR settlement.
   Against TenneT on 17-11, last-minute values matched only 5 of 10 quarters.
+
+## Version 6.8.2 — memory leak, BID recovery reach
+
+- Never put a `segment` option (not even a static object) on datasets with many
+  points: Chart.js `_computeSegments` then runs per point with two
+  `JSON.stringify` calls on every update. On `soc-chart` (Coulomb line ~14k
+  points, Balans updates every second) this was ~30,000 stringify/s and grew the
+  tab to 3–4 GB in Safari within hours. Our datasets set `segment=false`, which
+  also blocks inherited segment options. Measured live 19-11-2026: 300k → ~12k
+  stringify per 10 s.
+- BID recovery only requests the last 26 h (`RECOVERY_REACH`); a 400 response
+  postpones that day by 24 h instead of retrying every 5 min.
