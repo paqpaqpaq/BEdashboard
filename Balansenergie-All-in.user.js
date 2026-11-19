@@ -16364,11 +16364,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
 
     if(chart.canvas.id==='soc-chart'){
       const history=window.BESocHistory.active(chart),range=history?window.BESocHistory.range(chart):null;
-      const a=history?(range?.min??Infinity):(chart.scales.x?.min??0)-120000;
-      const b=history?(range?.max??-Infinity):(chart.scales.x?.max??Infinity)+120000;
+      // 6.8.3: bereik op 5 minuten afgerond, zodat een meeschuivende x-as de cache niet elke seconde breekt;
+      // punten buiten beeld knipt Chart.js weg.
+      const STEP=300000;
+      const a=history?(range?.min??Infinity):Math.floor(((chart.scales.x?.min??0)-120000)/STEP)*STEP;
+      const b=history?(range?.max??-Infinity):Math.ceil(((chart.scales.x?.max??Infinity)+120000)/STEP)*STEP;
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
-      let points=(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)}));
-      if(history)points=window.BESocHistory.project(chart,points,range);
+      // 6.8.3: Balans werkt soc-chart elke seconde bij. Bouw de lijn (~15.000 punten) alleen opnieuw
+      // bij een nieuwe berekening of een ander bereik; anders hetzelfde array hergebruiken.
+      const key=a+'|'+b+'|'+(history?JSON.stringify([range,chart.width]):''),cache=chart.$beMeasuredCache;
+      let points;
+      if(cache&&cache.result===result&&cache.key===key)points=cache.points;
+      else{
+        points=(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)}));
+        if(history)points=window.BESocHistory.project(chart,points,range);
+        chart.$beMeasuredCache={result,key,points};
+      }
       dataset(chart,'measured','Coulombtelling in/uit',points,{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
       const f=forecastValues(chart);
