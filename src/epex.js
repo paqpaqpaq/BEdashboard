@@ -86,7 +86,7 @@
     return new Promise((resolve,reject)=>{
       const fn=typeof GM_xmlhttpRequest==='function'?GM_xmlhttpRequest:typeof GM!=='undefined'&&typeof GM.xmlHttpRequest==='function'?GM.xmlHttpRequest.bind(GM):null;
       if(!fn){reject(Error('De userscriptmanager heeft netwerktoegang nodig'));return;}
-      fn({method:'GET',url,anonymous:true,timeout:20000,onload:r=>{
+      fn({method:'GET',url,anonymous:false,timeout:20000,onload:r=>{
         if(r.status!==200){reject(Error('Prijsbron tijdelijk niet beschikbaar ('+r.status+')'));return;}
         try{resolve(JSON.parse(r.responseText));}catch(_){reject(Error('Ongeldige prijsresponse'));}
       },onerror:()=>reject(Error('Prijsbron niet bereikbaar')),ontimeout:()=>reject(Error('Prijsbron reageert niet'))});

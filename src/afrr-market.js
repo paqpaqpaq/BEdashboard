@@ -548,7 +548,7 @@
         watchdog=setTimeout(()=>{
           networkFailure('watchdog');try{handle?.abort?.();}catch(_){}
         },TIMEOUT+1500);
-        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):channel==='settlement'?settlementPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
+        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):channel==='settlement'?settlementPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:false,
           user:'',password:'',overrideMimeType:'',responseType:'text',
           onloadstart:()=>{lastEvent='onloadstart';},
           onreadystatechange:r=>{lastEvent='readyState '+r.readyState;},
