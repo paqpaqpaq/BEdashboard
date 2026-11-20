@@ -14105,7 +14105,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if (fout) console.warn('[BE onbalans]', fout);
       else document.dispatchEvent(new Event('be-onbalans-tenergy-update'));
     };
-    fn({ method: 'GET', url: BRON, anonymous: false, timeout: 25000,
+    fn({ method: 'GET', url: BRON, anonymous: true, timeout: 25000,
       onload: r => { try { if (r.status !== 200) throw Error('Tenergy HTTP ' + r.status); verwerk(r.responseText, Date.now()); klaar(''); } catch (e) { klaar(e.message); } },
       onerror: e => klaar('Tenergy niet bereikbaar' + (e && (e.error || e.statusText || e.status) ? ' (' + (e.error || e.statusText || e.status) + ')' : '')), ontimeout: () => klaar('Tenergy reageert niet') });
   }
@@ -14203,7 +14203,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     return new Promise((resolve,reject)=>{
       const fn=typeof GM_xmlhttpRequest==='function'?GM_xmlhttpRequest:typeof GM!=='undefined'&&typeof GM.xmlHttpRequest==='function'?GM.xmlHttpRequest.bind(GM):null;
       if(!fn){reject(Error('De userscriptmanager heeft netwerktoegang nodig'));return;}
-      fn({method:'GET',url,anonymous:false,timeout:20000,onload:r=>{
+      fn({method:'GET',url,anonymous:true,timeout:20000,onload:r=>{
         if(r.status!==200){reject(Error('Prijsbron tijdelijk niet beschikbaar ('+r.status+')'));return;}
         try{resolve(JSON.parse(r.responseText));}catch(_){reject(Error('Ongeldige prijsresponse'));}
       },onerror:()=>reject(Error('Prijsbron niet bereikbaar')),ontimeout:()=>reject(Error('Prijsbron reageert niet'))});
@@ -16985,7 +16985,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
         watchdog=setTimeout(()=>{
           networkFailure('watchdog');try{handle?.abort?.();}catch(_){}
         },TIMEOUT+1500);
-        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):channel==='settlement'?settlementPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:false,
+        handle=fn({method:'GET',url:HOSTS[c.environment]+(channel==='mol'?meritPath(q):channel==='settlement'?settlementPath(q):PATH),headers:{apikey:c.key,Accept:'application/json'},anonymous:true,
           user:'',password:'',overrideMimeType:'',responseType:'text',
           onloadstart:()=>{lastEvent='onloadstart';},
           onreadystatechange:r=>{lastEvent='readyState '+r.readyState;},

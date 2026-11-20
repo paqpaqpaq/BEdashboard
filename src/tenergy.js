@@ -117,7 +117,7 @@
       if (fout) console.warn('[BE onbalans]', fout);
       else document.dispatchEvent(new Event('be-onbalans-tenergy-update'));
     };
-    fn({ method: 'GET', url: BRON, anonymous: false, timeout: 25000,
+    fn({ method: 'GET', url: BRON, anonymous: true, timeout: 25000,
       onload: r => { try { if (r.status !== 200) throw Error('Tenergy HTTP ' + r.status); verwerk(r.responseText, Date.now()); klaar(''); } catch (e) { klaar(e.message); } },
       onerror: e => klaar('Tenergy niet bereikbaar' + (e && (e.error || e.statusText || e.status) ? ' (' + (e.error || e.statusText || e.status) + ')' : '')), ontimeout: () => klaar('Tenergy reageert niet') });
   }
