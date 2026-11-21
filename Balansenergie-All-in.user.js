@@ -5364,6 +5364,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
           rij.pv_estimated_kwh
         ),
 
+      // 6.8.4: alleen een echt geleverd getal telt als bekende opwek.
+      pvBekend:
+        typeof rij.pv_estimated_kwh === 'number' &&
+        isFinite(rij.pv_estimated_kwh),
+
       afrrVergoeding:
         getal(
           rij.balance_energie_eur
@@ -12103,7 +12108,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         id +
         '" type="' +
         type +
-        '" step="0.01" value="' +
+        '" step="any" value="' +
         waarde +
         '" style="' +
         'width:100%;' +
@@ -12899,17 +12904,37 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     Object.keys(groups).forEach(function (key) {
       var pre = groups[key].filter(function (r) { return r.key < '2027-01-01'; });
       var imp = beOvSum(pre, 'imp'), eligibleBase = beOvSum(pre, 'exp') * settings.eligible / 100;
-      // De bron splitst de herkomst niet uit. Zonder contractbevestiging wordt
-      // niet automatisch meer dan de 5.000 kWh-grens voor niet-duurzame invoeding gebruikt.
-      var eligible=settings.eligibleConfirmed?eligibleBase:Math.min(5000,eligibleBase);
+      // 6.8.4: art. 50 lid 2 Wbm met art. 2.31 Energiewet. Duurzame invoeding telt volledig mee
+      // (tot de afname); andere invoeding (bijv. netstroom via de batterij) tot 5.000 kWh.
+      // Duurzaam per dag = min(teruglevering, geschatte pv-opwek uit de Balans-bron). Dagen zonder
+      // pv-gegeven krijgen het duurzame aandeel van de bekende dagen in hetzelfde contract.
+      var knownExp=0,knownRen=0;
+      pre.forEach(function(r){if(r.pvBekend===true){knownExp+=r.exp;knownRen+=Math.min(r.exp,Math.max(0,r.pv));}});
+      var share=knownExp>0?knownRen/knownExp:(pre.some(function(r){return r.pvBekend===true;})?1:0);
+      pre.forEach(function(r){r.expRen=r.pvBekend===true?Math.min(r.exp,Math.max(0,r.pv)):r.exp*share;r.expNon=Math.max(0,r.exp-r.expRen);});
+      var renBase=beOvSum(pre,'expRen')*settings.eligible/100,nonBase=beOvSum(pre,'expNon')*settings.eligible/100;
+      var nonEligible=settings.eligibleConfirmed?nonBase:Math.min(5000,nonBase);
+      var nonFactor=nonBase>0?nonEligible/nonBase:1;
+      var eligible=renBase+nonEligible;
       var creditKwh = settings.salderen ? Math.min(imp, eligible) : 0;
-      // 6.7: laat zien hoeveel kWh het plafond kost; voorheen gebeurde dat stil.
+      // Teruglevering die door de 5.000 kWh-grens buiten de verrekening valt.
       var cappedKwh = settings.salderen ? Math.max(0, Math.min(imp, eligibleBase) - creditKwh) : 0;
+      var herkomst={duurzaam:renBase,overig:nonBase,overigMee:nonEligible,pvOnbekendeDagen:pre.filter(function(r){return r.exp>0&&r.pvBekend!==true;}).length};
       var grossTax = 0, unknownRate = false;
       pre.forEach(function(r){var rate=settings.rates[r.key.slice(0,4)];if(r.imp>0&&!(beOvFinite(rate)&&rate>=0))unknownRate=true;else if(r.imp>0)grossTax+=r.imp*rate;});
       var refundEx = !creditKwh ? 0 : unknownRate ? null : grossTax * creditKwh / imp;
       var grossTaxForCap = grossTax;
-      if(creditKwh>0&&settings.taxAllocation!=='afname'&&!unknownRate){
+      if(creditKwh>0&&settings.taxAllocation==='werkelijk'&&!unknownRate){
+        // 7.0: werkelijk netto verbruik per tariefperiode (kalenderjaar) volgens de meterdata,
+        // zoals Balans factureert. Het belastbare saldo over het hele contract blijft gelijk.
+        var perJaar={};
+        pre.forEach(function(r){var y=r.key.slice(0,4),j=perJaar[y]||(perJaar[y]={imp:0,exp:0});j.imp+=r.imp;j.exp+=((r.expRen||0)+(r.expNon||0)*nonFactor)*settings.eligible/100;});
+        var jaren=Object.keys(perJaar),gewicht=0;
+        jaren.forEach(function(y){perJaar[y].w=Math.max(0,perJaar[y].imp-perJaar[y].exp);gewicht+=perJaar[y].w;});
+        var belastbaar=imp-creditKwh,ebNetto=0;
+        jaren.forEach(function(y){var deel=gewicht>0?perJaar[y].w/gewicht:(imp>0?perJaar[y].imp/imp:0);ebNetto+=belastbaar*deel*settings.rates[y];});
+        refundEx=grossTax-ebNetto;
+      } else if(creditKwh>0&&settings.taxAllocation!=='afname'&&!unknownRate){
         var through=pre.reduce(function(last,r){return r.key>last?r.key:last;},key),sumRates=0,countDays=0;
         for(var dateKey=key;dateKey<=through;dateKey=beOvAdd(dateKey,1)){
           var dayRate=settings.rates[dateKey.slice(0,4)];
@@ -12920,8 +12945,8 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
       var higherContract=imp-creditKwh+beOvSum(groups[key].filter(function(r){return r.key>='2027-01-01';}),'imp')>10000+1e-8;
       groups[key].forEach(function (r) {
-        var eligibleRow=r.key<'2027-01-01'?r.exp*settings.eligible/100:0;
-        var fraction=eligibleBase>0?eligibleRow/eligibleBase:0;
+        var eligibleRow=r.key<'2027-01-01'?((r.expRen||0)+(r.expNon||0)*nonFactor)*settings.eligible/100:0;
+        var fraction=eligible>0?eligibleRow/eligible:0;r.herkomst=herkomst;
         r.saldKwh=creditKwh*fraction;
         r.salderingPlafondKwh=cappedKwh;r.salderingPlafondRate=imp>0?grossTaxForCap/imp:0;
         r.taxable=r.imp-(imp>0&&r.key<'2027-01-01'?r.imp*creditKwh/imp:0);
@@ -13121,7 +13146,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         '<p>Voorschotten volgen je bedragen en ingangsdatums, verdeeld over kalenderdagen. Dit is geen bankafschrift. Je kunt ook werkelijke betalingen invullen. Vaste dagkosten en voorschotten lopen tot en met vandaag; de gemeten stroom van vandaag kan nog onvolledig zijn.</p>'+
         '<p>Balansdagen krijgen voorrang op de eigen cache. Een cachedag blijft voorlopig; bij ontbrekende prijzen telt uitsluitend het geprijsde deel mee. Vandaag wordt in de prognose vervangen door één geschatte hele dag. De bekende stand gebruikt het gemeten dagdeel. Daardoor tellen ze nooit dubbel.</p>'+
         '<p>De prognose gebruikt de seizoensfactoren voor afname en teruglevering uit 5.0, met maximaal 28 complete recente brondagen (minimaal 7). Een beschikbare volledige vergelijkbare maand van vorig jaar weegt 60% mee. Bronbedragen en kWh worden geraamd vóór toepassing van EB. Dit is geen weers- of prijsvoorspelling. De resterende stroompost bevat ook het verwachte effect op saldering. Bij ontbrekende historische dagen tonen we geen totaalprognose.</p>'+
-        '<p>Tot 1 januari 2027 wordt EB per contractjaar verrekend binnen de ingestelde saldeerbare teruglevering, maximaal de afname. Zonder bevestigde herkomst/verrekening wordt maximaal 5.000 kWh teruglevering gebruikt. Bij jaarwisseling geldt de gekozen tijdsevenredige of afnamegewogen raming; je leveranciersnota kan een andere toegestane verdeling hanteren. Maandbedragen zijn een toerekening en kunnen veranderen.</p>'+
+        '<p>Tot 1 januari 2027 wordt EB per contractjaar verrekend (art. 50 lid 2 Wbm), maximaal de afname. Duurzame teruglevering telt volledig; overige teruglevering tot 5.000 kWh (art. 2.31 Energiewet). Duurzaam = per dag maximaal de geschatte pv-opwek uit de Balans-gegevens. Bij jaarwisseling geldt de gekozen tijdsevenredige of afnamegewogen raming; je leveranciersnota kan een andere toegestane verdeling hanteren. Maandbedragen zijn een toerekening en kunnen veranderen.</p>'+
         '<p>Btw of EB uit is een vergelijking, geen factuurbedrag. Netto niet terugleveren maakt btw niet automatisch nul. De opslag van 2 cent inclusief btw is al verwerkt in de bron; we tellen hem niet nogmaals op. Ontbrekende jaartarieven of hogere verbruiksschijven geven geen verzonnen bedrag.</p>'+
         '<p><a href="https://consument.acm.nl/elektriciteit-en-gas/duurzame-energie/wat-is-salderen" target="_blank" rel="noopener noreferrer">ACM: salderen</a> · <a href="https://download.belastingdienst.nl/belastingdienst/docs/handboek_milieubelast_2026_ml0301z61fd.pdf" target="_blank" rel="noopener noreferrer">Belastingdienst: Handboek 2026, 7.4.2 en 7.8.14</a></p>';
       $('refresh').onclick = function () { cache.clear(); load(); };
@@ -13454,7 +13479,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       if(comparison)html+='<p class="help">Zonder EB of btw is het saldo een vergelijking, geen factuurbedrag.</p>';
       var plafond={};all.forEach(function(d){if(d.salderingPlafondKwh>0.5&&d.key>=ledgerRange.a&&d.key<=ledgerRange.b)plafond[d.contract]=d;});
       Object.keys(plafond).forEach(function(c){var d=plafond[c],eur=d.salderingPlafondKwh*d.salderingPlafondRate*BTW;
-        html+='<p class="notice warning">Saldeerplafond actief (contract vanaf '+date(c)+'): '+fmt(d.salderingPlafondKwh)+' kWh teruglevering telt niet mee voor EB-verrekening, ongeveer '+money(eur)+' incl. btw. Saldeert je leverancier alles, vink dan bij Instellingen “bevestigd door mijn contract/nota” aan.</p>';});
+        html+='<p class="notice warning">Saldeerplafond actief (contract vanaf '+date(c)+'): '+fmt(d.salderingPlafondKwh)+' kWh teruglevering telt niet mee voor EB-verrekening, ongeveer '+money(eur)+' incl. btw. Dit is niet-duurzame teruglevering boven de wettelijke 5.000 kWh (teruglevering hoger dan de geschatte pv-opwek). Verrekent je leverancier dit toch, zet dan onder Geavanceerd “alles salderen” aan.</p>';});
       if(todayRow&&(todayRow.deelresultaat||todayRow.voorlopig))html+='<p class="help">Vandaag is nog onvolledig. Vaste dagkosten en voorschot lopen t/m vandaag.'+(todayRow.prijsOnvolledig?' Niet alle gemeten stroom heeft al een prijs; alleen het geprijsde deel telt mee.':'')+'</p>';
       html+='</section>';
       $('content').innerHTML=html;
@@ -13463,18 +13488,18 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var detail=row('Inkoop stroom zonder opslag',signedMoney(-(t.buyShown-feeImport)))+row('Opslag inkoop · '+fmt(t.imp)+' kWh × '+(s.vat?'€ 0,02000':'€ 0,0165289'),signedMoney(-feeImport))+row('EB over afname',signedMoney(t.ebGrossShown===null?null:-t.ebGrossShown))+row('Totaal inkoop inclusief gekozen EB',signedMoney(buy===null?null:-buy),'total')+
         row('Verkoop stroom vóór opslag',signedMoney(t.sellShown+feeExport))+row('Opslag verkoop · '+fmt(t.exp)+' kWh × '+(s.vat?'€ 0,02000':'€ 0,0165289'),signedMoney(-feeExport))+row('EB-verrekening saldering / tariefverdeling',signedMoney(t.ebCreditShown))+row('Netto verkoop inclusief gekozen EB',signedMoney(sell),'total')+
         row('Stroomresultaat',signedMoney(rows.length?t.result:null),'total')+row('Vaste levering',signedMoney(-f.supplier))+row('Netbeheer',signedMoney(-f.network))+row('Belastingvermindering',signedMoney(f.credit))+row('Maandafronding',signedMoney(statement.full===null||t.result===null||f.net===null?null:statement.full-t.result-f.net))+row('Voorschotten',signedMoney(statement.advance))+row($('period').value==='month'?'Deze maand erbij / eraf':'Saldo van deze selectie',signedMoney(statement.saldo),'total');
-      detail+='<p class="help">De opslag is al verwerkt: € 0,02 incl. btw, of € 0,02 / 1,21 excl. btw. Saldering: '+(s.salderen?'aan':'uit')+' · opgegeven aandeel '+fmt(s.eligible,0)+'% · EB-tariefverdeling '+(s.taxAllocation==='afname'?'afnamegewogen':'tijdsevenredig')+'. Deze verrekening is een raming; de leveranciersnota is bepalend.</p>';
+      detail+='<p class="help">De opslag is al verwerkt: € 0,02 incl. btw, of € 0,02 / 1,21 excl. btw. Saldering: '+(s.salderen?'aan':'uit')+(function(){var h=null;rows.forEach(function(r){if(r.herkomst)h=r.herkomst;});return h?' · duurzaam '+fmt(h.duurzaam)+' kWh volledig, overig '+fmt(h.overig)+' kWh waarvan '+fmt(h.overigMee)+' meegeteld (max 5.000)'+(h.pvOnbekendeDagen?' · '+h.pvOnbekendeDagen+' dagen zonder pv-gegeven geschat':''):'';})()+' · EB-tariefverdeling '+(s.taxAllocation==='afname'?'afnamegewogen':s.taxAllocation==='werkelijk'?'werkelijk verbruik per tariefperiode':'tijdsevenredig')+'. Deze verrekening is een raming; de leveranciersnota is bepalend.</p>';
       $('calculation').innerHTML=detail;
     }
     function settingsUI() {
       var years=new Set([2025,2026,new Date().getFullYear(),new Date().getFullYear()+1]);
-      var html='<form id="settings-form"><div class="grid settings-grid"><label>Aansluit-/contractstart<input id="cfg-start" type="date" value="'+iso(cfg.start)+'" required></label><label>Basisvoorschot per maand (€)<input id="cfg-advance" type="number" min="0" step="0.01" value="'+cfg.voorschot+'" required></label><label>Saldering volgens jouw contract<select id="cfg-salderen"><option value="aan">Tot 2027 salderen (contractvoorwaarden)</option><option value="uit">Niet verrekenen</option></select></label><label>Teruglevering die mag meetellen (%)<input id="cfg-eligible" type="number" min="0" max="100" step="1" value="'+beOvSettings.eligible+'" required></label><label>Vaste levering per dag, incl. btw (€)<input id="cfg-supplier" type="number" min="0" step="0.0001" value="'+beOvSettings.supplier+'" required></label><label>Netbeheer per dag, incl. btw (€)<input id="cfg-network" type="number" min="0" step="0.0001" value="'+beOvSettings.network+'" required></label></div>'+
+      var html='<form id="settings-form"><div class="grid settings-grid"><label>Aansluit-/contractstart<input id="cfg-start" type="date" value="'+iso(cfg.start)+'" required></label><label>Basisvoorschot per maand (€)<input id="cfg-advance" type="number" min="0" step="any" value="'+cfg.voorschot+'" required></label><label>Saldering volgens jouw contract<select id="cfg-salderen"><option value="aan">Tot 2027 salderen (contractvoorwaarden)</option><option value="uit">Niet verrekenen</option></select></label><label>Teruglevering die mag meetellen (%)<input id="cfg-eligible" type="number" min="0" max="100" step="1" value="'+beOvSettings.eligible+'" required></label><label>Vaste levering per dag, incl. btw (€)<input id="cfg-supplier" type="number" min="0" step="any" value="'+beOvSettings.supplier+'" required></label><label>Netbeheer per dag, incl. btw (€)<input id="cfg-network" type="number" min="0" step="any" value="'+beOvSettings.network+'" required></label></div>'+
         '<p class="help">De contractstart en voorschotten komen uit je bestaande instellingen. De dagbedragen zijn overgenomen uit de huidige plugin; controleer ze met je contract. Salderingsinstellingen en jaartarieven hieronder gelden alleen voor dit nieuwe overzicht. De bron splitst batterij- en zonneteruglevering niet uit.</p>'+
-        '<label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input id="cfg-eligible-confirmed" type="checkbox">Deze saldeerbare hoeveelheid is bevestigd door mijn contract/nota</label><p class="help">De bron splitst duurzame en niet-duurzame teruglevering niet uit. Zonder bevestiging rekent deze raming met maximaal 5.000 kWh. Voor EB-verrekening moet de leverancier daadwerkelijk salderen op dezelfde kleine aansluiting.</p>'+
-        '<div id="advance-history"></div><div class="grid settings-grid"><label>Voorschotten in het saldo<select id="cfg-payment-mode"><option value="schema">Maandbedragen naar rato van dagen</option><option value="actual">Mijn ingevoerde werkelijke betalingen</option></select></label><label>EB-verdeling bij jaarwisseling<select id="cfg-tax-allocation"><option value="tijd">Tijdsevenredige raming</option><option value="afname">Afnamegewogen raming</option></select></label></div>'+
+        '<label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input id="cfg-eligible-confirmed" type="checkbox">Geavanceerd: alles salderen, ook niet-duurzame teruglevering boven 5.000 kWh</label><p class="help">Standaard volgt Financieel de wet: duurzame teruglevering (tot de geschatte pv-opwek per dag) telt volledig mee, overige teruglevering tot 5.000 kWh per contractjaar, en nooit meer dan de afname. Zet dit alleen aan als je nota laat zien dat je leverancier ook het meerdere verrekent.</p>'+
+        '<div id="advance-history"></div><div class="grid settings-grid"><label>Voorschotten in het saldo<select id="cfg-payment-mode"><option value="schema">Maandbedragen naar rato van dagen</option><option value="actual">Mijn ingevoerde werkelijke betalingen</option></select></label><label>EB-verdeling bij jaarwisseling<select id="cfg-tax-allocation"><option value="tijd">Tijdsevenredig (gebruikelijk bij stroom)</option><option value="werkelijk">Werkelijk verbruik per tariefperiode (zoals Balans)</option><option value="afname">Afnamegewogen raming</option></select></label></div>'+
         '<details><summary>Werkelijke voorschotbetalingen invoeren</summary><p class="help">Vul ontvangen betaalbewijzen over. Deze lokale lijst verandert geen incasso of bedrag bij de leverancier. Kies hierboven werkelijke betalingen om ze in het saldo te gebruiken.</p><div id="actual-payments"></div><button type="button" id="add-payment">+ Betaling toevoegen</button></details>'+
         '<h3 style="margin-top:18px">Jaartarieven voor het rekenmodel</h3><div class="table-wrap"><table><thead><tr><th>Jaar</th><th>EB excl. btw, €/kWh</th><th>Vaste belastingvermindering excl. btw, €/jaar</th><th>Netbeheer incl. btw, €/dag</th></tr></thead><tbody>';
-      Array.from(years).sort().forEach(function(y){html+='<tr><td>'+y+'</td><td><input aria-label="EB '+y+'" data-rate="'+y+'" type="number" min="0" max="10" step="0.00001" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.rates[y])?beOvSettings.rates[y]:'')+'"></td><td><input aria-label="Belastingvermindering '+y+'" data-credit="'+y+'" type="number" min="0" step="0.01" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.credit[y])?beOvSettings.credit[y]:'')+'"></td><td><input aria-label="Netbeheer '+y+'" data-network="'+y+'" type="number" min="0" step="0.00001" placeholder="Standaard" value="'+(beOvFinite((beOvSettings.networkRates||{})[y])?beOvSettings.networkRates[y]:'')+'"></td></tr>';});
+      Array.from(years).sort().forEach(function(y){html+='<tr><td>'+y+'</td><td><input aria-label="EB '+y+'" data-rate="'+y+'" type="number" min="0" max="10" step="any" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.rates[y])?beOvSettings.rates[y]:'')+'"></td><td><input aria-label="Belastingvermindering '+y+'" data-credit="'+y+'" type="number" min="0" step="any" placeholder="Nog invullen" value="'+(beOvFinite(beOvSettings.credit[y])?beOvSettings.credit[y]:'')+'"></td><td><input aria-label="Netbeheer '+y+'" data-network="'+y+'" type="number" min="0" step="any" placeholder="Standaard" value="'+(beOvFinite((beOvSettings.networkRates||{})[y])?beOvSettings.networkRates[y]:'')+'"></td></tr>';});
       html+='</tbody></table></div><p class="help">2025: EB 0,10154 en vermindering 524,95; 2026: EB 0,09161 en vermindering 519,80; 2027 (Belastingplan, voorlopig): EB 0,08802 en vermindering 519,58 (excl. btw). De jaartarieven en de grens op 1 januari 2027 worden gescheiden. Hogere verbruiksschijven geven “Nog onbekend” in plaats van een onjuist bedrag. Kies de tariefverdeling die op je contract/nota staat; standaard is de raming tijdsevenredig. Netbeheer per jaar staat op je jaarafrekening (Enexis t/m 3×25 A zoals Balans factureert: 1,30390 in 2025 en 1,30365 in 2026, standaard ingevuld); leeg = het algemene netbeheerbedrag hierboven. Andere netbeheerder of grotere aansluiting: neem het bedrag van je eigen nota over. Deze jaartarieven gelden sinds 6.7 ook voor de andere kaarten.</p><div class="actions" style="margin-top:16px"><button class="primary" type="submit">Instellingen opslaan</button><span id="save-status" role="status"></span></div></form>';
       $('settings-body').innerHTML=html; $('cfg-salderen').value=beOvSettings.salderen?'aan':'uit';
       $('cfg-eligible-confirmed').checked=!!beOvSettings.eligibleConfirmed;
@@ -14114,6 +14139,661 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     setInterval(update, 3000);
     update();
 })();
+
+    // 7.0: Fact(uur)checker — Balans-nota (pdf) inlezen, per post en per maand naast de regels en het dashboard.
+    (function () {
+// Minimale PDF-tekstlezer voor Balans-facturen (Type0/Identity-H + ToUnicode, Flate).
+// Geeft per pagina regels terug: [{y, cellen:[{x, tekst}]}], van boven naar onder.
+async function bePdfRegels(buf) {
+  const u8 = new Uint8Array(buf);
+  let src = '';
+  for (let i = 0; i < u8.length; i += 65536) src += String.fromCharCode.apply(null, u8.subarray(i, i + 65536));
+  const objs = new Map();
+  const re = /(\d+)\s+(\d+)\s+obj\b/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const start = m.index + m[0].length;
+    const end = src.indexOf('endobj', start);
+    if (end < 0) break;
+    objs.set(+m[1], {body: src.slice(start, end), off: start});
+    re.lastIndex = end;
+  }
+  const dictVan = id => { const o = objs.get(id); return o ? o.body.split(/\bstream\r?\n/)[0] : ''; };
+  const ref = (dict, key) => { const r = new RegExp('/' + key + '\\s+(\\d+)\\s+\\d+\\s+R').exec(dict); return r ? +r[1] : null; };
+  async function inflate(bin) {
+    const ds = new DecompressionStream('deflate');
+    const w = ds.writable.getWriter(); w.write(bin); w.close();
+    const out = new Uint8Array(await new Response(ds.readable).arrayBuffer());
+    let s = ''; for (let i = 0; i < out.length; i += 65536) s += String.fromCharCode.apply(null, out.subarray(i, i + 65536));
+    return s;
+  }
+  async function streamVan(id) {
+    const o = objs.get(id); if (!o) return '';
+    const sm = /\bstream\r?\n/.exec(o.body); if (!sm) return '';
+    const dict = o.body.slice(0, sm.index);
+    let len = /\/Length\s+(\d+)(\s+\d+\s+R)?/.exec(dict);
+    let n = len ? +len[1] : 0;
+    if (len && len[2]) { const lo = objs.get(n); n = lo ? parseInt(lo.body, 10) : 0; }
+    const s = o.off + sm.index + sm[0].length;
+    if (!n) n = src.indexOf('endstream', s) - s;
+    const raw = u8.subarray(s, s + n);
+    return /FlateDecode/.test(dict) ? inflate(raw) : src.slice(s, s + n);
+  }
+  function hexNaarStr(h) { h = h.replace(/\s+/g, ''); if (h.length % 2) h += '0'; let s = ''; for (let i = 0; i < h.length; i += 2) s += String.fromCharCode(parseInt(h.substr(i, 2), 16)); return s; }
+  function utf16(bin) { let s = ''; for (let i = 0; i + 1 < bin.length; i += 2) s += String.fromCharCode(bin.charCodeAt(i) << 8 | bin.charCodeAt(i + 1)); return s; }
+  const fontCache = new Map();
+  async function font(id) {
+    if (fontCache.has(id)) return fontCache.get(id);
+    const d = dictVan(id), f = {map: new Map(), w: new Map(), dw: 1000, twee: /Type0/.test(d)};
+    const tu = ref(d, 'ToUnicode');
+    if (tu) {
+      const cm = await streamVan(tu);
+      for (const blok of cm.split('beginbfchar').slice(1)) {
+        const b = blok.split('endbfchar')[0];
+        for (const p of b.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]*)>/g)) f.map.set(parseInt(p[1], 16), utf16(hexNaarStr(p[2])));
+      }
+      for (const blok of cm.split('beginbfrange').slice(1)) {
+        const b = blok.split('endbfrange')[0];
+        for (const p of b.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(<[0-9a-fA-F]*>|\[[^\]]*\])/g)) {
+          const a = parseInt(p[1], 16), z = parseInt(p[2], 16);
+          if (p[3][0] === '[') { const arr = [...p[3].matchAll(/<([0-9a-fA-F]*)>/g)]; for (let c = a; c <= z && c - a < arr.length; c++) f.map.set(c, utf16(hexNaarStr(arr[c - a][1]))); }
+          else { const basis = hexNaarStr(p[3].slice(1, -1)); for (let c = a; c <= z; c++) { const s = utf16(basis); f.map.set(c, s.slice(0, -1) + String.fromCharCode(s.charCodeAt(s.length - 1) + c - a)); } }
+        }
+      }
+    }
+    const df = /\/DescendantFonts\s*\[\s*(\d+)\s+\d+\s+R/.exec(d);
+    if (df) {
+      const dd = dictVan(+df[1]);
+      const dw = /\/DW\s+(\d+)/.exec(dd); if (dw) f.dw = +dw[1];
+      let wtxt = null; const wr = /\/W\s+(\d+)\s+\d+\s+R/.exec(dd);
+      if (wr) wtxt = objs.get(+wr[1])?.body; else { const i = dd.indexOf('/W'); if (i >= 0) wtxt = dd.slice(i + 2); }
+      if (wtxt) {
+        const t = wtxt.match(/\[|\]|-?\d+(\.\d+)?/g) || []; let i = 0;
+        if (t[i] === '[') i++;
+        while (i < t.length && t[i] !== ']') {
+          const c = +t[i++];
+          if (t[i] === '[') { i++; let k = c; while (t[i] !== ']' && i < t.length) f.w.set(k++, +t[i++]); i++; }
+          else { const c2 = +t[i++], w = +t[i++]; for (let k = c; k <= c2; k++) f.w.set(k, w); }
+        }
+      }
+    } else {
+      const fc = /\/FirstChar\s+(\d+)/.exec(d), wa = /\/Widths\s*\[([^\]]*)\]/.exec(d);
+      if (fc && wa) wa[1].trim().split(/\s+/).forEach((w, i) => f.w.set(+fc[1] + i, +w));
+    }
+    fontCache.set(id, f); return f;
+  }
+  const mul = (a, b) => [a[0]*b[0]+a[1]*b[2], a[0]*b[1]+a[1]*b[3], a[2]*b[0]+a[3]*b[2], a[2]*b[1]+a[3]*b[3], a[4]*b[0]+a[5]*b[2]+b[4], a[4]*b[1]+a[5]*b[3]+b[5]];
+  const paginas = [];
+  for (const [id] of objs) {
+    const d = dictVan(id);
+    if (!/\/Type\s*\/Page\b/.test(d)) continue;
+    paginas.push(id);
+  }
+  // Paginavolgorde via /Kids van de Pages-boom.
+  const volgorde = [];
+  (function boom(id) { const d = dictVan(id); const k = /\/Kids\s*\[([^\]]*)\]/.exec(d); if (k) [...k[1].matchAll(/(\d+)\s+\d+\s+R/g)].forEach(x => boom(+x[1])); else if (/\/Type\s*\/Page\b/.test(d)) volgorde.push(id); })(ref(dictVan(ref(/trailer[\s\S]*$/.exec(src)?.[0] || '', 'Root')), 'Pages'));
+  const lijst = volgorde.length ? volgorde : paginas;
+  const resultaat = [];
+  for (const pid of lijst) {
+    const pd = dictVan(pid);
+    let res = ''; const rr = ref(pd, 'Resources');
+    res = rr ? dictVan(rr) : (/\/Resources\s*<<([\s\S]*)/.exec(pd)?.[1] || '');
+    let fdict = ''; const fr = ref(res, 'Font');
+    fdict = fr ? dictVan(fr) : (/\/Font\s*<<([^>]*)>>/.exec(res)?.[1] || '');
+    const fonts = {};
+    for (const x of fdict.matchAll(/\/([^\s/<>\[\]()]+)\s+(\d+)\s+\d+\s+R/g)) fonts[x[1]] = await font(+x[2]);
+    let inhoud = '';
+    const ca = /\/Contents\s*\[([^\]]*)\]/.exec(pd);
+    const ids = ca ? [...ca[1].matchAll(/(\d+)\s+\d+\s+R/g)].map(x => +x[1]) : [ref(pd, 'Contents')].filter(Boolean);
+    for (const c of ids) inhoud += (await streamVan(c)) + '\n';
+    const glyphs = [];
+    let ctm = [1,0,0,1,0,0]; const stack = []; let tm = [1,0,0,1,0,0], tlm = tm, f = null, fs = 1, tl = 0, tc = 0, tw = 0, th = 1;
+    const ops = []; const tokRe = /(<[0-9a-fA-F\s]*>)|(\((?:\\[\s\S]|[^\\)])*\))|(\[)|(\])|(\/[^\s/<>\[\]()]+)|(-?(?:\d+\.?\d*|\.\d+))|([A-Za-z'"*]+)|<<|>>/g;
+    let stackArgs = [], t;
+    function lit(s) { return s.slice(1, -1).replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (q, e) => ({n:'\n',r:'\r',t:'\t',b:'\b',f:'\f','(':'(',')':')','\\':'\\'})[e] ?? String.fromCharCode(parseInt(e, 8))); }
+    function toon(bin) {
+      if (!f) return;
+      const stap = f.twee ? 2 : 1;
+      for (let i = 0; i < bin.length; i += stap) {
+        const code = stap === 2 ? (bin.charCodeAt(i) << 8 | bin.charCodeAt(i + 1)) : bin.charCodeAt(i);
+        const ch = f.map.has(code) ? f.map.get(code) : (stap === 1 ? String.fromCharCode(code) : '');
+        const trm = mul(tm, ctm);
+        const w = (f.w.has(code) ? f.w.get(code) : f.dw) / 1000;
+        const sx = Math.hypot(trm[0], trm[1]) * fs;
+        glyphs.push({x: trm[4], y: trm[5], adv: w * sx, h: Math.hypot(trm[2], trm[3]) * fs, ch});
+        const tx = (w * fs + tc + (ch === ' ' ? tw : 0)) * th;
+        tm = mul([1,0,0,1,tx,0], tm);
+      }
+    }
+    while ((t = tokRe.exec(inhoud))) {
+      if (t[1]) stackArgs.push({hex: hexNaarStr(t[1].slice(1, -1))});
+      else if (t[2]) stackArgs.push({hex: lit(t[2])});
+      else if (t[3]) stackArgs.push('[');
+      else if (t[4]) { const arr = []; while (stackArgs.length && stackArgs[stackArgs.length - 1] !== '[') arr.unshift(stackArgs.pop()); stackArgs.pop(); stackArgs.push({arr}); }
+      else if (t[5]) stackArgs.push({name: t[5].slice(1)});
+      else if (t[6]) stackArgs.push(+t[6]);
+      else if (t[7]) {
+        const op = t[7], a = stackArgs; stackArgs = [];
+        switch (op) {
+          case 'q': stack.push(ctm); break;
+          case 'Q': ctm = stack.pop() || [1,0,0,1,0,0]; break;
+          case 'cm': ctm = mul(a.slice(-6), ctm); break;
+          case 'BT': tm = tlm = [1,0,0,1,0,0]; break;
+          case 'Tf': f = fonts[a[0]?.name] || null; fs = a[1]; break;
+          case 'Tm': tm = tlm = a.slice(-6); break;
+          case 'Td': tm = tlm = mul([1,0,0,1,a[0],a[1]], tlm); break;
+          case 'TD': tl = -a[1]; tm = tlm = mul([1,0,0,1,a[0],a[1]], tlm); break;
+          case 'TL': tl = a[0]; break;
+          case 'Tc': tc = a[0]; break;
+          case 'Tw': tw = a[0]; break;
+          case 'Tz': th = a[0] / 100; break;
+          case 'T*': tm = tlm = mul([1,0,0,1,0,-tl], tlm); break;
+          case 'Tj': if (a[0]?.hex !== undefined) toon(a[0].hex); break;
+          case "'": tm = tlm = mul([1,0,0,1,0,-tl], tlm); if (a[0]?.hex !== undefined) toon(a[0].hex); break;
+          case '"': tw = a[0]; tc = a[1]; tm = tlm = mul([1,0,0,1,0,-tl], tlm); if (a[2]?.hex !== undefined) toon(a[2].hex); break;
+          case 'TJ': for (const e of (a[0]?.arr || [])) { if (typeof e === 'number') tm = mul([1,0,0,1,-e / 1000 * fs * th,0], tm); else if (e.hex !== undefined) toon(e.hex); } break;
+        }
+      }
+    }
+    // Regels: glyphs met (bijna) gelijke y; cellen splitsen op grote horizontale gaten.
+    const zicht = glyphs.filter(g => g.ch && !/^[​‌‍﻿]+$/.test(g.ch));
+    zicht.sort((p, q) => q.y - p.y || p.x - q.x);
+    const regels = [];
+    for (const g of zicht) {
+      let r = regels.find(r => Math.abs(r.y - g.y) < Math.max(1.5, g.h * 0.3));
+      if (!r) { r = {y: g.y, g: []}; regels.push(r); }
+      r.g.push(g);
+    }
+    regels.sort((p, q) => q.y - p.y);
+    resultaat.push(regels.map(r => {
+      r.g.sort((p, q) => p.x - q.x);
+      const cellen = []; let cel = null, eind = -1e9;
+      for (const g of r.g) {
+        const gat = g.x - eind;
+        if (!cel || gat > g.h * 1.2) { cel = {x: g.x, tekst: ''}; cellen.push(cel); }
+        else if (gat > g.h * 0.18 && !cel.tekst.endsWith(' ')) cel.tekst += ' ';
+        cel.tekst += g.ch; eind = g.x + g.adv;
+      }
+      cellen.forEach(c => c.tekst = c.tekst.replace(/\s+/g, ' ').trim());
+      return {y: r.y, cellen: cellen.filter(c => c.tekst)};
+    }));
+  }
+  return resultaat;
+}
+
+
+// Zet de regels van bePdfRegels om in factuurgegevens. Alleen wat er staat; geen aannames over betekenis.
+function beFactuurLees(paginas) {
+  const num = s => { if (s == null) return NaN; s = String(s).replace(/[€*\s​]/g, ''); if (!/^-?[\d.]*,?\d+$/.test(s)) return NaN; return +s.replace(/\./g, '').replace(',', '.'); };
+  const isNum = s => Number.isFinite(num(s));
+  const dat = s => { const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s || ''); return m ? m[3] + '-' + m[2] + '-' + m[1] : null; };
+  const f = {type: '', nummer: '', datum: '', periode: null, secties: [], totalen: {}, samenvatting: [], meters: [], termijnen: [], termijnTotaal: null};
+  let sectie = null, kandidaat = null;
+  const regels = [];
+  paginas.forEach(p => p.forEach(r => regels.push(r.cellen.map(c => c.tekst))));
+  for (let raw of regels) {
+    // '€' als losse cel samenvoegen met de waarde erna.
+    const t = [];
+    for (let i = 0; i < raw.length; i++) { if (raw[i] === '€' && i + 1 < raw.length) { t.push('€' + raw[++i]); } else t.push(raw[i]); }
+    const regel = t.join(' | ');
+    if (t.length === 1 && /^(JAAR|EIND|TUSSEN|MAAND)[A-Z]*AFREKENING$|^[A-Z]{6,}$/.test(t[0]) && !f.type) { f.type = t[0]; continue; }
+    const kv = (k) => { const i = t.indexOf(k); return i >= 0 ? t[i + 1] : null; };
+    if (t.includes('Factuurnummer:')) f.nummer = kv('Factuurnummer:') || f.nummer;
+    if (t.includes('Factuurdatum:')) f.datum = dat(kv('Factuurdatum:')) || f.datum;
+    if (t.includes('Leveringsperiode:')) { const m = /(\d\d-\d\d-\d{4})\s*-\s*(\d\d-\d\d-\d{4})/.exec(kv('Leveringsperiode:') || ''); if (m) f.periode = {van: dat(m[1]), tot: dat(m[2])}; }
+    // Totalen onderaan de specificatie.
+    let m;
+    if (t.length === 2 && /^Totaal .*exclusief btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.excl = num(t[1]); continue; }
+    if (t.length === 2 && /^btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.btw = num(t[1]); continue; }
+    if (t.length === 2 && /^Totaal inclusief btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.incl = num(t[1]); continue; }
+    // Samenvatting pagina 1: omschrijving + excl + btw + totaal.
+    if (t.length === 4 && t.slice(1).every(isNum) && !/^Totaal te/i.test(t[0]) && !f.samenvatting.some(s => s.label === t[0])) {
+      f.samenvatting.push({label: t[0], excl: num(t[1]), btw: num(t[2]), incl: num(t[3])}); continue;
+    }
+    // Meterstanden.
+    if (t.length === 8 && dat(t[1]) && dat(t[3]) && isNum(t[5])) {
+      f.meters.push({label: t[0], van: dat(t[1]), standVan: +t[2], tot: dat(t[3]), standTot: +t[4], verschil: +t[5], factor: +t[6], verbruik: +t[7]}); continue;
+    }
+    // Termijnen.
+    if ((m = /^(\d{4}-\d{2}-\d{2}) tot (\d{4}-\d{2}-\d{2})$/.exec(t[0])) && t.length >= 3 && isNum(t[1])) {
+      f.termijnen.push({van: m[1], tot: m[2], gefactureerd: num(t[1]), teVerrekenen: num(t[2]), nummer: t[3] || ''}); continue;
+    }
+    if (t[0] === 'Totaal' && t.length === 3 && isNum(t[1]) && f.termijnen.length && f.termijnTotaal == null) { f.termijnTotaal = num(t[1]); continue; }
+    // Specificatieregel: omschrijving | aantal | eenheid | tarief | subtotaal | van | tot
+    if (t.length === 7 && isNum(t[1]) && isNum(t[3]) && isNum(t[4]) && dat(t[5]) && dat(t[6])) {
+      if (!sectie || sectie.naam !== kandidaat) { sectie = {naam: kandidaat || '(zonder kop)', regels: [], totaal: null}; f.secties.push(sectie); }
+      sectie.regels.push({label: t[0], aantal: num(t[1]), eenheid: t[2], tarief: num(t[3]), subtotaal: num(t[4]), van: dat(t[5]), tot: dat(t[6])});
+      continue;
+    }
+    if (t.length === 2 && (m = /^Totaal (.+)$/.exec(t[0])) && isNum(t[1])) {
+      const s = f.secties.find(s => s.naam === m[1]) || sectie;
+      if (s && s.totaal == null) s.totaal = num(t[1]);
+      continue;
+    }
+    if (t.length === 1 && !isNum(t[0]) && !/^\*|^p( :|$)/.test(t[0]) && t[0].length < 80) kandidaat = t[0];
+  }
+  return f;
+}
+
+// Afleidingen die alleen optellen/vergelijken wat op de factuur staat.
+function beFactuurAnalyse(f) {
+  const r2 = x => Math.round(x * 100) / 100;
+  const maandVan = (van, tot) => {
+    const a = new Date(van + 'T00:00:00Z'), b = new Date(tot + 'T00:00:00Z');
+    const volgende = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 1));
+    return b <= volgende && b > a ? van.slice(0, 7) : null;
+  };
+  const energie = f.secties.filter(s => /^(Levering|Productie) Elektriciteit$/i.test(s.naam));
+  const maanden = new Map(), jaarregels = [];
+  f.secties.forEach(s => s.regels.forEach(r => {
+    const mk = energie.includes(s) ? maandVan(r.van, r.tot) : null;
+    if (!mk) { jaarregels.push(Object.assign({sectie: s.naam}, r)); return; }
+    if (!maanden.has(mk)) maanden.set(mk, {maand: mk, van: r.van, tot: r.tot, afname: [], terug: []});
+    const m = maanden.get(mk);
+    if (r.van < m.van) m.van = r.van; if (r.tot > m.tot) m.tot = r.tot;
+    (/^Levering/i.test(s.naam) ? m.afname : m.terug).push(r);
+  }));
+  const lijst = [...maanden.values()].sort((a, b) => a.maand < b.maand ? -1 : 1);
+  const labels = {afname: [], terug: []};
+  lijst.forEach(m => ['afname', 'terug'].forEach(k => m[k].forEach(r => { if (!labels[k].includes(r.label)) labels[k].push(r.label); })));
+  lijst.forEach(m => {
+    const kwh = rs => { const markt = rs.filter(r => /^marktprijs$/i.test(r.label)); return (markt.length ? markt : rs.slice(0, 1)).reduce((n, r) => n + Math.abs(r.aantal), 0); };
+    m.afnameKwh = kwh(m.afname); m.terugKwh = kwh(m.terug);
+    m.afnameEur = r2(m.afname.reduce((n, r) => n + r.subtotaal, 0));
+    m.terugEur = r2(m.terug.reduce((n, r) => n + r.subtotaal, 0));
+    m.saldo = r2(m.afnameEur + m.terugEur);
+  });
+  // Controles
+  const c = [];
+  // status: 'ok' (≤ 1 ct), 'afronding' (≤ 5 ct), 'fout'
+  const st = d => !Number.isFinite(d) ? 'fout' : d <= 0.011 ? 'ok' : d <= 0.05 ? 'afronding' : 'fout';
+  const ok = (naam, a, b, tol) => { const d = Math.abs(a - b); c.push({naam, a, b, status: tol < 0.011 || tol > 0.06 ? (Number.isFinite(d) && d <= tol ? 'ok' : 'fout') : st(d)}); };
+  let regelsOk = 0, regelsTot = 0; const fout = [];
+  f.secties.forEach(s => s.regels.forEach(r => { regelsTot++; const v = r.aantal * r.tarief, tol = Math.max(0.011, Math.abs(r.aantal) * 0.000006); if (Math.abs(v - r.subtotaal) <= tol) regelsOk++; else fout.push({sectie: s.naam, label: r.label, van: r.van, tot: r.tot, aantal: r.aantal, tarief: r.tarief, berekend: r2(v), factuur: r.subtotaal}); }));
+  const maxD = fout.reduce((n, x) => Math.max(n, Math.abs(x.berekend - x.factuur)), 0);
+  c.push({naam: 'Aantal × tarief = subtotaal', status: !fout.length ? 'ok' : maxD <= 0.05 ? 'afronding' : 'fout', tekst: regelsOk + ' van ' + regelsTot + ' regels exact', fouten: fout});
+  f.secties.forEach(s => { if (s.totaal != null) ok('Som regels = totaal “' + s.naam + '”', r2(s.regels.reduce((n, r) => n + r.subtotaal, 0)), s.totaal, 0.011); });
+  const somSecties = r2(f.secties.reduce((n, s) => n + (s.totaal != null ? s.totaal : s.regels.reduce((x, r) => x + r.subtotaal, 0)), 0));
+  if (f.totalen.incl != null) ok('Som secties = totaal incl. btw', somSecties, f.totalen.incl, 0.05);
+  if (f.totalen.excl != null && f.totalen.btw != null && f.totalen.incl != null) ok('Excl. + btw = incl. btw', r2(f.totalen.excl + f.totalen.btw), f.totalen.incl, 0.011);
+  const meterSom = re => f.meters.filter(m => re.test(m.label)).reduce((n, m) => n + Math.abs(m.verbruik), 0);
+  if (f.meters.length) {
+    ok('Afname per maand = meterstanden', lijst.reduce((n, m) => n + m.afnameKwh, 0), meterSom(/^Elektriciteit/i), 0.5);
+    ok('Teruglevering per maand = meterstanden', lijst.reduce((n, m) => n + m.terugKwh, 0), meterSom(/^Productie/i), 0.5);
+    const eb = jaarregels.filter(r => /energie ?belasting/i.test(r.label) && /kwh/i.test(r.eenheid)).reduce((n, r) => n + r.aantal, 0);
+    if (eb) ok('Energiebelasting kWh = afname − teruglevering (meter)', r2(eb), meterSom(/^Elektriciteit/i) - meterSom(/^Productie/i), 0.5);
+  }
+  const term = f.termijnen.reduce((n, t) => n + t.teVerrekenen, 0);
+  const sTerm = f.samenvatting.find(s => /^Termijn/i.test(s.label));
+  if (f.termijnen.length && sTerm) ok('Som termijnen = termijnfacturen', r2(term), -sTerm.incl, 0.011);
+  const sJaar = f.samenvatting.find(s => /afrekening elektriciteit/i.test(s.label)), sRest = f.samenvatting.find(s => /^Restant/i.test(s.label));
+  if (sJaar && f.totalen.incl != null) ok('Samenvatting = totaal specificatie', sJaar.incl, f.totalen.incl, 0.011);
+  if (sJaar && sTerm && sRest) ok('Afrekening + termijnen = restant', r2(sJaar.incl + sTerm.incl), sRest.incl, 0.011);
+  return {maanden: lijst, labels, jaarregels, controles: c};
+}
+
+
+(function () {
+  'use strict';
+  if (window.__beFactuurchecker) return; window.__beFactuurchecker = true;
+  const HASH = '#factuurchecker', OPSLAG = 0.019965, OPSLAG_EX = 0.0165, OPSLAG_KEY = 'be_factuurchecker_v1';
+  const euro = (v, d) => Number.isFinite(v) ? (v < 0 ? '−' : '') + '€ ' + Math.abs(v).toLocaleString('nl-NL', {minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2}) : '—';
+  const kwh = v => Number.isFinite(v) ? Math.round(v).toLocaleString('nl-NL') : '—';
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
+  const MND = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  const dNL = iso => iso ? iso.slice(8, 10) + '-' + iso.slice(5, 7) + '-' + iso.slice(0, 4) : '';
+  const dagVoor = iso => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+  const maandNaam = (m, van, tot) => { const n = MND[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4); const vol = van.slice(8) === '01' && tot.slice(8) === '01'; return vol ? n : n + ' <small>(' + +van.slice(8) + '–' + +dagVoor(tot).slice(8) + ')</small>'; };
+
+  let facturen = [];
+  try { facturen = JSON.parse(localStorage.getItem(OPSLAG_KEY) || '[]'); if (!Array.isArray(facturen)) facturen = []; } catch (_) { facturen = []; }
+  const bewaar = () => { try { localStorage.setItem(OPSLAG_KEY, JSON.stringify(facturen)); } catch (_) {} };
+  const dash = new Map(); // nummer → {bezig, fout, maanden: {maand:{imp,exp,buy,sell,dagen}}}
+
+  function klant() {
+    const ok = id => !!id && !/^(?:account|results|current-history|current-prices|undefined|null)$/i.test(id);
+    const m = location.pathname.match(/^\/customer\/([^/]+)(?:\/|$)/);
+    if (m && ok(m[1])) return m[1];
+    try { const l = localStorage.getItem('be_laatste_installatie'); if (ok(l)) return l; } catch (_) {}
+    return null;
+  }
+
+  let root, shadow, opened = false, link = null;
+  function bouw() {
+    root = document.createElement('div'); root.id = 'be-factuurchecker'; root.hidden = true;
+    root.style.cssText = 'position:fixed;top:0;right:0;bottom:0;left:0;z-index:1040;overflow:auto;overscroll-behavior:contain';
+    shadow = root.attachShadow({mode: 'open'});
+    shadow.innerHTML = `<style>
+      :host{--bg:#f6f5f9;--paper:#fff;--ink:#1f1d24;--muted:#6b6875;--line:#e4e1ea;--purple:#65419d;--ok:#1f8a4c;--warn:#b7791f;--bad:#c53030}
+      :host([data-dark]){--bg:#15141a;--paper:#1f1d26;--ink:#ece9f3;--muted:#a19dac;--line:#34313d}
+      *{box-sizing:border-box}
+      .wrap{min-height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px 28px 60px}
+      h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:0} h3{font-size:13px;margin:18px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+      .sub{color:var(--muted);margin:0 0 18px}
+      .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);background:var(--paper);cursor:pointer}
+      .drop.over{border-color:var(--purple);color:var(--purple)} .drop.klein{padding:10px}
+      .kaart{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:16px}
+      .kop{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap} .kop .meta{color:var(--muted)} .kop .acties{margin-left:auto;display:flex;gap:8px}
+      button{font:inherit;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:8px;padding:5px 10px;cursor:pointer}
+      button.prim{background:var(--purple);border-color:var(--purple);color:#fff} button:disabled{opacity:.5;cursor:default}
+      .kern{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px} .kern div{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:170px}
+      .kern small{display:block;color:var(--muted);font-size:12px} .kern b{font-size:17px}
+      .tabel{overflow-x:auto} table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+      th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;vertical-align:top}
+      th:first-child,td:first-child{text-align:left} th{font-size:12px;color:var(--muted);font-weight:600}
+      th.groep{text-align:center;border-bottom:2px solid var(--line)} td small,th small{color:var(--muted);font-weight:400}
+      td .t{display:block;font-size:11px;color:var(--muted)} tr.som td{font-weight:700;border-top:2px solid var(--line)}
+      .links{text-align:left!important}
+      ul.ctl{list-style:none;padding:0;margin:0;columns:2 340px} ul.ctl li{padding:2px 0;break-inside:avoid}
+      .s{display:inline-block;width:18px;font-weight:700} .s.ok{color:var(--ok)} .s.afronding{color:var(--warn)} .s.fout{color:var(--bad)}
+      .d{color:var(--muted);font-size:12px} .neg{color:var(--bad)} .pos{color:var(--ok)}
+      .noot{color:var(--muted);font-size:12px;margin-top:6px} .fout{color:var(--bad)}
+      details summary{cursor:pointer;margin-top:4px} summary.ctlkop{font-weight:600} details ul{margin-top:8px}
+      .af{color:var(--bad)!important} .balken{border:1px solid var(--line);border-radius:10px;overflow:hidden} .balk summary,.balk.tot,.balk.kopr{display:grid;grid-template-columns:minmax(140px,1fr) 1.4fr 100px 120px 90px 190px;gap:10px;align-items:center;padding:8px 12px;list-style:none;cursor:pointer;border-bottom:1px solid var(--line)} .balk summary::-webkit-details-marker{display:none} .balk.tot{font-weight:700;cursor:default;border-bottom:0} .bb{position:relative;height:12px;background:linear-gradient(var(--line),var(--line)) 50% 0/1px 100% no-repeat} .bb i{position:absolute;top:0;bottom:0;border-radius:3px} .kost{background:#d9534f;fill:#d9534f} .teg{background:#2f9e5b;fill:#2f9e5b} .bw{text-align:right;font-variant-numeric:tabular-nums} .balk.kopr{font-size:11px;color:var(--muted);font-weight:600;cursor:default;text-transform:uppercase;letter-spacing:.03em} .balk.kopr span:nth-child(n+3){text-align:right} .balk.kopr span:last-child{text-align:left} .bo{font-size:12.5px;white-space:nowrap} ul.regels{columns:1} ul.regels li{padding:3px 0;color:var(--muted);font-size:12.5px} .bb.mini{display:block;height:10px;width:130px} table.mnd td{vertical-align:middle} .bd{padding:4px 12px 10px;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line)} .bd p{margin:4px 0} svg.mnd{width:100%;max-width:760px;height:auto;color:var(--ink)} svg.mnd text{font-size:10px;fill:var(--muted)} .oordeel{margin:14px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px} .okk{color:var(--ok)} .s.methode{color:var(--purple)} .s.onb{color:var(--muted)} table.posten td:first-child{white-space:normal;max-width:520px} table.opbouw td:nth-child(2){text-align:right} .kern b{font-size:20px}
+    </style>
+    <div class="wrap">
+      <h1>Fact(uur)checker <small style="font-size:11px;font-weight:500">6.8.3.4</small></h1>
+      <p class="sub">Leest een Balans-factuur uit en legt hem per maand naast je dashboard.</p>
+      <div class="drop" id="drop">Sleep een Balans-factuur (pdf) hierheen of klik om te kiezen<input id="file" type="file" accept="application/pdf,.pdf" multiple hidden></div>
+      <div id="fout" class="fout"></div>
+      <div id="lijst"></div>
+    </div>`;
+    document.body.appendChild(root);
+    const drop = shadow.getElementById('drop'), file = shadow.getElementById('file');
+    drop.addEventListener('click', () => file.click());
+    file.addEventListener('change', () => { lees([...file.files]); file.value = ''; });
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); lees([...e.dataTransfer.files]); });
+    shadow.addEventListener('click', e => {
+      const b = e.target.closest('button[data-act]'); if (!b) return;
+      const nr = b.dataset.nr;
+      if (b.dataset.act === 'weg') { facturen = facturen.filter(f => f.nummer !== nr); dash.delete(nr); bewaar(); teken(); }
+      if (b.dataset.act === 'dash') vergelijk(nr);
+    });
+    thema(); document.addEventListener('be-dark-change', thema);
+  }
+  function thema() { if (!root) return; const d = document.documentElement.getAttribute('data-be-dark') === 'aan'; root.toggleAttribute('data-dark', d); }
+
+  async function lees(files) {
+    const fout = shadow.getElementById('fout'); fout.textContent = '';
+    for (const file of files) {
+      try {
+        if (!/pdf$/i.test(file.type) && !/\.pdf$/i.test(file.name)) throw Error('geen pdf');
+        const f = beFactuurLees(await bePdfRegels(await file.arrayBuffer()));
+        if (!f.nummer || !f.secties.length) throw Error('geen Balans-factuurspecificatie gevonden');
+        f.bestand = file.name; f.ingelezen = new Date().toISOString();
+        facturen = facturen.filter(x => x.nummer !== f.nummer).concat(f);
+        facturen.sort((a, b) => (a.periode?.van || '') < (b.periode?.van || '') ? -1 : 1);
+      } catch (e) { fout.textContent += file.name + ': ' + e.message + '. '; console.warn('[Fact(uur)checker]', e); }
+    }
+    bewaar(); teken();
+  }
+
+  async function haalMaand(id, maand) {
+    const url = new URL('/customer/' + encodeURIComponent(id) + '/results-v2-api/', location.origin);
+    url.searchParams.set('interval', 'month'); url.searchParams.set('period', maand);
+    url.searchParams.set('include_vat', '1'); url.searchParams.set('include_delivery_cost', '1');
+    for (let poging = 0; poging < 3; poging++) {
+      const res = await fetch(url.href, {credentials: 'same-origin'});
+      if (res.status === 429) { const w = Math.min(60, +(res.headers.get('Retry-After') || 10)); await new Promise(r => setTimeout(r, w * 1000)); continue; }
+      if (res.status === 400) return null;
+      if (!res.ok) throw Error('HTTP ' + res.status + ' voor ' + maand);
+      return res.json();
+    }
+    throw Error('Balans blijft om wachten vragen (429)');
+  }
+  const bool = v => v === true || v === 1 || v === '1';
+  async function vergelijk(nr) {
+    const f = facturen.find(x => x.nummer === nr), id = klant(); if (!f) return;
+    const st = {bezig: true, fout: '', maanden: {}, dagen: []}; dash.set(nr, st); teken();
+    if (!id) { st.bezig = false; st.fout = 'Installatie-id onbekend: open eerst Actueel of Resultaten.'; teken(); return; }
+    const a = beFactuurAnalyse(f);
+    try {
+      for (const m of a.maanden) {
+        const j = await haalMaand(id, m.maand);
+        const r = {imp: 0, exp: 0, buy: 0, sell: 0, dagen: 0, ontbreekt: 0};
+        if (j && Array.isArray(j.series)) {
+          const vat = bool(j.pricing?.include_vat), lev = bool(j.pricing?.include_delivery_cost);
+          for (const s of j.series) {
+            const d = s.date || s.day; if (!d || d < m.van || d >= m.tot) continue;
+            if (![s.import_kwh, s.export_kwh, s.total_buy_eur, s.total_sell_eur].every(Number.isFinite)) { r.ontbreekt++; continue; }
+            let buy = s.total_buy_eur, sell = s.total_sell_eur;
+            if (lev) { buy -= s.import_kwh * (vat ? OPSLAG : OPSLAG_EX); sell += s.export_kwh * (vat ? OPSLAG : OPSLAG_EX); }
+            if (!vat) { buy *= 1.21; sell *= 1.21; }
+            r.imp += s.import_kwh; r.exp += s.export_kwh; r.buy += buy; r.sell += sell; r.dagen++;
+            st.dagen.push({d, imp: s.import_kwh, exp: s.export_kwh, pv: s.pv_estimated_kwh, pvBekend: Number.isFinite(s.pv_estimated_kwh)});
+          }
+        }
+        const totDagen = Math.round((new Date(m.tot) - new Date(m.van)) / 864e5);
+        r.verwacht = totDagen; st.maanden[m.maand] = r; teken();
+        await new Promise(res => setTimeout(res, 350));
+      }
+    } catch (e) { st.fout = e.message; }
+    st.bezig = false; teken();
+  }
+
+  // ---- Hoe het hoort: zelfde regels als Financieel 7.0 (wet + Balans-contract) ----
+  function instellingen() {
+    let s = {}; try { s = JSON.parse(localStorage.getItem('be_overzicht_settings_v1') || '{}') || {}; } catch (_) {}
+    const num = (o, k, d) => (o && Number.isFinite(+o[k]) && +o[k] > 0) ? +o[k] : d;
+    return {
+      eb: y => num(s.rates, y, {2025: 0.10154, 2026: 0.09161, 2027: 0.08802}[y]) * 1.21,
+      verm: y => num(s.credit, y, {2025: 524.95, 2026: 519.80, 2027: 519.58}[y]) * 1.21,
+      net: y => num(s.networkRates, y, {2025: 1.30390, 2026: 1.30365}[y] || num(s, 'network', 1.30365)),
+      lev: num(s, 'supplier', 0.21839), opslag: OPSLAG
+    };
+  }
+  const jaarDagen = y => ((y % 4 === 0 && y % 100) || y % 400 === 0) ? 366 : 365;
+  function dagenPerJaar(van, tot) { const o = {}; for (let d = new Date(van + 'T12:00:00Z'); d.toISOString().slice(0, 10) < tot; d.setUTCDate(d.getUTCDate() + 1)) { const y = d.getUTCFullYear(); o[y] = (o[y] || 0) + 1; } return o; }
+  function model(f, ds) {
+    if (!f.periode || !ds || ds.bezig || !ds.dagen.length) return null;
+    const I = instellingen(), dpj = dagenPerJaar(f.periode.van, f.periode.tot), dagen = ds.dagen;
+    const totDagen = Object.values(dpj).reduce((n, x) => n + x, 0);
+    if (dagen.length < totDagen) return {onvolledig: totDagen - dagen.length};
+    const sum = (k, fn) => dagen.reduce((n, x) => n + (fn ? fn(x) : x[k]), 0);
+    const imp = sum('imp'), exp = sum('exp');
+    // Saldering: duurzaam per dag = min(teruglevering, geschatte pv); overig max 5.000 kWh (art. 2.31 Energiewet).
+    const bekend = dagen.filter(x => x.pvBekend), kE = bekend.reduce((n, x) => n + x.exp, 0), kR = bekend.reduce((n, x) => n + Math.min(x.exp, Math.max(0, x.pv)), 0), share = kE > 0 ? kR / kE : 0;
+    dagen.forEach(x => { x.ren = x.pvBekend ? Math.min(x.exp, Math.max(0, x.pv)) : x.exp * share; x.non = x.exp - x.ren; });
+    const ren = sum('ren'), non = sum('non'), nonMee = Math.min(5000, non), nonF = non > 0 ? nonMee / non : 1;
+    const credit = Math.min(imp, ren + nonMee), belastbaar = imp - credit;
+    // EB tijdsevenredig en per werkelijk verbruik per tariefperiode.
+    const jaren = Object.keys(dpj);
+    const ebTijd = belastbaar * jaren.reduce((n, y) => n + dpj[y] * I.eb(y), 0) / totDagen;
+    const w = {}; let wt = 0; jaren.forEach(y => { const dy = dagen.filter(x => x.d.slice(0, 4) === y); w[y] = Math.max(0, dy.reduce((n, x) => n + x.imp - (x.ren + x.non * nonF), 0)); wt += w[y]; });
+    const werkelijkKwh = {}; jaren.forEach(y => werkelijkKwh[y] = wt > 0 ? belastbaar * w[y] / wt : 0);
+    const ebWerk = jaren.reduce((n, y) => n + werkelijkKwh[y] * I.eb(y), 0);
+    return {
+      imp, exp, ren, non, nonMee, credit, belastbaar, ebTijd, ebWerk, werkelijkKwh, dpj,
+      buy: Object.values(ds.maanden).reduce((n, m) => n + m.buy, 0), sell: Object.values(ds.maanden).reduce((n, m) => n + m.sell, 0),
+      opslagAf: imp * I.opslag, opslagTerug: exp * I.opslag,
+      verm: jaren.reduce((n, y) => n + dpj[y] / jaarDagen(+y) * I.verm(y), 0),
+      net: jaren.reduce((n, y) => n + dpj[y] * I.net(y), 0),
+      lev: totDagen * I.lev, totDagen
+    };
+  }
+  // Posten van de factuur, in gewone taal, naast hoe het hoort. + verschil = factuur ongunstiger voor jou.
+  function posten(f, M) {
+    const r2 = x => Math.round(x * 100) / 100;
+    const sec = re => f.secties.filter(s => re.test(s.naam));
+    const som = (secs, fn) => r2(secs.reduce((n, s) => n + s.regels.filter(r => !fn || fn(r)).reduce((x, r) => x + r.subtotaal, 0), 0));
+    const kwhS = (secs, fn) => secs.reduce((n, s) => n + s.regels.filter(r => !fn || fn(r)).reduce((x, r) => x + Math.abs(r.aantal), 0), 0);
+    const markt = r => /^marktprijs$/i.test(r.label);
+    const lev = sec(/^Levering Elektriciteit$/i), prod = sec(/^Productie Elektriciteit$/i), heff = sec(/heffingen/i);
+    const ebR = r => /belasting/i.test(r.label) && /kwh/i.test(r.eenheid);
+    const P = [];
+    const levE = som(lev), prodE = som(prod), levNc = som(lev, r => !markt(r)), prodNc = som(prod, r => !markt(r));
+    P.push({naam: 'Energie (afname − teruglevering)', wat: 'Stroomprijs per maand. Afname ' + kwh(kwhS(lev, markt)) + ' kWh, teruglevering ' + kwh(kwhS(prod, markt)) + ' kWh.' + (levNc || prodNc ? ' Vanaf de maand met “Netcorrectie”-regels: marktprijs + netcorrectie samen is wat je dashboard als inkoop/verkoop toont.' : ''),
+      factuur: r2(levE + prodE), hoort: M ? r2(M.buy - M.sell) : null, bron: 'dashboard Resultaten', soort: 'data'});
+    const oa = sec(/^Opslag .*Levering$/i), op = sec(/^Opslag .*Productie$/i);
+    if (oa.length || op.length) P.push({naam: 'Inkoopvergoeding Balans', wat: 'Vaste opslag per kWh op afname én teruglevering (contract: € 0,0165 excl. btw).', factuur: r2(som(oa) + som(op)), hoort: M ? r2(M.opslagAf + M.opslagTerug) : null, bron: 'contract × kWh'});
+    const eb = heff.flatMap(s => s.regels.filter(ebR)), ebKwh = eb.reduce((n, r) => n + r.aantal, 0), ebEur = r2(eb.reduce((n, r) => n + r.subtotaal, 0));
+    if (eb.length) {
+      P.push({naam: 'Salderen (kWh waarover energiebelasting)', wat: 'Afname min teruglevering die mag meetellen: duurzaam onbeperkt, overig max 5.000 kWh, nooit meer dan de afname (art. 50 lid 2 Wbm, art. 2.31 Energiewet).' + (M && !M.onvolledig ? ' Duurzaam ' + kwh(M.ren) + ' kWh, overig ' + kwh(M.non) + ' kWh.' : ''), factuur: ebKwh, hoort: M && !M.onvolledig ? M.belastbaar : null, eenheid: 'kWh'});
+      const p = {naam: 'Energiebelasting', wat: 'Over ' + kwh(ebKwh) + ' kWh. ' + eb.map(r => kwh(r.aantal) + ' kWh × ' + euro(r.tarief, 5) + ' (' + dNL(r.van) + '–' + dNL(dagVoor(r.tot)) + ')').join('; ') + '.', factuur: ebEur, hoort: M && !M.onvolledig ? r2(M.ebTijd) : null, bron: 'tijdsevenredig'};
+      if (M && !M.onvolledig && Math.abs(ebEur - M.ebWerk) <= Math.max(0.5, Math.abs(ebEur - M.ebTijd) / 10) && Math.abs(ebEur - M.ebTijd) > 0.5) { p.methode = 'Balans verdeelt de belastbare kWh over de jaren naar werkelijk verbruik per tariefperiode (' + Object.keys(M.werkelijkKwh).map(y => y + ': ' + kwh(M.werkelijkKwh[y]) + ' kWh').join(', ') + '). Het Handboek Milieubelastingen staat verschillende methoden toe; tijdsevenredig is bij stroom gebruikelijk.'; }
+      P.push(p);
+      const rest = heff.flatMap(s => s.regels.filter(r => !ebR(r)));
+      if (rest.length) P.push({naam: 'Belastingvermindering (heffingskorting)', wat: 'Vast bedrag per jaar per aansluiting, naar dagen: ' + rest.map(r => r.aantal + ' dagen × ' + euro(r.tarief, 5)).join(' + ') + '.', factuur: r2(rest.reduce((n, r) => n + r.subtotaal, 0)), hoort: M && !M.onvolledig ? r2(-M.verm) : null, bron: 'wettelijk jaarbedrag'});
+    }
+    const nb = sec(/systeembeheer|netbeheer/i);
+    if (nb.length) P.push({naam: 'Netbeheer', wat: 'Doorberekend tarief van je netbeheerder (' + nb.map(s => s.naam.replace(/^.*\(|\).*$/g, '')).join(', ') + '), per dag.', factuur: som(nb), hoort: M && !M.onvolledig ? r2(M.net) : null, bron: 'ingesteld netbeheertarief'});
+    const vk = sec(/vaste leveringskosten/i);
+    if (vk.length) P.push({naam: 'Vaste leveringskosten', wat: 'Vast bedrag per dag van Balans.', factuur: som(vk), hoort: M && !M.onvolledig ? r2(M.lev) : null, bron: 'contract'});
+    const bekend = new Set([...lev, ...prod, ...oa, ...op, ...heff, ...nb, ...vk]);
+    f.secties.filter(s => !bekend.has(s)).forEach(s => P.push({naam: s.naam, wat: 'Niet herkende post.', factuur: som([s]), hoort: null}));
+    P.forEach(p => {
+      if (p.hoort == null) { p.oordeel = 'onbekend'; return; }
+      const d = p.eenheid === 'kWh' ? p.factuur - p.hoort : r2(p.factuur - p.hoort); p.verschil = d;
+      const tol = p.eenheid === 'kWh' ? 2 : 0.011, klein = p.eenheid === 'kWh' ? 10 : Math.max(0.5, Math.abs(p.factuur) * 0.002);
+      if (Math.abs(d) <= tol) p.oordeel = 'ok';
+      else if (p.methode) p.oordeel = 'methode';
+      else if (Math.abs(d) <= klein) p.oordeel = 'afronding';
+      else p.oordeel = d > 0 ? 'nadeel' : 'voordeel';
+      if (p.eenheid === 'kWh' && p.oordeel === 'nadeel') p.nadeelEur = null;
+    });
+    return P;
+  }
+
+  function teken() {
+    if (!shadow) return;
+    shadow.getElementById('drop').classList.toggle('klein', facturen.length > 0);
+    shadow.getElementById('lijst').innerHTML = facturen.map(kaart).join('');
+  }
+  function kaart(f) {
+    const a = beFactuurAnalyse(f), sam = f.samenvatting, ds = dash.get(f.nummer);
+    if (!ds && klant()) setTimeout(() => vergelijk(f.nummer), 0);
+    const per = f.periode ? dNL(f.periode.van) + ' t/m ' + dNL(dagVoor(f.periode.tot)) : '';
+    const sJaar = sam.find(x => /afrekening elektriciteit/i.test(x.label)), sTerm = sam.find(x => /^Termijn/i.test(x.label)), sRest = sam.find(x => /^Restant/i.test(x.label));
+    let h = `<div class="kaart"><div class="kop"><h2>${esc(f.type ? f.type[0] + f.type.slice(1).toLowerCase() : 'Factuur')} ${esc(f.nummer)}</h2>
+      <span class="meta">${per} · factuurdatum ${dNL(f.datum)}</span>
+      <span class="acties"><button data-act="weg" data-nr="${esc(f.nummer)}" title="Factuur verwijderen">×</button></span></div>`;
+
+    // 1. Uitkomst
+    h += '<div class="kern">';
+    if (sJaar) h += `<div><small>Uitkomst periode ${sJaar.incl < 0 ? '(tegoed voor jou)' : '(kosten)'}</small><b>${euro(Math.abs(sJaar.incl))}</b></div>`;
+    if (sTerm) h += `<div><small>Al betaald aan termijnen</small><b>${euro(-sTerm.incl)}</b></div>`;
+    if (sRest) h += `<div><small>${sRest.incl < 0 ? 'Je krijgt terug' : 'Je moet bijbetalen'}</small><b>${euro(Math.abs(sRest.incl))}</b></div>`;
+    h += '</div>';
+
+    // 2. Posten: factuur naast hoe het hoort
+    const M = model(f, ds), P = posten(f, M), DREMPEL = 5;
+    const lbl = {ok: ['✓', 'klopt', 'ok'], afronding: ['≈', 'afronding', 'afronding'], methode: ['↔', 'toegestane andere methode', 'methode'], nadeel: ['✗', 'in je nadeel', 'fout'], voordeel: ['+', 'in je voordeel', 'ok'], onbekend: ['?', 'niet te controleren', 'onb']};
+    const nadelig = P.filter(p => p.oordeel === 'nadeel' && (p.eenheid === 'kWh' || p.verschil >= DREMPEL));
+    const methode = P.filter(p => p.oordeel === 'methode');
+    if (ds && ds.bezig) h += '<p class="noot">Dashboardgegevens worden gelezen…</p>';
+    else if (M && M.onvolledig) h += `<p class="fout">Dashboard mist ${M.onvolledig} dag(en) in deze periode; vergelijking is onvolledig.</p>`;
+    else if (M) h += '<div class="oordeel">' + (nadelig.length ? `<b class="fout">✗ ${nadelig.length} afwijking(en) in je nadeel boven € ${DREMPEL}:</b> ` + nadelig.map(p => esc(p.naam) + ' ' + (p.eenheid === 'kWh' ? kwh(p.verschil) + ' kWh' : euro(p.verschil))).join(' · ') : `<b class="okk">✓ Geen afwijkingen in je nadeel boven € ${DREMPEL}.</b>`) +
+      (methode.length ? `<br><span class="d">↔ ${methode.map(p => esc(p.naam) + ': andere toegestane methode, ' + (p.verschil > 0 ? euro(p.verschil) + ' duurder' : euro(-p.verschil) + ' goedkoper') + ' dan tijdsevenredig').join(' · ')}</span>` : '') + '</div>';
+    // Opbouw als balken: één regel per post, details bij aanklikken.
+    const sal = P.find(p => p.eenheid === 'kWh'), rijen = P.filter(p => p.eenheid !== 'kWh');
+    const maxAbs = Math.max(1, ...rijen.map(p => Math.abs(p.factuur)));
+    const ic = {ok: ['✓', 'ok', 'klopt'], afronding: ['✓', 'ok', 'klopt (afronding)'], methode: ['↔', 'methode', 'andere toegestane methode'], nadeel: ['✗', 'fout', 'in je nadeel'], voordeel: ['✓', 'ok', 'in je voordeel'], onbekend: ['?', 'onb', 'niet te controleren']};
+    h += `<h3>Zo komt het bedrag tot stand</h3><div class="balken"><div class="balk kopr"><span>Post</span><span></span><span>Nota</span><span>Volgens de regels</span><span>Verschil</span><span>Oordeel</span></div>`;
+    let tH = 0, alleH = true;
+    rijen.forEach(p => {
+      const v = p.factuur, w = Math.abs(v) / maxAbs * 50, I = ic[p.oordeel];
+      const det = [p.wat, p.methode && '↔ ' + p.methode, p === rijen.find(x => x.naam === 'Energiebelasting') && sal ? 'Salderen: ' + sal.wat + ' Op de nota ' + kwh(sal.factuur) + ' kWh' + (sal.hoort != null ? ', volgens de regels ' + kwh(sal.hoort) + ' kWh.' : '.') : null,
+        p.hoort != null ? 'Nota ' + euro(p.factuur) + ' · volgens de regels ' + euro(p.hoort) + ' (' + p.bron + ') · verschil ' + (p.verschil > 0 ? '+' : '') + euro(p.verschil) + '.' : null].filter(Boolean);
+      if (p.hoort == null) alleH = false; else tH += p.hoort;
+      h += `<details class="balk"><summary><span class="bn">${esc(p.naam.replace(/ \(.*\)$/, ''))}</span><span class="bb"><i style="${v >= 0 ? 'left:50%' : 'right:50%'};width:${w}%" class="${v >= 0 ? 'kost' : 'teg'}"></i></span><span class="bw">${euro(v)}</span><span class="bw d">${p.hoort == null ? '—' : euro(p.hoort)}</span><span class="bw d">${p.verschil == null ? '' : (p.verschil > 0 ? '+' : '') + euro(p.verschil)}</span><span class="bo"><span class="s ${I[1]}">${I[0]}</span>${I[2]}</span></summary><div class="bd">${det.map(t => `<p>${esc(t)}</p>`).join('')}</div></details>`;
+    });
+    h += `<div class="balk tot"><span class="bn">Uitkomst</span><span class="bb"></span><span class="bw">${euro(f.totalen.incl)}</span><span class="bw">${alleH ? euro(tH) : '—'}</span><span class="bw">${alleH ? (f.totalen.incl - tH > 0 ? '+' : '') + euro(f.totalen.incl - tH) : ''}</span><span></span></div></div>`;
+    h += `<p class="noot">Rood = kosten, groen = in je voordeel. Verschil + = nota ongunstiger voor jou. Klik op een post voor uitleg.</p>`;
+
+    // Per maand: tabel met inline balk en afwijking t.o.v. dashboard (altijd zichtbaar).
+    const mm = a.maanden, mx = Math.max(1, ...mm.map(m => Math.abs(m.saldo)));
+    const dz = m => ds && ds.maanden[m.maand] && ds.maanden[m.maand].dagen ? ds.maanden[m.maand] : null;
+    const dl = (v, tol, f) => !Number.isFinite(v) ? '' : Math.abs(v) <= tol ? '<span class="d">0</span>' : `<span class="${v > 0 ? 'af' : 'okk'}">${v > 0 ? '+' : '−'}${f(Math.abs(v))}</span>`;
+    const onder = (dv, f) => dv == null ? '' : `<span class="t">dashboard ${f(dv)}</span>`;
+    h += `<h3>Per maand</h3><div class="tabel"><table class="mnd"><thead><tr><th>Maand</th><th>Afgenomen</th><th>Teruggeleverd</th><th>Kosten afname</th><th>Opbrengst teruglevering</th><th>Netto stroom</th><th class="links" style="min-width:130px"></th><th>Afwijking</th></tr></thead><tbody>`;
+    const T = {ak: 0, tk: 0, ae: 0, te: 0, dak: 0, dtk: 0, dae: 0, dte: 0, n: 0};
+    mm.forEach(m => {
+      const d = dz(m), kost = m.afnameEur, opb = -m.terugEur, net = kost - opb, w = Math.abs(net) / mx * 50;
+      T.ak += m.afnameKwh; T.tk += m.terugKwh; T.ae += kost; T.te += opb;
+      if (d) { T.dak += d.imp; T.dtk += d.exp; T.dae += d.buy; T.dte += d.sell; T.n++; }
+      const afw = d ? net - (d.buy - d.sell) : null;
+      h += `<tr><td>${maandNaam(m.maand, m.van, m.tot)}</td>
+        <td>${kwh(m.afnameKwh)} kWh${onder(d && d.imp, v => kwh(v))}</td>
+        <td>${kwh(m.terugKwh)} kWh${onder(d && d.exp, v => kwh(v))}</td>
+        <td>${euro(kost)}${onder(d && d.buy, euro)}</td>
+        <td>${euro(opb)}${onder(d && d.sell, euro)}</td>
+        <td><b>${euro(net)}</b>${onder(d && d.buy - d.sell, euro)}</td>
+        <td class="links"><span class="bb mini"><i style="${net >= 0 ? 'left:50%' : 'right:50%'};width:${w}%" class="${net >= 0 ? 'kost' : 'teg'}"></i></span></td>
+        <td>${d ? dl(afw, 0.5, euro) + `<span class="t">kWh ${dl(m.afnameKwh - d.imp, 1.5, v => kwh(v))} / ${dl(m.terugKwh - d.exp, 1.5, v => kwh(v))}</span>` : (ds && ds.bezig ? '<span class="d">…</span>' : '—')}</td></tr>`;
+    });
+    const tok = T.n === mm.length;
+    h += `<tr class="som"><td>Totaal</td><td>${kwh(T.ak)} kWh${tok ? onder(T.dak, v => kwh(v)) : ''}</td><td>${kwh(T.tk)} kWh${tok ? onder(T.dtk, v => kwh(v)) : ''}</td><td>${euro(T.ae)}${tok ? onder(T.dae, euro) : ''}</td><td>${euro(T.te)}${tok ? onder(T.dte, euro) : ''}</td><td>${euro(T.ae - T.te)}${tok ? onder(T.dae - T.dte, euro) : ''}</td><td></td><td>${tok ? dl((T.ae - T.te) - (T.dae - T.dte), 0.5, euro) : ''}</td></tr></tbody></table></div>`;
+    h += `<p class="noot">Zwart = nota (marktprijs + netcorrectie, incl. btw, zonder inkoopvergoeding). Grijs = dashboard Resultaten op dezelfde basis. Afwijking = nota − dashboard op netto stroom: <span class="af">rood +</span> = nota ongunstiger, <span class="okk">groen −</span> = nota gunstiger; daaronder het kWh-verschil afname / teruglevering. Kleiner dan € 0,50 of 1,5 kWh = 0.</p>`;
+    if (ds?.fout) h += `<p class="fout">Dashboard: ${esc(ds.fout)}</p>`;
+
+    // 4. Controles, ingeklapt
+    const symbool = {ok: '✓', afronding: '≈', fout: '✗'};
+    const n = {ok: 0, afronding: 0, fout: 0}; a.controles.forEach(c => n[c.status]++);
+    const kop = n.fout ? `<span class="s fout">✗</span>${n.fout} controle(s) kloppen niet` : `<span class="s ok">✓</span>De factuur rekent intern goed` + (n.afronding ? ` <span class="d">(${n.afronding}× afrondingsverschil van een paar cent)</span>` : '');
+    const I2 = instellingen(), jr = f.periode ? Object.keys(dagenPerJaar(f.periode.van, f.periode.tot)) : [];
+    h += `<h3>Verificatie</h3><p class="ctlkop">${kop}</p><ul class="ctl">` + a.controles.map(c => {
+      const w = c.tekst ? c.tekst : (c.status === 'ok' ? '' : `${fmt(c.a)} vs ${fmt(c.b)}`);
+      return `<li><span class="s ${c.status}">${symbool[c.status]}</span>${esc(c.naam)}${w ? ` <span class="d">${esc(w)}</span>` : ''}</li>`;
+    }).join('') + '</ul>';
+    const rf = a.controles.find(c => c.fouten && c.fouten.length);
+    if (rf) h += '<div class="tabel"><table><thead><tr><th>Regel</th><th>Aantal × tarief</th><th>Berekend</th><th>Factuur</th><th>Verschil</th></tr></thead><tbody>' +
+      rf.fouten.map(x => `<tr><td>${esc(x.label)} <small>${dNL(x.van)}</small></td><td>${x.aantal.toLocaleString('nl-NL')} × ${euro(x.tarief, 5)}</td><td>${euro(x.berekend)}</td><td>${euro(x.factuur)}</td><td>${euro(x.factuur - x.berekend)}</td></tr>`).join('') + '</tbody></table></div>';
+    h += `<details><summary>Gebruikte regels voor “volgens de regels”</summary><ul class="ctl regels">
+      <li>Salderen over de hele contractperiode, maximaal de afname; duurzaam onbeperkt, overig max 5.000 kWh (art. 50 lid 2 Wbm, art. 2.31 Energiewet). Duurzaam per dag = min(teruglevering, geschatte pv-opwek).</li>
+      <li>Energiebelasting incl. btw: ${jr.map(y => y + ' ' + euro(I2.eb(y), 5) + '/kWh').join(', ')}; verdeling over jaren tijdsevenredig (Handboek Milieubelastingen 2026, tariefwijziging binnen een verbruiksperiode).</li>
+      <li>Belastingvermindering incl. btw: ${jr.map(y => y + ' ' + euro(I2.verm(y)) + '/jaar').join(', ')}, naar dagen.</li>
+      <li>Netbeheer: ${jr.map(y => y + ' ' + euro(I2.net(y), 5) + '/dag').join(', ')} (instelling Financieel).</li>
+      <li>Vaste leveringskosten ${euro(I2.lev, 5)}/dag; inkoopvergoeding € 0,0165 excl. btw per kWh afname en teruglevering (contract).</li>
+      <li>Energie per maand: dashboard Resultaten, incl. btw, zonder inkoopvergoeding, alleen de dagen binnen de factuurperiode.</li></ul></details>`;
+    return h + '</div>';
+  }
+  const r2 = x => Math.round(x * 100) / 100;
+  function fmt(v) { return Number.isFinite(v) ? (Math.abs(v) >= 100 && Number.isInteger(v) ? kwh(v) : euro(v)) : '—'; }
+
+  // Menu en openen/sluiten
+  function layout() {
+    if (!opened) return;
+    let left = 0;
+    const anker = link && link.isConnected ? link : document.querySelector('a[href*="/results"]');
+    let c = anker && anker.closest('nav,aside,.sidebar,.sidenav,#sidebar,.offcanvas,.nav');
+    while (innerWidth >= 768 && c && c !== document.body) { const r = c.getBoundingClientRect(); if (r.width > 80 && r.width < 440 && r.height > 180 && r.left < 120 && r.right < innerWidth * .6) left = Math.max(left, r.right); c = c.parentElement; }
+    root.style.left = Math.round(left) + 'px';
+  }
+  function open() {
+    if (!root) bouw();
+    opened = true; root.hidden = false; teken(); layout();
+    if (location.hash !== HASH) history.pushState(history.state, '', location.pathname + location.search + HASH);
+    if (link) { link.setAttribute('aria-current', 'page'); link.classList.add('active'); }
+  }
+  function close() {
+    if (!opened) return; opened = false; root.hidden = true;
+    if (link) { link.removeAttribute('aria-current'); link.classList.remove('active'); }
+  }
+  function menu() {
+    if (link && link.isConnected) return;
+    const fin = document.querySelector('a[data-be-financial-link]');
+    const anker = fin || [...document.querySelectorAll('a[href*="/results"]')].find(a => !a.closest('#be-energieoverzicht'));
+    if (!anker) return;
+    link = document.createElement('a'); link.href = HASH; link.setAttribute('data-be-factuur-link', '');
+    link.className = anker.className.replace(/\bactive\b/g, '').trim();
+    link.style.cssText = 'display:flex;align-items:center;gap:12px;white-space:normal';
+    link.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h3"/><path d="m14 17 1.5 1.5L19 15"/></svg><span>Fact(uur)checker</span>';
+    const ico = anker.querySelector('svg'); if (ico) { const s = link.querySelector('svg'); s.setAttribute('class', ico.getAttribute('class') || ''); }
+    link.addEventListener('click', e => { e.preventDefault(); open(); });
+    if (anker.parentElement.tagName === 'LI') { const li = document.createElement('li'); li.className = anker.parentElement.className.replace(/\bactive\b/g, '').trim(); li.appendChild(link); anker.parentElement.insertAdjacentElement('afterend', li); }
+    else anker.insertAdjacentElement('afterend', link);
+  }
+  document.addEventListener('click', e => { const a = e.target.closest && e.target.closest('a[href]'); if (opened && a && a !== link && !root.contains(a) && a.getAttribute('href') !== HASH) close(); }, true);
+  window.addEventListener('hashchange', () => { if (location.hash === HASH) open(); else close(); });
+  window.addEventListener('popstate', () => { if (location.hash === HASH) open(); else close(); });
+  window.addEventListener('resize', layout);
+  function start() { menu(); if (location.hash === HASH) open(); setInterval(() => { menu(); layout(); }, 1500); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
+    })();
   }
 
   function launch() {
@@ -16339,12 +17019,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
   </label>
   <div data-cap-kwh>
     <label>Totale capaciteit
-      <span class="be-cap-input"><input name="capacity" type="number" inputmode="decimal" min="0.01" max="1000" step="0.01" required><span class="be-cap-unit">kWh</span></span>
+      <span class="be-cap-input"><input name="capacity" type="number" inputmode="decimal" min="0.01" max="1000" step="any" required><span class="be-cap-unit">kWh</span></span>
     </label>
   </div>
   <div data-cap-fcc hidden>
     <label>Gemiddelde FCC
-      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="330" step="0.01"><span class="be-cap-unit">Ah</span></span>
+      <span class="be-cap-input"><input name="fccAh" type="number" inputmode="decimal" min="0.01" max="330" step="any"><span class="be-cap-unit">Ah</span></span>
     </label>
     <label>Aantal accu’s
       <span class="be-cap-input"><input name="packCount" type="number" inputmode="numeric" min="1" max="100" step="1"><span class="be-cap-unit">stuks</span></span>
