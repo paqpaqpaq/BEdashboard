@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.3.4 — 21 november 2026
+
+- Klein paars balkje bovenaan het dashboard als er op GitHub een nieuwere versie staat (Tampermonkey/Userscripts; vraagt één keer toegang tot raw.githubusercontent.com).
+
 ## 6.8.3.3 — 21 november 2026
 
 - Netaansluiting-schema: toont meteen de bekende prijs (met paarse stekker) in plaats van eerst "Prijs niet beschikbaar" tot Balans' volgende ronde.

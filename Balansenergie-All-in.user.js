@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      6.8.3.3
+// @version      6.8.3.4
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -21,6 +21,7 @@
 // @connect      api.tennet.eu
 // @connect      api.acc.tennet.eu
 // @connect      public.api.energyzero.nl
+// @connect      raw.githubusercontent.com
 // @connect      dataportal-api.nordpoolgroup.com
 // ==/UserScript==
 (function () {
@@ -472,8 +473,41 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.8.3.3'
+    '6.8.3.4'
   );
+
+  // 6.8.3.4: klein balkje bovenin als er op GitHub een nieuwere versie staat.
+  (function beUpdateMelding() {
+    var HUIDIG = '6.8.3.4', BASIS = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/';
+    var CACHE = 'be_update_check_v1', NEGEER = 'be_update_genegeerd_v1', UUR = 600000;
+    function vergelijk(a, b) {
+      a = String(a).split('.').map(Number); b = String(b).split('.').map(Number);
+      for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x > y ? 1 : -1; }
+      return 0;
+    }
+    function toon(v) {
+      if (!document.body || document.getElementById('be-update-balk') || localStorage.getItem(NEGEER) === v) return;
+      var d = document.createElement('div'); d.id = 'be-update-balk'; d.setAttribute('role', 'status');
+      d.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:10px;' +
+        'padding:6px 8px 6px 14px;border-radius:999px;background:#6B3FA0;color:#fff;font:600 13px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 6px 18px rgba(40,20,70,.25)';
+      var a = 'color:#fff;text-decoration:underline;text-underline-offset:2px';
+      d.innerHTML = '<span>Balansenergie All-in ' + v + ' is beschikbaar <span style="opacity:.75;font-weight:500">(je hebt ' + HUIDIG + ')</span></span>' +
+        '<a href="' + BASIS + 'Balansenergie-All-in.user.js" target="_blank" rel="noopener" style="' + a + '">Bijwerken</a>' +
+        '<a href="https://github.com/paqpaqpaq/BEdashboard/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style="' + a + ';font-weight:500">Wat is nieuw</a>' +
+        '<button type="button" aria-label="Verbergen" style="border:0;background:rgba(255,255,255,.18);color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font:600 14px/22px system-ui;padding:0">×</button>';
+      d.querySelector('button').addEventListener('click', function () { try { localStorage.setItem(NEGEER, v); } catch (e) {} d.remove(); });
+      document.body.appendChild(d);
+    }
+    // De pagina mag GitHub niet zelf benaderen (CSP); de userscript-kant haalt de versie op
+    // en zet hem in localStorage ('be_update_check_v1') met event 'be-update-check'.
+    function controleer() {
+      var c = null; try { c = JSON.parse(localStorage.getItem(CACHE) || 'null'); } catch (e) {}
+      if (c && c.v && vergelijk(c.v, HUIDIG) > 0) toon(c.v);
+    }
+    document.addEventListener('be-update-check', controleer);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', controleer); else controleer();
+    setInterval(controleer, UUR);
+  })();
 
   // The theme starts before the dashboard, including on full page navigation.
   var BE_DARK_KEY = 'be_cfg_darkmode';
@@ -12260,7 +12294,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.8.3.3' +
+        'Instellingen v6.8.3.4' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -13050,7 +13084,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3.4</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -14223,6 +14257,31 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   haal();
   setInterval(bijwerken, 15000);
   document.addEventListener('visibilitychange', bijwerken);
+})();
+
+
+// 6.8.3.4: nieuwste versie op GitHub ophalen (userscript-wereld; de pagina-CSP blokkeert dit
+// in de pagina). Het balkje zelf staat in de dashboardcode (beUpdateMelding).
+(function () {
+  'use strict';
+  const META = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js';
+  const KEY = 'be_update_check_v1', INTERVAL = 3600000;
+  function haal() {
+    const fn = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest :
+      typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function' ? GM.xmlHttpRequest.bind(GM) : null;
+    if (!fn) return;
+    let c = null; try { c = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+    if (c && Date.now() - c.t < INTERVAL) return;
+    fn({ method: 'GET', url: META + '?t=' + Math.floor(Date.now() / 600000), anonymous: true, timeout: 20000,
+      onload: r => {
+        const m = r.status === 200 && /@version\s+([\d.]+)/.exec(r.responseText || '');
+        if (!m) return;
+        try { localStorage.setItem(KEY, JSON.stringify({ t: Date.now(), v: m[1] })); } catch (e) {}
+        document.dispatchEvent(new Event('be-update-check'));
+      } });
+  }
+  haal();
+  setInterval(haal, INTERVAL);
 })();
 
 (function () {
@@ -16323,7 +16382,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'6.8.3.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'6.8.3.4',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -17457,7 +17516,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.8.3.3'+
+      '\nDashboardversie: 6.8.3.4'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

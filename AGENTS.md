@@ -168,3 +168,10 @@
   with a plain reload instead.
 
 - 6.8.3.2: the schema price (#flow-grid-price) shows the same purple plug via CSS ::after on `data-be-epex`, not an emoji.
+
+## Version 6.8.3.4 — update banner
+
+- The page cannot fetch GitHub (Balans CSP blocks connect-src); the userscript world
+  fetches the raw meta.js hourly via GM (`@connect raw.githubusercontent.com`) into
+  `be_update_check_v1` + event `be-update-check`; the page shows a banner when newer.
+  The extension has no fetcher yet, so no banner there.
