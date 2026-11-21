@@ -175,3 +175,10 @@
   fetches the raw meta.js hourly via GM (`@connect raw.githubusercontent.com`) into
   `be_update_check_v1` + event `be-update-check`; the page shows a banner when newer.
   The extension has no fetcher yet, so no banner there.
+
+## Version 7.0 — Fact(uur)checker, saldering by origin
+
+- Financieel saldering follows art. 50 lid 2 Wbm + art. 2.31 Energiewet: per day renewable export = min(export, `pv_estimated_kwh`), counted in full; other export counts up to 5,000 kWh per contract; never more than import. Days without a pv value get the renewable share of known days. `eligibleConfirmed` is now an advanced override ("alles salderen").
+- EB split across 1 January: `taxAllocation` gains `'werkelijk'` (net taxable kWh split by actual net use per calendar year, as Balans invoices). Default stays `'tijd'` (Handboek Milieubelastingen 2026: electricity usually time-proportional; other methods allowed).
+- Fact(uur)checker (menu item after Financieel, hash `#factuurchecker`): own PDF text reader (Flate + Type0/ToUnicode, no external library) and parser for Balans invoices; compares each post with the legal model and month energy with results-v2 (`include_vat=1&include_delivery_cost=1`, Balans rejects mixed flags; opslag subtracted). Only extracted numbers are stored (`be_factuurchecker_v1`), never name, address or IBAN.
+- Number inputs use `step="any"` so tariffs with five decimals validate.

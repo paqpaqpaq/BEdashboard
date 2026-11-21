@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.0 — 21 november 2026
+
+- Fact(uur)checker toegevoegd: Balans-nota (pdf) inlezen, per post en per maand naast de regels en je dashboard, met verificatie.
+- Aanpassingen verrekening belastingen en saldeermethodes: saldering naar herkomst (duurzaam volledig, overig tot 5.000 kWh), nieuwe EB-verdeling 'werkelijk verbruik per tariefperiode (zoals Balans)', invoervelden zonder stapfout.
+
 ## 6.8.3.4 — 21 november 2026
 
 - Klein paars balkje bovenaan het dashboard als er op GitHub een nieuwere versie staat (Tampermonkey/Userscripts; vraagt één keer toegang tot raw.githubusercontent.com).
