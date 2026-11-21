@@ -2,11 +2,11 @@
 
 Financieel overzicht, aanvullende prijzen en een eigen SOC-berekening voor het Balansenergie-dashboard.
 
-## Download — versie 6.8.3.2 (stabiel)
+## Download — versie 6.8.3.3 (stabiel)
 
 - **[Userscript installeren](https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.user.js)** — Safari/Userscripts of Chrome/Edge/Tampermonkey.
-- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_3_2.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
-- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/raw/main/Balansenergie-All-in-v6.8.3.2.txt)** · [Wijzigingen](CHANGELOG.md).
+- **[Chrome/Edge-extensie downloaden](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_3_3.zip)** — uitpakken en via `chrome://extensions` → Ontwikkelaarsmodus → Uitgepakte extensie laden.
+- **[Tekstversie om te plakken](https://github.com/paqpaqpaq/BEdashboard/raw/main/Balansenergie-All-in-v6.8.3.3.txt)** · [Wijzigingen](CHANGELOG.md).
 
 Vervang de bestaande versie en herlaad het dashboard. Gebruik één hoofdvariant tegelijk: schakel de versie 6-beta en losse SOC-, BID-, EPEX- en break-even-plugins uit wanneer je deze versie installeert. De beta gebruikt een apart installatiekanaal en wordt daardoor niet automatisch vervangen door de stabiele versie. Bestaande instellingen en lokaal bewaarde historie blijven behouden in dezelfde browser en voor dezelfde installatie.
 
@@ -22,7 +22,7 @@ Balans levert sinds 18 november geen volledige onbalansprijzen meer. Versie 6.8 
 3. Per ongeluk geweigerd? Tampermonkey-dashboard → script *Balansenergie All-in* → tabblad **Instellingen** → bij *XHR-beveiliging* `services.tenergy.nl` toevoegen aan de witte lijst (en uit de zwarte lijst halen). Opslaan en het dashboard herladen.
 
 **Chrome-/Edge-extensie (zip)**
-1. Download [BE_dashboard_6_8_3_2.zip](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_3_2.zip) en pak uit over je bestaande extensiemap (of in een nieuwe map).
+1. Download [BE_dashboard_6_8_3_3.zip](https://github.com/paqpaqpaq/BEdashboard/raw/main/BE_dashboard_6_8_3_3.zip) en pak uit over je bestaande extensiemap (of in een nieuwe map).
 2. Ga naar `chrome://extensions` (of `edge://extensions`) en klik bij *Balansenergie All-in* op **Herladen**. Nieuwe map? Dan **Uitgepakte extensie laden** en de oude verwijderen.
 3. Controleer onder **Details → Sitetoegang** dat **Op alle vermelde sites** is gekozen.
 

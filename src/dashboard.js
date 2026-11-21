@@ -396,7 +396,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.8.3.2'
+    '6.8.3.3'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -3452,6 +3452,11 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   var actueelSchemaBronnen = new WeakMap();
   function actueelMaakPrijsLabel(tekst,rij){
     var geraakt=false,details=[],metStekker=false;
+    // 6.8.3.3: Balans toont tot zijn volgende ronde 'Prijs niet beschikbaar'. Hebben wij de prijs
+    // al (bijv. EPEX-aanvulling), vervang dat dan meteen; de rest van de functie zet hem all-in.
+    var okRij=rij&&!rij.carried&&(!Number.isFinite(rij.sourceStart)||rij.sourceStart===rij.start);
+    tekst=String(tekst).replace(/\b(Import|Inkoop|Afname)(\s+)Prijs niet beschikbaar/i,function(m,w,sp){return okRij&&Number.isFinite(rij.ki)?w+sp+'€ 0/kWh':m;})
+      .replace(/\b(Export|Invoeding|Teruglevering)(\s+)Prijs niet beschikbaar/i,function(m,w,sp){return okRij&&Number.isFinite(rij.ke)?w+sp+'€ 0/kWh':m;});
     var delen=String(tekst).split(/(?=\b(?:Import|Inkoop|Afname|Export|Invoeding|Teruglevering|Teruglever|Injectie)\b)/i);
     var bedrag=/(?:[+\-−]\s*)?€\s*(?:[+\-−]\s*)?\d+(?:[.,]\d+)?/g;
     var geldigeRij=rij&&!rij.carried&&(!Number.isFinite(rij.sourceStart)||rij.sourceStart===rij.start);
@@ -12179,7 +12184,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.8.3.2' +
+        'Instellingen v6.8.3.3' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12969,7 +12974,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3.2</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>

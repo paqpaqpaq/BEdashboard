@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.3.3 — 21 november 2026
+
+- Netaansluiting-schema: toont meteen de bekende prijs (met paarse stekker) in plaats van eerst "Prijs niet beschikbaar" tot Balans' volgende ronde.
+
 ## 6.8.3.2 — 21 november 2026
 
 - Ook bij de prijs in het schema (Netaansluiting) dezelfde paarse stekker als in de grafiek, in plaats van het 🔌-teken.
