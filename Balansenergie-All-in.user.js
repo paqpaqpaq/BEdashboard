@@ -812,6 +812,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       req.onsuccess = function () {
         var r = req.result || {};
         if (key === 'prijzen' && Array.isArray(r.rows) && typeof BETenergy !== 'undefined' && BETenergy) BETenergy.vulAanRijen(r.rows);
+        if (key === 'prijzen' && Array.isArray(r.rows) && typeof BEDayAhead !== 'undefined' && BEDayAhead) BEDayAhead.vulAanRijen(r.rows);
         resolve(r);
       };
       req.onerror = function () { reject(req.error); };
@@ -980,7 +981,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }:null,
       marktImport:market.label,marktExport:exportMarket,ki:ki,ke:ke,
       dayAheadState:p.dayAheadState||'none',gemengdImport:market.mixed,
-      historischImport:hi,historischExport:he,
+      historischImport:hi,historischExport:he,epexInjectie:!!p.beDayAheadBron&&(ik==='day_ahead_import'||ik==='day_ahead_afrr_import'),
       provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
       carried:!!p.carried,sourceStart:p.sourceStart,verloop:verloop,values:Object.assign({},v)};
   }
@@ -2290,9 +2291,72 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   })();
   window.BETenergy = { status: BETenergy.status, kwartier: BETenergy.kwartier };
 
+  /* 6.8.3 — Dynamisch tarief (EPEX day-ahead) aanvullen.
+   * Sinds 20-11-2026 levert current-prices voor ingeplande importkwartieren
+   * day_ahead_import: null. Alleen dán vullen we de openbare EPEX-prijs (Nord Pool,
+   * NL, €/MWh ÷ 1000, kaal) in die de plugin al ophaalt. Een waarde van Balans zelf
+   * wordt nooit overschreven. Gevulde kwartieren dragen beDayAheadBron = 'epex' en
+   * krijgen in de labels een stekker (🔌). Geen onbalans- of aFRR-terugval. */
+  var BEDayAhead = (function () {
+    var HIST = 'be_epex_kwartier_v1', BRONNEN = ['be_epex_nordpool_prices_v1', 'be_epex_nordpool_forecast_prices_v1'];
+    var BEWAAR = 14 * 86400000;
+    function lees(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+    function prijzen() {
+      var h = lees(HIST); h = h && typeof h === 'object' && !Array.isArray(h) ? h : {};
+      var nieuw = false;
+      BRONNEN.forEach(function (k) {
+        var c = lees(k), e = c && c.body && c.body.multiAreaEntries;
+        (Array.isArray(e) ? e : []).forEach(function (x) {
+          var t = Date.parse(x && x.deliveryStart), eind = Date.parse(x && x.deliveryEnd), p = x && x.entryPerArea && x.entryPerArea.NL;
+          if (!Number.isFinite(t) || !Number.isFinite(p) || eind - t !== 900000) return;
+          var v = Math.round(p * 100) / 100000;
+          if (h[t] !== v) { h[t] = v; nieuw = true; }
+        });
+      });
+      if (nieuw) {
+        var grens = Date.now() - BEWAAR;
+        Object.keys(h).forEach(function (t) { if (+t < grens) delete h[t]; });
+        try { localStorage.setItem(HIST, JSON.stringify(h)); } catch (e) {}
+      }
+      return h;
+    }
+    // Ook bij dynamisch + aFRR (day_ahead_afrr_import leeg) rekenen we met de EPEX-prijs:
+    // voor het ingeplande EPEX-volume is dat de dynamische prijs (keuze Luc, 21-11-2026).
+    var SLEUTELS = ['day_ahead_import', 'day_ahead_afrr_import'];
+    function vulRij(p, gepland, h) {
+      if (!p || !Number.isFinite(p.start) || !gepland) return;
+      var v = p.values && typeof p.values === 'object' ? p.values : (p.values = {});
+      var epex = h[p.start], ons = p.beDayAheadBron === 'epex', gevuld = false, eigen = false;
+      SLEUTELS.forEach(function (k) {
+        var aanwezig = Object.prototype.hasOwnProperty.call(v, k);
+        if (Number.isFinite(v[k])) { if (!ons || v[k] !== epex) eigen = true; else gevuld = true; return; }
+        if (!Number.isFinite(epex) || (!aanwezig && k !== 'day_ahead_import')) return;
+        v[k] = epex; gevuld = true;
+      });
+      // Een waarde die afwijkt van onze EPEX-prijs komt van Balans zelf: geen stekker.
+      if (gevuld && !eigen) p.beDayAheadBron = 'epex'; else if (eigen) delete p.beDayAheadBron;
+    }
+    function vulAan(j) {
+      if (!j || !Array.isArray(j.prices)) return j;
+      var plan = new Set((Array.isArray(j.dayAheadPlans) ? j.dayAheadPlans : []).filter(function (x) { return x && x.direction === 'import'; }).map(function (x) { return x.start; }));
+      if (!plan.size) return j;
+      var h = prijzen();
+      j.prices.forEach(function (p) { vulRij(p, p && plan.has(p.start), h); });
+      return j;
+    }
+    function vulAanRijen(rows) {
+      if (!Array.isArray(rows)) return rows;
+      var h = prijzen();
+      rows.forEach(function (p) { vulRij(p, p && p.dayAheadState === 'planned', h); });
+      return rows;
+    }
+    return { vulAan: vulAan, vulAanRijen: vulAanRijen, prijzen: prijzen };
+  })();
+  window.BEDayAhead = { prijzen: BEDayAhead.prijzen };
+
   function beOnbalansResponse(r) {
     return r.clone().json().then(function (j) {
-      return new Response(JSON.stringify(BETenergy.vulAan(j)), { status: r.status, statusText: r.statusText, headers: r.headers });
+      return new Response(JSON.stringify(BEDayAhead.vulAan(BETenergy.vulAan(j))), { status: r.status, statusText: r.statusText, headers: r.headers });
     }).catch(function () { return r; });
   }
 
@@ -2431,6 +2495,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   return bekend?nieuw:nieuw.replace(/\\s*\\/\\s*kWh\\b/gi,'');\n" +
     "  }).join('');\n" +
     " }\n" +
+    " function stekker(ctx,tekst,x,y){\n" +
+    "  // Paars rondje met stekker vóór het label: deze prijs is door de plugin ingevuld (EPEX).\n" +
+    "  var w=ctx.measureText(tekst).width,al=ctx.textAlign,lx=al==='center'?x-w/2:(al==='right'||al==='end')?x-w:x;\n" +
+    "  var fs=parseFloat((String(ctx.font).match(/(\\d+(?:\\.\\d+)?)px/)||[])[1])||11,h=Math.round(fs*1.25),bw=h,bx=lx-5-bw;\n" +
+    "  var bl=ctx.textBaseline,cy=bl==='top'||bl==='hanging'?y+fs/2:bl==='middle'?y:y-fs*0.35;\n" +
+    "  ctx.save();ctx.beginPath();\n" +
+    "  if(ctx.roundRect)ctx.roundRect(bx,cy-h/2,bw,h,h/2);else ctx.rect(bx,cy-h/2,bw,h);\n" +
+    "  ctx.fillStyle='#6B3FA0';ctx.fill();\n" +
+    "  ctx.translate(bx+bw/2,cy);ctx.rotate(Math.PI/2);\n" +
+    "  var s=h/14;ctx.fillStyle='#fff';ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(1,1.4*s);ctx.lineCap='round';\n" +
+    "  ctx.fillRect(-3.2*s,-1.6*s,6.4*s,4.2*s);\n" +
+    "  ctx.fillRect(-2.4*s,-4.6*s,1.4*s,3.2*s);ctx.fillRect(1*s,-4.6*s,1.4*s,3.2*s);\n" +
+    "  ctx.beginPath();ctx.moveTo(0,2.6*s);ctx.lineTo(0,5.2*s);ctx.stroke();\n" +
+    "  ctx.restore();\n" +
+    " }\n" +
     " function wikkel(){\n" +
     "  var c=chart(); if(!c||!c.ctx)return;\n" +
     "  if(ctxRef===c.ctx&&c.ctx.__beAllinFillText)return;\n" +
@@ -2438,12 +2517,16 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  var basisFill=(c.ctx.__beAllinOrigFill||c.ctx.fillText).bind(c.ctx);\n" +
     "  c.ctx.__beAllinOrigFill=basisFill;\n" +
     "  c.ctx.fillText=function(tekst,x,y,mw){\n" +
+    "   var markeer=false;\n" +
     "   try{\n" +
     "    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\\u20ac')!==-1&&/(?:\\u2248|Import|Inkoop|Afname|Export|Invoeding|Teruglever|Injectie|ISP|Nu)/i.test(tekst)){\n" +
-    "     tekst=prijsLabel(tekst,prijsRij(c,tekst,x,y));\n" +
+    "     var rij=prijsRij(c,tekst,x,y);tekst=prijsLabel(tekst,rij);\n" +
+    "     if(rij&&rij.epexInjectie&&/\\b(?:Import|Inkoop|Afname)\\b/i.test(tekst))markeer=true;\n" +
     "    }\n" +
     "   }catch(e){tekst=prijsLabel(tekst,null);}\n" +
-    "   return basisFill(tekst,x,y,mw);\n" +
+    "   var uit=basisFill(tekst,x,y,mw);\n" +
+    "   if(markeer)try{stekker(c.ctx,tekst,x,y);}catch(e){}\n" +
+    "   return uit;\n" +
     "  };\n" +
     "  c.ctx.__beAllinFillText=true;\n" +
     " }\n" +
@@ -2992,7 +3075,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         start: r.start,
         end: r.end,
         afrr: !!r.afrr,
-        marktImport:r.marktImport, marktExport:r.marktExport,gemengdImport:!!r.gemengdImport,
+        marktImport:r.marktImport, marktExport:r.marktExport,gemengdImport:!!r.gemengdImport,epexInjectie:!!r.epexInjectie,
         carried:!!r.carried, sourceStart:r.sourceStart,
         provisional:r.provisional, fresh:r.fresh, updatedAt:r.updatedAt,
         values:r.values,dayAheadExport:r.dayAheadExport,onbalansVergelijking:r.onbalansVergelijking,
@@ -3441,11 +3524,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var uitvoer=richting&&/^(Export|Invoeding|Teruglevering|Teruglever|Injectie)$/i.test(richting[1]);
       var kaal=richting&&geldigeRij?rij[uitvoer?'ke':'ki']:null;
       var bekend=Number.isFinite(kaal),prijs=bekend?actueelEuro(actueelAllin(kaal,!!uitvoer)):'prijs volgt (all-in)';
+      // 6.8.3: door de plugin ingevulde EPEX-prijs herkenbaar maken.
+      var stekker=bekend&&!uitvoer&&!!rij&&!!rij.epexInjectie;
       var markt=rij&&rij[uitvoer?'marktExport':'marktImport'];
       details.push((richting?(uitvoer?'Export':'Import'):'Prijs')+(markt?' · '+markt:'')+': '+prijs+(bekend?'/kWh':'')+
         (bekend&&(!uitvoer&&rij.gemengdImport)?' · indicatief ongewogen gemiddelde van dynamisch en aFRR':
           bekend&&(rij[uitvoer?'historischExport':'historischImport']||deel.indexOf('≈')!==-1)?' · indicatief / laatst bekende bronprijs':''));
-      var resultaat=deel.replace(bedrag,prijs);
+      if(stekker)details[details.length-1]+=' · EPEX-prijs ingevuld door de plugin 🔌';
+      var resultaat=deel.replace(bedrag,prijs)+(stekker?' 🔌':'');
       return bekend?resultaat:resultaat.replace(/\s*\/\s*kWh\b/gi,'');
     }).join('');
     return {text:nieuw,matched:geraakt,details:details};
@@ -14107,7 +14193,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     };
     fn({ method: 'GET', url: BRON, anonymous: true, timeout: 25000,
       onload: r => { try { if (r.status !== 200) throw Error('Tenergy HTTP ' + r.status); verwerk(r.responseText, Date.now()); klaar(''); } catch (e) { klaar(e.message); } },
-      onerror: () => klaar('Tenergy niet bereikbaar'), ontimeout: () => klaar('Tenergy reageert niet') });
+      onerror: e => klaar('Tenergy niet bereikbaar' + (e && (e.error || e.statusText || e.status) ? ' (' + (e.error || e.statusText || e.status) + ')' : '')), ontimeout: () => klaar('Tenergy reageert niet') });
   }
   function bijwerken() { if (!document.hidden && Date.now() - laatsteHaal >= INTERVAL) haal(); }
   haal();
@@ -16364,11 +16450,22 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
 
     if(chart.canvas.id==='soc-chart'){
       const history=window.BESocHistory.active(chart),range=history?window.BESocHistory.range(chart):null;
-      const a=history?(range?.min??Infinity):(chart.scales.x?.min??0)-120000;
-      const b=history?(range?.max??-Infinity):(chart.scales.x?.max??Infinity)+120000;
+      // 6.8.3: bereik op 5 minuten afgerond, zodat een meeschuivende x-as de cache niet elke seconde breekt;
+      // punten buiten beeld knipt Chart.js weg.
+      const STEP=300000;
+      const a=history?(range?.min??Infinity):Math.floor(((chart.scales.x?.min??0)-120000)/STEP)*STEP;
+      const b=history?(range?.max??-Infinity):Math.ceil(((chart.scales.x?.max??Infinity)+120000)/STEP)*STEP;
       const axis=chart.data.datasets.find(d=>!d.beOwnSOC)?.yAxisID||'y';
-      let points=(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)}));
-      if(history)points=window.BESocHistory.project(chart,points,range);
+      // 6.8.3: Balans werkt soc-chart elke seconde bij. Bouw de lijn (~15.000 punten) alleen opnieuw
+      // bij een nieuwe berekening of een ander bereik; anders hetzelfde array hergebruiken.
+      const key=a+'|'+b+'|'+(history?JSON.stringify([range,chart.width]):''),cache=chart.$beMeasuredCache;
+      let points;
+      if(cache&&cache.result===result&&cache.key===key)points=cache.points;
+      else{
+        points=(result?.points||[]).filter(p=>p.t>=a&&p.t<=b).map(p=>({x:p.t,y:p.gap&&!p.anchor&&!followsOriginal(p)?null:visualSoc(p)}));
+        if(history)points=window.BESocHistory.project(chart,points,range);
+        chart.$beMeasuredCache={result,key,points};
+      }
       dataset(chart,'measured','Coulombtelling in/uit',points,{yAxisID:axis,parsing:false});
     }else if(chart.canvas.id==='soc-forecast-chart'){
       const f=forecastValues(chart);
