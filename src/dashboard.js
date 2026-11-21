@@ -2460,6 +2460,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
     "  catch(e){console.error('[BE Actueel all-in bridge]',e);}\n" +
     " });\n" +
+    " // 6.8.4: labelvertaling (all-in + stekker) meteen bij de eerste tekening installeren,\n" +
+    " // niet pas bij de volgende gegevensronde (~15-20 s) als de grafiek er bij de eerste nog niet was.\n" +
+    " Chart.register({id:'beAllinLabelWrap',beforeDraw:function(c){if(c.canvas&&c.canvas.id===CANVAS&&!(c.ctx&&c.ctx.__beAllinFillText))wikkel();}});\n" +
     " var gridSwatches=new WeakMap(),tooltipSwatches=new WeakMap();\n" +
     " function restoreGridSwatch(tip){\n" +
     "  var saved=tip&&tooltipSwatches.get(tip);if(!saved)return;\n" +
