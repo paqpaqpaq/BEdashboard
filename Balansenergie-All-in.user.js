@@ -21,6 +21,7 @@
 // @connect      api.tennet.eu
 // @connect      api.acc.tennet.eu
 // @connect      public.api.energyzero.nl
+// @connect      raw.githubusercontent.com
 // @connect      dataportal-api.nordpoolgroup.com
 // ==/UserScript==
 (function () {
@@ -474,6 +475,39 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     BE_RUNTIME_GUARD,
     '6.8.3.3'
   );
+
+  // 6.8.3.4: klein balkje bovenin als er op GitHub een nieuwere versie staat.
+  (function beUpdateMelding() {
+    var HUIDIG = '6.8.3.3', BASIS = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/';
+    var CACHE = 'be_update_check_v1', NEGEER = 'be_update_genegeerd_v1', UUR = 600000;
+    function vergelijk(a, b) {
+      a = String(a).split('.').map(Number); b = String(b).split('.').map(Number);
+      for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x > y ? 1 : -1; }
+      return 0;
+    }
+    function toon(v) {
+      if (!document.body || document.getElementById('be-update-balk') || localStorage.getItem(NEGEER) === v) return;
+      var d = document.createElement('div'); d.id = 'be-update-balk'; d.setAttribute('role', 'status');
+      d.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:10px;' +
+        'padding:6px 8px 6px 14px;border-radius:999px;background:#6B3FA0;color:#fff;font:600 13px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 6px 18px rgba(40,20,70,.25)';
+      var a = 'color:#fff;text-decoration:underline;text-underline-offset:2px';
+      d.innerHTML = '<span>Balansenergie All-in ' + v + ' is beschikbaar <span style="opacity:.75;font-weight:500">(je hebt ' + HUIDIG + ')</span></span>' +
+        '<a href="' + BASIS + 'Balansenergie-All-in.user.js" target="_blank" rel="noopener" style="' + a + '">Bijwerken</a>' +
+        '<a href="https://github.com/paqpaqpaq/BEdashboard/blob/main/CHANGELOG.md" target="_blank" rel="noopener" style="' + a + ';font-weight:500">Wat is nieuw</a>' +
+        '<button type="button" aria-label="Verbergen" style="border:0;background:rgba(255,255,255,.18);color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font:600 14px/22px system-ui;padding:0">×</button>';
+      d.querySelector('button').addEventListener('click', function () { try { localStorage.setItem(NEGEER, v); } catch (e) {} d.remove(); });
+      document.body.appendChild(d);
+    }
+    // De pagina mag GitHub niet zelf benaderen (CSP); de userscript-kant haalt de versie op
+    // en zet hem in localStorage ('be_update_check_v1') met event 'be-update-check'.
+    function controleer() {
+      var c = null; try { c = JSON.parse(localStorage.getItem(CACHE) || 'null'); } catch (e) {}
+      if (c && c.v && vergelijk(c.v, HUIDIG) > 0) toon(c.v);
+    }
+    document.addEventListener('be-update-check', controleer);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', controleer); else controleer();
+    setInterval(controleer, UUR);
+  })();
 
   // The theme starts before the dashboard, including on full page navigation.
   var BE_DARK_KEY = 'be_cfg_darkmode';
@@ -14223,6 +14257,31 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   haal();
   setInterval(bijwerken, 15000);
   document.addEventListener('visibilitychange', bijwerken);
+})();
+
+
+// 6.8.3.4: nieuwste versie op GitHub ophalen (userscript-wereld; de pagina-CSP blokkeert dit
+// in de pagina). Het balkje zelf staat in de dashboardcode (beUpdateMelding).
+(function () {
+  'use strict';
+  const META = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js';
+  const KEY = 'be_update_check_v1', INTERVAL = 3600000;
+  function haal() {
+    const fn = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest :
+      typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function' ? GM.xmlHttpRequest.bind(GM) : null;
+    if (!fn) return;
+    let c = null; try { c = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+    if (c && Date.now() - c.t < INTERVAL) return;
+    fn({ method: 'GET', url: META + '?t=' + Math.floor(Date.now() / 600000), anonymous: true, timeout: 20000,
+      onload: r => {
+        const m = r.status === 200 && /@version\s+([\d.]+)/.exec(r.responseText || '');
+        if (!m) return;
+        try { localStorage.setItem(KEY, JSON.stringify({ t: Date.now(), v: m[1] })); } catch (e) {}
+        document.dispatchEvent(new Event('be-update-check'));
+      } });
+  }
+  haal();
+  setInterval(haal, INTERVAL);
 })();
 
 (function () {
