@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.8.3 — 21 november 2026
+
+- Ontbrekend dynamisch tarief aangevuld. Sinds 20 november geeft Balans voor ingeplande day-ahead-importkwartieren geen prijs meer (`day_ahead_import: null`). Alleen dán vult de plugin de openbare EPEX-prijs (Nord Pool, NL, kaal) in; een prijs van Balans zelf wordt nooit overschreven. Bij dynamisch + aFRR zonder gemengde prijs wordt ook met de EPEX-prijs gerekend. Zulke labels in de bovenste grafiek krijgen een paarse stekker; de onderste grafiek, Resultaat vandaag en Financieel rekenen met dezelfde prijs.
+- Coulombtelling-lijn wordt niet meer elke seconde opnieuw opgebouwd (zuiniger geheugengebruik).
+- Duidelijkere foutmelding als Tenergy niet bereikbaar is.
+
 ## 6.8.2 — 19 november 2026
 
 - Geheugenlek opgelost. De Coulombtelling-lijn in de SOC-grafiek had een vaste `segment`-instelling. Daardoor vergeleek Chart.js bij elke update de stijl van alle punten (zo'n 14.000) als tekst; omdat Balans de grafiek elke seconde bijwerkt, ging dat om ~30.000 bewerkingen per seconde en liep het geheugen van het tabblad in een paar uur op tot meerdere GB. De lijn ziet er hetzelfde uit.

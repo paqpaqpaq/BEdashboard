@@ -910,7 +910,7 @@
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 6.8.2'+
+      '\nDashboardversie: 6.8.3'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

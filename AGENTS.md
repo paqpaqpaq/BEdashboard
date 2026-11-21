@@ -143,3 +143,16 @@
   stringify per 10 s.
 - BID recovery only requests the last 26 h (`RECOVERY_REACH`); a 400 response
   postpones that day by 24 h instead of retrying every 5 min.
+
+## Version 6.8.3 — EPEX fill for missing day-ahead quotes
+
+- From 20-11-2026 `current-prices` returns `day_ahead_import: null` (and
+  `day_ahead_afrr_import: null` for mixed quarters) for planned import quarters.
+  At the user's explicit request (21-11-2026) `BEDayAhead` fills only these nulls,
+  only for planned import quarters, with the public Nord Pool NL day-ahead price
+  (€/MWh ÷ 1000, kept 14 days in `be_epex_kwartier_v1`). Mixed quarters use the
+  EPEX price too (user's choice). Never overwrite a Balans value; filled rows
+  carry `beDayAheadBron: 'epex'` and get a purple plug badge in the top chart
+  only. Equality of Balans' dynamic price with raw EPEX was not verified.
+- The Coulomb line reuses its point array between Balans' per-second updates
+  (`chart.$beMeasuredCache`, keyed by result identity and 5-minute range).
