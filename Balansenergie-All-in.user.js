@@ -14493,8 +14493,8 @@ function beFactuurAnalyse(f) {
     </style>
     <div class="wrap">
       <h1>Fact(uur)checker <small style="font-size:11px;font-weight:500">7.0</small></h1>
-      <p class="sub">Leest een Balans-factuur uit en legt hem per maand naast je dashboard.</p>
-      <div class="drop" id="drop">Sleep een Balans-factuur (pdf) hierheen of klik om te kiezen<input id="file" type="file" accept="application/pdf,.pdf" multiple hidden></div>
+      <p class="sub">Voor de <b>jaar- of eindafrekening</b> van Balans (niet de maandelijkse termijnfactuur). Leest de nota uit, zet elke post naast de regels en elke maand naast je dashboard.</p>
+      <div class="drop" id="drop">Sleep je jaar- of eindafrekening van Balans (pdf) hierheen of klik om te kiezen<input id="file" type="file" accept="application/pdf,.pdf" multiple hidden></div>
       <div id="fout" class="fout"></div>
       <div id="lijst"></div>
     </div>`;
@@ -14521,7 +14521,8 @@ function beFactuurAnalyse(f) {
       try {
         if (!/pdf$/i.test(file.type) && !/\.pdf$/i.test(file.name)) throw Error('geen pdf');
         const f = beFactuurLees(await bePdfRegels(await file.arrayBuffer()));
-        if (!f.nummer || !f.secties.length) throw Error('geen Balans-factuurspecificatie gevonden');
+        if (!f.nummer) throw Error('geen Balans-factuur herkend');
+        if (!f.secties.length || !/AFREKENING/i.test(f.type || '')) throw Error('dit lijkt een termijnfactuur of andere nota zonder specificatie. Gebruik de jaar- of eindafrekening van Balans');
         f.bestand = file.name; f.ingelezen = new Date().toISOString();
         facturen = facturen.filter(x => x.nummer !== f.nummer).concat(f);
         facturen.sort((a, b) => (a.periode?.van || '') < (b.periode?.van || '') ? -1 : 1);
