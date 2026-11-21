@@ -1,5 +1,10 @@
 # Changelog
 
+## 6.8.3.1 — 21 november 2026
+
+- De ingevulde prijs (met stekker) staat na laden of zoomen meteen in de bovenste grafiek. Balans tekent tot zijn volgende ronde (~15–20 s) eerst "Import —"; als de plugin de prijs al heeft, wordt die direct getoond.
+- Stekker bij liggende (ingezoomde) labels onder het label in plaats van eroverheen.
+
 ## 6.8.3 — 21 november 2026
 
 - Ontbrekend dynamisch tarief aangevuld. Sinds 20 november geeft Balans voor ingeplande day-ahead-importkwartieren geen prijs meer (`day_ahead_import: null`). Alleen dán vult de plugin de openbare EPEX-prijs (Nord Pool, NL, kaal) in; een prijs van Balans zelf wordt nooit overschreven. Bij dynamisch + aFRR zonder gemengde prijs wordt ook met de EPEX-prijs gerekend. Zulke labels in de bovenste grafiek krijgen een paarse stekker; de onderste grafiek, Resultaat vandaag en Financieel rekenen met dezelfde prijs.

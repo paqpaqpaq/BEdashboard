@@ -396,7 +396,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '6.8.3'
+    '6.8.3.1'
   );
 
   // The theme starts before the dashboard, including on full page navigation.
@@ -2451,7 +2451,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "     if(rij&&rij.epexInjectie&&/\\b(?:Import|Inkoop|Afname)\\b/i.test(tekst))markeer=true;\n" +
     "    }\n" +
     "   }catch(e){tekst=prijsLabel(tekst,null);}\n" +
-    "   // 6.8.4: Balans tekent na laden/zoomen eerst 'Import —' tot zijn volgende ronde (~15-20 s).\n" +
+    "   // 6.8.3.1: Balans tekent na laden/zoomen eerst 'Import —' tot zijn volgende ronde (~15-20 s).\n" +
     "   // Hebben wij de prijs al (bijv. EPEX-aanvulling), toon die dan meteen.\n" +
     "   try{\n" +
     "    if(st.aan&&typeof tekst==='string'&&/^\\s*Import\\s*[\\u2014\\u2013-]\\s*$/.test(tekst)){\n" +
@@ -2471,7 +2471,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  try{st=Object.assign(st,JSON.parse(n.textContent||'{}'));wikkel();verver();}\n" +
     "  catch(e){console.error('[BE Actueel all-in bridge]',e);}\n" +
     " });\n" +
-    " // 6.8.4: labelvertaling (all-in + stekker) meteen bij de eerste tekening installeren,\n" +
+    " // 6.8.3.1: labelvertaling (all-in + stekker) meteen bij de eerste tekening installeren,\n" +
     " // niet pas bij de volgende gegevensronde (~15-20 s) als de grafiek er bij de eerste nog niet was.\n" +
     " Chart.register({id:'beAllinLabelWrap',beforeDraw:function(c){if(c.canvas&&c.canvas.id===CANVAS&&!(c.ctx&&c.ctx.__beAllinFillText))wikkel();}});\n" +
     " var gridSwatches=new WeakMap(),tooltipSwatches=new WeakMap();\n" +
@@ -12174,7 +12174,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v6.8.3' +
+        'Instellingen v6.8.3.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -12964,7 +12964,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">6.8.3.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>

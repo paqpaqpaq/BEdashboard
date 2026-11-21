@@ -156,3 +156,13 @@
   only. Equality of Balans' dynamic price with raw EPEX was not verified.
 - The Coulomb line reuses its point array between Balans' per-second updates
   (`chart.$beMeasuredCache`, keyed by result identity and 5-minute range).
+
+## Version 6.8.3.1 — immediate price labels
+
+- Balans' customerCurrentPrices rebuilds its labels only on its own 15 s refresh
+  or a quarter change, so after load/zoom it draws "Import —" for ~15–20 s. The
+  label bridge replaces exactly "Import —" with our known all-in price (plus the
+  plug badge for EPEX-filled quarters). The bridge also wraps fillText on the
+  first draw (`beAllinLabelWrap`). Horizontal labels get the badge below.
+- Earlier measurements that forced `chart.update()` hid this delay; reproduce
+  with a plain reload instead.
