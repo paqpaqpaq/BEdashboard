@@ -2500,6 +2500,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  var w=ctx.measureText(tekst).width,al=ctx.textAlign,lx=al==='center'?x-w/2:(al==='right'||al==='end')?x-w:x;\n" +
     "  var fs=parseFloat((String(ctx.font).match(/(\\d+(?:\\.\\d+)?)px/)||[])[1])||11,h=Math.round(fs*1.25),bw=h,bx=lx-5-bw;\n" +
     "  var bl=ctx.textBaseline,cy=bl==='top'||bl==='hanging'?y+fs/2:bl==='middle'?y:y-fs*0.35;\n" +
+    "  var m=ctx.getTransform?ctx.getTransform():null;\n" +
+    "  // Liggende labels staan vaak tegen elkaar: zet de stekker dan onder het begin van het label.\n" +
+    "  if(m&&Math.abs(m.b)<Math.abs(m.a)){bx=lx;cy+=h+1;}\n" +
     "  ctx.save();ctx.beginPath();\n" +
     "  if(ctx.roundRect)ctx.roundRect(bx,cy-h/2,bw,h,h/2);else ctx.rect(bx,cy-h/2,bw,h);\n" +
     "  ctx.fillStyle='#6B3FA0';ctx.fill();\n" +
@@ -2524,6 +2527,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "     if(rij&&rij.epexInjectie&&/\\b(?:Import|Inkoop|Afname)\\b/i.test(tekst))markeer=true;\n" +
     "    }\n" +
     "   }catch(e){tekst=prijsLabel(tekst,null);}\n" +
+    "   // 6.8.4: Balans tekent na laden/zoomen eerst 'Import —' tot zijn volgende ronde (~15-20 s).\n" +
+    "   // Hebben wij de prijs al (bijv. EPEX-aanvulling), toon die dan meteen.\n" +
+    "   try{\n" +
+    "    if(st.aan&&typeof tekst==='string'&&/^\\s*Import\\s*[\\u2014\\u2013-]\\s*$/.test(tekst)){\n" +
+    "     var leeg=prijsRij(c,tekst,x,y);\n" +
+    "     if(leeg&&Number.isFinite(leeg.ki)){tekst='Import '+euro(allin(leeg.ki,false));if(leeg.epexInjectie)markeer=true;}\n" +
+    "    }\n" +
+    "   }catch(e){}\n" +
     "   var uit=basisFill(tekst,x,y,mw);\n" +
     "   if(markeer)try{stekker(c.ctx,tekst,x,y);}catch(e){}\n" +
     "   return uit;\n" +
