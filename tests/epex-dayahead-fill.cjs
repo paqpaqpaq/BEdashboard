@@ -16,4 +16,10 @@ assert.equal(j.prices[1].values.day_ahead_import,0.2,'Balans-waarde blijft');ass
 assert.equal(j.prices[2].values.day_ahead_import,undefined,'niet ingepland: niets invullen');
 const rows=[{start:t1,dayAheadState:'planned',values:{}},{start:t2,dayAheadState:'none',values:{}}];
 c.M.vulAanRijen(rows);assert.equal(rows[0].values.day_ahead_import,0.18699);assert.equal(rows[1].values.day_ahead_import,undefined);
+// Dynamisch + aFRR zonder gemengde prijs: EPEX voor het ingeplande volume.
+const m={dayAheadPlans:[{start:t1,direction:'import'}],prices:[{start:t1,values:{day_ahead_afrr_import:null,afrr_import:0.12}}]};
+c.M.vulAan(m);assert.equal(m.prices[0].values.day_ahead_afrr_import,0.18699);assert.equal(m.prices[0].values.day_ahead_import,0.18699);assert.equal(m.prices[0].beDayAheadBron,'epex');
+// Opnieuw verwerken blijft gelijk; een afwijkende Balans-waarde haalt de stekker weg.
+c.M.vulAan(m);assert.equal(m.prices[0].beDayAheadBron,'epex');
+m.prices[0].values.day_ahead_afrr_import=0.15;c.M.vulAan(m);assert.equal(m.prices[0].beDayAheadBron,undefined);
 console.log('epex-dayahead-fill ok');

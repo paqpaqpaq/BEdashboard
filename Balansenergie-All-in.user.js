@@ -981,7 +981,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }:null,
       marktImport:market.label,marktExport:exportMarket,ki:ki,ke:ke,
       dayAheadState:p.dayAheadState||'none',gemengdImport:market.mixed,
-      historischImport:hi,historischExport:he,epexInjectie:!!p.beDayAheadBron&&ik==='day_ahead_import',
+      historischImport:hi,historischExport:he,epexInjectie:!!p.beDayAheadBron&&(ik==='day_ahead_import'||ik==='day_ahead_afrr_import'),
       provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
       carried:!!p.carried,sourceStart:p.sourceStart,verloop:verloop,values:Object.assign({},v)};
   }
@@ -2320,17 +2320,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }
       return h;
     }
+    // Ook bij dynamisch + aFRR (day_ahead_afrr_import leeg) rekenen we met de EPEX-prijs:
+    // voor het ingeplande EPEX-volume is dat de dynamische prijs (keuze Luc, 21-11-2026).
+    var SLEUTELS = ['day_ahead_import', 'day_ahead_afrr_import'];
     function vulRij(p, gepland, h) {
       if (!p || !Number.isFinite(p.start) || !gepland) return;
       var v = p.values && typeof p.values === 'object' ? p.values : (p.values = {});
-      var epex = h[p.start];
-      if (Number.isFinite(v.day_ahead_import)) {
-        // Een eerder door ons ingevulde waarde die afwijkt, komt van Balans zelf.
-        if (p.beDayAheadBron && v.day_ahead_import !== epex) delete p.beDayAheadBron;
-        return;
-      }
-      if (!Number.isFinite(epex)) return;
-      v.day_ahead_import = epex; p.beDayAheadBron = 'epex';
+      var epex = h[p.start], ons = p.beDayAheadBron === 'epex', gevuld = false, eigen = false;
+      SLEUTELS.forEach(function (k) {
+        var aanwezig = Object.prototype.hasOwnProperty.call(v, k);
+        if (Number.isFinite(v[k])) { if (!ons || v[k] !== epex) eigen = true; else gevuld = true; return; }
+        if (!Number.isFinite(epex) || (!aanwezig && k !== 'day_ahead_import')) return;
+        v[k] = epex; gevuld = true;
+      });
+      // Een waarde die afwijkt van onze EPEX-prijs komt van Balans zelf: geen stekker.
+      if (gevuld && !eigen) p.beDayAheadBron = 'epex'; else if (eigen) delete p.beDayAheadBron;
     }
     function vulAan(j) {
       if (!j || !Array.isArray(j.prices)) return j;
@@ -2491,6 +2495,21 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   return bekend?nieuw:nieuw.replace(/\\s*\\/\\s*kWh\\b/gi,'');\n" +
     "  }).join('');\n" +
     " }\n" +
+    " function stekker(ctx,tekst,x,y){\n" +
+    "  // Paars rondje met stekker vóór het label: deze prijs is door de plugin ingevuld (EPEX).\n" +
+    "  var w=ctx.measureText(tekst).width,al=ctx.textAlign,lx=al==='center'?x-w/2:(al==='right'||al==='end')?x-w:x;\n" +
+    "  var fs=parseFloat((String(ctx.font).match(/(\\d+(?:\\.\\d+)?)px/)||[])[1])||11,h=Math.round(fs*1.25),bw=h,bx=lx-5-bw;\n" +
+    "  var bl=ctx.textBaseline,cy=bl==='top'||bl==='hanging'?y+fs/2:bl==='middle'?y:y-fs*0.35;\n" +
+    "  ctx.save();ctx.beginPath();\n" +
+    "  if(ctx.roundRect)ctx.roundRect(bx,cy-h/2,bw,h,h/2);else ctx.rect(bx,cy-h/2,bw,h);\n" +
+    "  ctx.fillStyle='#6B3FA0';ctx.fill();\n" +
+    "  ctx.translate(bx+bw/2,cy);ctx.rotate(Math.PI/2);\n" +
+    "  var s=h/14;ctx.fillStyle='#fff';ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(1,1.4*s);ctx.lineCap='round';\n" +
+    "  ctx.fillRect(-3.2*s,-1.6*s,6.4*s,4.2*s);\n" +
+    "  ctx.fillRect(-2.4*s,-4.6*s,1.4*s,3.2*s);ctx.fillRect(1*s,-4.6*s,1.4*s,3.2*s);\n" +
+    "  ctx.beginPath();ctx.moveTo(0,2.6*s);ctx.lineTo(0,5.2*s);ctx.stroke();\n" +
+    "  ctx.restore();\n" +
+    " }\n" +
     " function wikkel(){\n" +
     "  var c=chart(); if(!c||!c.ctx)return;\n" +
     "  if(ctxRef===c.ctx&&c.ctx.__beAllinFillText)return;\n" +
@@ -2498,12 +2517,16 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "  var basisFill=(c.ctx.__beAllinOrigFill||c.ctx.fillText).bind(c.ctx);\n" +
     "  c.ctx.__beAllinOrigFill=basisFill;\n" +
     "  c.ctx.fillText=function(tekst,x,y,mw){\n" +
+    "   var markeer=false;\n" +
     "   try{\n" +
     "    if(st.aan&&typeof tekst==='string'&&tekst.indexOf('\\u20ac')!==-1&&/(?:\\u2248|Import|Inkoop|Afname|Export|Invoeding|Teruglever|Injectie|ISP|Nu)/i.test(tekst)){\n" +
-    "     tekst=prijsLabel(tekst,prijsRij(c,tekst,x,y));\n" +
+    "     var rij=prijsRij(c,tekst,x,y);tekst=prijsLabel(tekst,rij);\n" +
+    "     if(rij&&rij.epexInjectie&&/\\b(?:Import|Inkoop|Afname)\\b/i.test(tekst))markeer=true;\n" +
     "    }\n" +
     "   }catch(e){tekst=prijsLabel(tekst,null);}\n" +
-    "   return basisFill(tekst,x,y,mw);\n" +
+    "   var uit=basisFill(tekst,x,y,mw);\n" +
+    "   if(markeer)try{stekker(c.ctx,tekst,x,y);}catch(e){}\n" +
+    "   return uit;\n" +
     "  };\n" +
     "  c.ctx.__beAllinFillText=true;\n" +
     " }\n" +
@@ -2594,7 +2617,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   if(p2<=p1)return;\n" +
     "   if(Math.floor(q.start/TG_KW)%2){t.fillStyle='#f1f2f4';t.fillRect(p1,a.top,p2-p1,a.bottom-a.top);}\n" +
     "   var mid=(p1+p2)/2;\n" +
-    "   var lab=q.carried?'laatst bekend':tgMarkt(q,false)+(q.epexInjectie?' 🔌':'');\n" +
+    "   var lab=q.carried?'laatst bekend':tgMarkt(q,false);\n" +
     "   var live=q.start<=Date.now()&&Date.now()<q.end;\n" +
     "   \n" +
     "   t.font='600 9.5px system-ui,-apple-system,sans-serif';\n" +
@@ -2658,7 +2681,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "        var invoeding=z.datasetIndex===1,bron=q.vergelijking[invoeding?'keBron':'kiBron'];\n" +
     "        return 'Onbalans '+(invoeding?'invoeding':'afname')+(bron?' · '+bron:'')+': '+prijs+' / kWh';\n" +
     "       }\n" +
-    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh'+(z.datasetIndex===0&&q?.epexInjectie?' 🔌 EPEX (plugin)':'');\n" +
+    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh';\n" +
     "      }}}}}});\n" +
     "  return tgChart;\n" +
     " }\n" +
