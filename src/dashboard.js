@@ -736,6 +736,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       req.onsuccess = function () {
         var r = req.result || {};
         if (key === 'prijzen' && Array.isArray(r.rows) && typeof BETenergy !== 'undefined' && BETenergy) BETenergy.vulAanRijen(r.rows);
+        if (key === 'prijzen' && Array.isArray(r.rows) && typeof BEDayAhead !== 'undefined' && BEDayAhead) BEDayAhead.vulAanRijen(r.rows);
         resolve(r);
       };
       req.onerror = function () { reject(req.error); };
@@ -904,7 +905,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       }:null,
       marktImport:market.label,marktExport:exportMarket,ki:ki,ke:ke,
       dayAheadState:p.dayAheadState||'none',gemengdImport:market.mixed,
-      historischImport:hi,historischExport:he,
+      historischImport:hi,historischExport:he,epexInjectie:!!p.beDayAheadBron&&ik==='day_ahead_import',
       provisional:hi||he?true:p.provisional,fresh:p.fresh,updatedAt:p.updatedAt,
       carried:!!p.carried,sourceStart:p.sourceStart,verloop:verloop,values:Object.assign({},v)};
   }
@@ -2214,9 +2215,68 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
   })();
   window.BETenergy = { status: BETenergy.status, kwartier: BETenergy.kwartier };
 
+  /* 6.8.3 — Dynamisch tarief (EPEX day-ahead) aanvullen.
+   * Sinds 20-11-2026 levert current-prices voor ingeplande importkwartieren
+   * day_ahead_import: null. Alleen dán vullen we de openbare EPEX-prijs (Nord Pool,
+   * NL, €/MWh ÷ 1000, kaal) in die de plugin al ophaalt. Een waarde van Balans zelf
+   * wordt nooit overschreven. Gevulde kwartieren dragen beDayAheadBron = 'epex' en
+   * krijgen in de labels een stekker (🔌). Geen onbalans- of aFRR-terugval. */
+  var BEDayAhead = (function () {
+    var HIST = 'be_epex_kwartier_v1', BRONNEN = ['be_epex_nordpool_prices_v1', 'be_epex_nordpool_forecast_prices_v1'];
+    var BEWAAR = 14 * 86400000;
+    function lees(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+    function prijzen() {
+      var h = lees(HIST); h = h && typeof h === 'object' && !Array.isArray(h) ? h : {};
+      var nieuw = false;
+      BRONNEN.forEach(function (k) {
+        var c = lees(k), e = c && c.body && c.body.multiAreaEntries;
+        (Array.isArray(e) ? e : []).forEach(function (x) {
+          var t = Date.parse(x && x.deliveryStart), eind = Date.parse(x && x.deliveryEnd), p = x && x.entryPerArea && x.entryPerArea.NL;
+          if (!Number.isFinite(t) || !Number.isFinite(p) || eind - t !== 900000) return;
+          var v = Math.round(p * 100) / 100000;
+          if (h[t] !== v) { h[t] = v; nieuw = true; }
+        });
+      });
+      if (nieuw) {
+        var grens = Date.now() - BEWAAR;
+        Object.keys(h).forEach(function (t) { if (+t < grens) delete h[t]; });
+        try { localStorage.setItem(HIST, JSON.stringify(h)); } catch (e) {}
+      }
+      return h;
+    }
+    function vulRij(p, gepland, h) {
+      if (!p || !Number.isFinite(p.start) || !gepland) return;
+      var v = p.values && typeof p.values === 'object' ? p.values : (p.values = {});
+      var epex = h[p.start];
+      if (Number.isFinite(v.day_ahead_import)) {
+        // Een eerder door ons ingevulde waarde die afwijkt, komt van Balans zelf.
+        if (p.beDayAheadBron && v.day_ahead_import !== epex) delete p.beDayAheadBron;
+        return;
+      }
+      if (!Number.isFinite(epex)) return;
+      v.day_ahead_import = epex; p.beDayAheadBron = 'epex';
+    }
+    function vulAan(j) {
+      if (!j || !Array.isArray(j.prices)) return j;
+      var plan = new Set((Array.isArray(j.dayAheadPlans) ? j.dayAheadPlans : []).filter(function (x) { return x && x.direction === 'import'; }).map(function (x) { return x.start; }));
+      if (!plan.size) return j;
+      var h = prijzen();
+      j.prices.forEach(function (p) { vulRij(p, p && plan.has(p.start), h); });
+      return j;
+    }
+    function vulAanRijen(rows) {
+      if (!Array.isArray(rows)) return rows;
+      var h = prijzen();
+      rows.forEach(function (p) { vulRij(p, p && p.dayAheadState === 'planned', h); });
+      return rows;
+    }
+    return { vulAan: vulAan, vulAanRijen: vulAanRijen, prijzen: prijzen };
+  })();
+  window.BEDayAhead = { prijzen: BEDayAhead.prijzen };
+
   function beOnbalansResponse(r) {
     return r.clone().json().then(function (j) {
-      return new Response(JSON.stringify(BETenergy.vulAan(j)), { status: r.status, statusText: r.statusText, headers: r.headers });
+      return new Response(JSON.stringify(BEDayAhead.vulAan(BETenergy.vulAan(j))), { status: r.status, statusText: r.statusText, headers: r.headers });
     }).catch(function () { return r; });
   }
 
@@ -2458,7 +2518,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "   if(p2<=p1)return;\n" +
     "   if(Math.floor(q.start/TG_KW)%2){t.fillStyle='#f1f2f4';t.fillRect(p1,a.top,p2-p1,a.bottom-a.top);}\n" +
     "   var mid=(p1+p2)/2;\n" +
-    "   var lab=q.carried?'laatst bekend':tgMarkt(q,false);\n" +
+    "   var lab=q.carried?'laatst bekend':tgMarkt(q,false)+(q.epexInjectie?' 🔌':'');\n" +
     "   var live=q.start<=Date.now()&&Date.now()<q.end;\n" +
     "   \n" +
     "   t.font='600 9.5px system-ui,-apple-system,sans-serif';\n" +
@@ -2522,7 +2582,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     "        var invoeding=z.datasetIndex===1,bron=q.vergelijking[invoeding?'keBron':'kiBron'];\n" +
     "        return 'Onbalans '+(invoeding?'invoeding':'afname')+(bron?' · '+bron:'')+': '+prijs+' / kWh';\n" +
     "       }\n" +
-    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh';\n" +
+    "       return z.dataset.label+': '+(z.datasetIndex===0&&q?.gemengdImport?'≈ ':'')+prijs+' / kWh'+(z.datasetIndex===0&&q?.epexInjectie?' 🔌 EPEX (plugin)':'');\n" +
     "      }}}}}});\n" +
     "  return tgChart;\n" +
     " }\n" +
@@ -2916,7 +2976,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         start: r.start,
         end: r.end,
         afrr: !!r.afrr,
-        marktImport:r.marktImport, marktExport:r.marktExport,gemengdImport:!!r.gemengdImport,
+        marktImport:r.marktImport, marktExport:r.marktExport,gemengdImport:!!r.gemengdImport,epexInjectie:!!r.epexInjectie,
         carried:!!r.carried, sourceStart:r.sourceStart,
         provisional:r.provisional, fresh:r.fresh, updatedAt:r.updatedAt,
         values:r.values,dayAheadExport:r.dayAheadExport,onbalansVergelijking:r.onbalansVergelijking,
@@ -3365,11 +3425,14 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
       var uitvoer=richting&&/^(Export|Invoeding|Teruglevering|Teruglever|Injectie)$/i.test(richting[1]);
       var kaal=richting&&geldigeRij?rij[uitvoer?'ke':'ki']:null;
       var bekend=Number.isFinite(kaal),prijs=bekend?actueelEuro(actueelAllin(kaal,!!uitvoer)):'prijs volgt (all-in)';
+      // 6.8.3: door de plugin ingevulde EPEX-prijs herkenbaar maken.
+      var stekker=bekend&&!uitvoer&&!!rij&&!!rij.epexInjectie;
       var markt=rij&&rij[uitvoer?'marktExport':'marktImport'];
       details.push((richting?(uitvoer?'Export':'Import'):'Prijs')+(markt?' · '+markt:'')+': '+prijs+(bekend?'/kWh':'')+
         (bekend&&(!uitvoer&&rij.gemengdImport)?' · indicatief ongewogen gemiddelde van dynamisch en aFRR':
           bekend&&(rij[uitvoer?'historischExport':'historischImport']||deel.indexOf('≈')!==-1)?' · indicatief / laatst bekende bronprijs':''));
-      var resultaat=deel.replace(bedrag,prijs);
+      if(stekker)details[details.length-1]+=' · EPEX-prijs ingevuld door de plugin 🔌';
+      var resultaat=deel.replace(bedrag,prijs)+(stekker?' 🔌':'');
       return bekend?resultaat:resultaat.replace(/\s*\/\s*kWh\b/gi,'');
     }).join('');
     return {text:nieuw,matched:geraakt,details:details};
