@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.8.3.2 — 21 november 2026
+
+- Ook bij de prijs in het schema (Netaansluiting) dezelfde paarse stekker als in de grafiek, in plaats van het 🔌-teken.
+
 ## 6.8.3.1 — 21 november 2026
 
 - De ingevulde prijs (met stekker) staat na laden of zoomen meteen in de bovenste grafiek. Balans tekent tot zijn volgende ronde (~15–20 s) eerst "Import —"; als de plugin de prijs al heeft, wordt die direct getoond.

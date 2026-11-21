@@ -166,3 +166,5 @@
   first draw (`beAllinLabelWrap`). Horizontal labels get the badge below.
 - Earlier measurements that forced `chart.update()` hid this delay; reproduce
   with a plain reload instead.
+
+- 6.8.3.2: the schema price (#flow-grid-price) shows the same purple plug via CSS ::after on `data-be-epex`, not an emoji.
