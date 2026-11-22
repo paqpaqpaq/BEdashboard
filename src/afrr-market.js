@@ -61,7 +61,8 @@
           if(!Number.isFinite(start)||quarter(start)!==start||end!==start+QUARTER)continue;
           const shortage=numeric(p.shortage),surplus=numeric(p.surplus);
           if(shortage===null&&surplus===null)continue;
-          const row={start,end,ki:shortage===null?null:shortage/1000,ke:surplus===null?null:surplus/1000};
+          const rsRaw=numeric(p.regulation_state??p.regulationState??p.regulation_State);
+          const row={start,end,ki:shortage===null?null:shortage/1000,ke:surplus===null?null:surplus/1000,...(rsRaw!==null?{rs:rsRaw}:{})};
           const previous=quarters.get(start);
           if(previous&&(previous.ki!==row.ki||previous.ke!==row.ke))
             throw new Fault('format','Tegenstrijdige TenneT-verrekenprijzen voor één kwartier.');
@@ -943,6 +944,62 @@
       }
     }
   }
+  // 7.2: afrekenprijs van een afgesloten kwartier uit de 12-secondenreeks (balance-delta-high-res).
+  // op = hoogste opregelprijs bij aFRR-in > 0, af = laagste afregelprijs bij aFRR-out > 0,
+  // mid = laatste middenprijs. Toestand 2: afnemen max(op,mid), invoeden min(af,mid).
+  // Alleen afsluiten als het kwartier compleet is; anders blijft de volgende bron staan.
+  const PRIJS_CACHE='be_onbalans_tenergy_v1',OFFICIEEL_POGING='be_onbalans_officieel_poging_v1';
+  function kwartierUitReeks(rows,q){
+    if(!rows.some(r=>r.start>=q+QUARTER))return null;
+    const pts=rows.filter(r=>r.start>=q&&r.start<q+QUARTER);
+    if(pts.length<70||pts[0].start>q+24000||pts[pts.length-1].start<q+864000)return null;
+    let op=null,af=null,mid=null;
+    for(const p of pts){
+      if(p.up>0&&p.upPrice!==null)op=op===null?p.upPrice:Math.max(op,p.upPrice);
+      if(p.down>0&&p.downPrice!==null)af=af===null?p.downPrice:Math.min(af,p.downPrice);
+      if(p.midPrice!==null)mid=p.midPrice;
+    }
+    const rs=op!==null&&af!==null?2:op!==null?1:af!==null?-1:0;
+    let ki,ke;
+    if(rs===1)ki=ke=op;else if(rs===-1)ki=ke=af;else if(rs===0){if(mid===null)return null;ki=ke=mid;}
+    else{ki=mid===null?op:Math.max(op,mid);ke=mid===null?af:Math.min(af,mid);}
+    return {ki:ki/1000,ke:ke/1000,rs,op,af,mid,punten:pts.length};
+  }
+  function leesPrijsCache(){try{const o=JSON.parse(localStorage.getItem(PRIJS_CACHE)||'{}');return o&&typeof o==='object'&&!Array.isArray(o)?o:{};}catch(_){return {};}}
+  function schrijfPrijsCache(c){try{localStorage.setItem(PRIJS_CACHE,JSON.stringify(c));document.dispatchEvent(new Event('be-onbalans-tenergy-update'));}catch(_){}}
+  const gecontroleerd=new Set();
+  function sluitKwartierenAf(rows){
+    if(!Array.isArray(rows)||!rows.length)return;
+    const laatste=rows[rows.length-1].start;
+    // Alleen kwartieren waarvan al een punt ná het einde bestaat en die nog niet bekeken zijn.
+    const kandidaten=[...new Set(rows.map(r=>quarter(r.start)))].filter(q=>laatste>=q+QUARTER&&!gecontroleerd.has(q));
+    if(!kandidaten.length)return;
+    kandidaten.forEach(q=>gecontroleerd.add(q));
+    const c=leesPrijsCache();let changed=false;
+    for(const q of kandidaten){
+      const old=c[q];
+      if(old&&(old.bron==='tennet-officieel'||old.bron==='tennet-12s'))continue;
+      const r=kwartierUitReeks(rows,q);if(!r)continue;
+      c[q]={ki:r.ki,ke:r.ke,klaar:true,bron:'tennet-12s',rs:r.rs,regel:'TenneT 12 s, regeltoestand '+r.rs,op:r.op,af:r.af,mid:r.mid,punten:r.punten};
+      changed=true;
+    }
+    if(changed)schrijfPrijsCache(c);
+  }
+  function schrijfOfficieel(quarters){
+    if(!Array.isArray(quarters)||!quarters.length)return;
+    const c=leesPrijsCache();let changed=false;
+    for(const p of quarters){
+      if(!Number.isFinite(p?.start)||p.end>Date.now())continue;
+      const old=c[p.start]||{};
+      const ki=Number.isFinite(p.ki)?p.ki:old.ki,ke=Number.isFinite(p.ke)?p.ke:old.ke;
+      if(!Number.isFinite(ki)&&!Number.isFinite(ke))continue;
+      const rs=Number.isFinite(p.rs)?p.rs:old.rs;
+      if(old.bron==='tennet-officieel'&&old.ki===ki&&old.ke===ke&&old.rs===rs)continue;
+      c[p.start]={...old,ki,ke,klaar:true,bron:'tennet-officieel',rs:rs??null,regel:'TenneT verrekenprijs',...(old.bron==='tennet-12s'?{berekend:{ki:old.ki,ke:old.ke,rs:old.rs}}:{})};
+      changed=true;
+    }
+    if(changed)schrijfPrijsCache(c);
+  }
   let nextSettlementCheck=0;
   function publishSettlement(quarters){
     const json=JSON.stringify(quarters);
@@ -956,6 +1013,7 @@
     }
     if(node.textContent===json)return;
     node.textContent=json;
+    schrijfOfficieel(quarters);
     document.dispatchEvent(new Event('be-onbalans-settlement-update'));
   }
   async function refreshSettlement(){
@@ -971,19 +1029,28 @@
     const quarters=state?.scope===current.scope?state.good?.quarters||[]:[];
     publishSettlement(quarters);
     const byStart=new Map(quarters.map(p=>[p.start,p]));
+    // 7.2: ook officiële verrekenprijzen ophalen voor afgesloten kwartieren van het afgelopen etmaal
+    // die nog geen officiële prijs hebben (TenneT publiceert ~1 uur later). Hooguit één keer per uur.
+    const cache=leesPrijsCache(),grensOud=now-86400000,grensNieuw=now-65*60000;
+    const zonderOfficieel=Object.keys(cache).map(Number).filter(q=>q>=grensOud&&q+QUARTER<=grensNieuw&&cache[q]?.bron!=='tennet-officieel'&&!byStartHas(q));
+    function byStartHas(q){return quarters.some(p=>p.start===q&&(Number.isFinite(p.ki)||Number.isFinite(p.ke)));}
+    let laatstePoging=0;try{laatstePoging=Number(localStorage.getItem(OFFICIEEL_POGING))||0;}catch(_){}
+    const uurlijks=zonderOfficieel.length&&now-laatstePoging>=55*60000;
     const missing=tariff.rijen.filter(r=>{
       if(!r?.onbalansVergelijking||!Number.isFinite(r.start)||quarter(r.start)!==r.start||
          r.end!==r.start+QUARTER||r.end>now||r.end<=now-86400000)return false;
       const backup=byStart.get(r.start);
       return ['ki','ke'].some(key=>!Number.isFinite(r.onbalansVergelijking[key])&&!Number.isFinite(backup?.[key]));
     });
-    if(!missing.length)return;
+    if(!missing.length&&!uurlijks)return;
     const reservation=await coordinator.reserve(current.scope,owner,now,'settlement');
     if(!reservation.reserved){
       if(reservation.retryAt>now)nextSettlementCheck=Math.max(now+1500,reservation.retryAt);
       return;
     }
-    const range={start:Math.min(...missing.map(r=>r.start)),end:Math.max(...missing.map(r=>r.end))};
+    const starts=[...missing.map(r=>r.start),...(uurlijks?zonderOfficieel:[])];
+    const range={start:Math.min(...starts),end:Math.max(...missing.map(r=>r.end),...(uurlijks?zonderOfficieel.map(q=>q+QUARTER):[]))};
+    if(uurlijks)try{localStorage.setItem(OFFICIEEL_POGING,String(now));}catch(_){}
     try{
       const data=await request(current,'settlement',range);
       const updated=await coordinator.success(current.scope,owner,data,Date.now(),'settlement');
@@ -1003,6 +1070,7 @@
     try{
       config=await loadConfig();
       [state,molState,budgetState]=await Promise.all([coordinator.read(),coordinator.read('mol'),coordinator.read('budget')]);
+      if(state?.scope===config.scope)sluitKwartierenAf(state?.good?.rows);
       await readBids();await readPower();render();
       if(connectionCheck&&connectionCheck.scope!==config.scope)connectionCheck=null;
       for(const channel of (connectionCheck?['live']:['live','mol'])){
@@ -1030,7 +1098,7 @@
             const checking=!!connectionCheck;
             const data=await request(c,channel,reservation.state.target);
             const result=await coordinator.success(c.scope,owner,data,Date.now(),channel);
-            if(channel==='live')state=result;else molState=result;
+            if(channel==='live'){state=result;sluitKwartierenAf(result?.good?.rows);}else molState=result;
             if(checking||(channel==='live'&&checkMessage)){checkMessage='Verbinding geslaagd: TenneT geeft HTTP 200 en bruikbare metingen terug.';connectionCheck=null;}
           }
         }catch(e){
