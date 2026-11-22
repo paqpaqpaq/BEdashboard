@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.1 — 21 november 2026
+
+- Fact(uur)checker: alleen voor de jaar- of eindafrekening (melding bij een termijnfactuur).
+- Nota's met stroom én gas: gas apart getoond en intern nagerekend; vergelijking met regels en dashboard alleen voor stroom.
+- Netbeheertarief van de nota (bijv. Liander) wordt herkend, met knop om het over te nemen in Financieel.
+- Andere verdeling van de energiebelasting over de jaren wordt als toegestane methode getoond.
+- Opvallende dagen: bij een maandverschil van meer dan € 5 toont de checker welke dashboarddagen eruit springen.
+
 ## 7.0 — 21 november 2026
 
 - Fact(uur)checker toegevoegd: Balans-nota (pdf) inlezen, per post en per maand naast de regels en je dashboard, met verificatie.

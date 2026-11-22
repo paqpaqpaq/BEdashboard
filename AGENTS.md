@@ -182,3 +182,11 @@
 - EB split across 1 January: `taxAllocation` gains `'werkelijk'` (net taxable kWh split by actual net use per calendar year, as Balans invoices). Default stays `'tijd'` (Handboek Milieubelastingen 2026: electricity usually time-proportional; other methods allowed).
 - Fact(uur)checker (menu item after Financieel, hash `#factuurchecker`): own PDF text reader (Flate + Type0/ToUnicode, no external library) and parser for Balans invoices; compares each post with the legal model and month energy with results-v2 (`include_vat=1&include_delivery_cost=1`, Balans rejects mixed flags; opslag subtracted). Only extracted numbers are stored (`be_factuurchecker_v1`), never name, address or IBAN.
 - Number inputs use `step="any"` so tariffs with five decimals validate.
+
+## Version 7.1 — Fact(uur)checker: gas, netbeheer, outlier days
+
+- Invoices with electricity and gas: the parser tracks `domein` ('elek'/'gas') from the "Jaarafrekening Specificatie Gas/Elektriciteit" headers; gas totals in `totalenGas`. Only electricity is compared with the rules and the dashboard; gas is shown and checked internally.
+- Netbeheer per-day tariffs from the invoice are compared with Financieel `networkRates`; a differing tariff is "ⓘ tarief ≠ Financieel" (not an error), with a button that writes the invoice tariffs into `be_overzicht_settings_v1.networkRates`.
+- EB with the same taxable kWh total but a different split over the years is shown as an allowed method.
+- Months with > € 5 between invoice and dashboard list outlier dashboard days (kWh with € 0, or price far from the month median).
+- Image-only PDFs (e.g. "Microsoft Print to PDF") contain no text and cannot be read.
