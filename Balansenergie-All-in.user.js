@@ -14141,6 +14141,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 })();
 
     // 7.0: Fact(uur)checker — Balans-nota (pdf) inlezen, per post en per maand naast de regels en het dashboard.
+    // 7.1: elektriciteit en gas gescheiden; gas alleen getoond, het dashboard gaat over stroom.
     (function () {
 // Minimale PDF-tekstlezer voor Balans-facturen (Type0/Identity-H + ToUnicode, Flate).
 // Geeft per pagina regels terug: [{y, cellen:[{x, tekst}]}], van boven naar onder.
@@ -14327,8 +14328,8 @@ function beFactuurLees(paginas) {
   const num = s => { if (s == null) return NaN; s = String(s).replace(/[€*\s​]/g, ''); if (!/^-?[\d.]*,?\d+$/.test(s)) return NaN; return +s.replace(/\./g, '').replace(',', '.'); };
   const isNum = s => Number.isFinite(num(s));
   const dat = s => { const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s || ''); return m ? m[3] + '-' + m[2] + '-' + m[1] : null; };
-  const f = {type: '', nummer: '', datum: '', periode: null, secties: [], totalen: {}, samenvatting: [], meters: [], termijnen: [], termijnTotaal: null};
-  let sectie = null, kandidaat = null;
+  const f = {type: '', nummer: '', datum: '', periode: null, secties: [], totalen: {}, totalenGas: {}, samenvatting: [], meters: [], termijnen: [], termijnTotaal: null};
+  let sectie = null, kandidaat = null, domein = 'elek';
   const regels = [];
   paginas.forEach(p => p.forEach(r => regels.push(r.cellen.map(c => c.tekst))));
   for (let raw of regels) {
@@ -14343,16 +14344,20 @@ function beFactuurLees(paginas) {
     if (t.includes('Leveringsperiode:')) { const m = /(\d\d-\d\d-\d{4})\s*-\s*(\d\d-\d\d-\d{4})/.exec(kv('Leveringsperiode:') || ''); if (m) f.periode = {van: dat(m[1]), tot: dat(m[2])}; }
     // Totalen onderaan de specificatie.
     let m;
-    if (t.length === 2 && /^Totaal .*exclusief btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.excl = num(t[1]); continue; }
-    if (t.length === 2 && /^btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.btw = num(t[1]); continue; }
-    if (t.length === 2 && /^Totaal inclusief btw$/i.test(t[0]) && isNum(t[1])) { f.totalen.incl = num(t[1]); continue; }
+    // 7.1: een nota kan elektriciteit én gas bevatten; elk deel heeft eigen secties en totalen.
+    if (t.length === 1 && /specificatie\s+gas/i.test(t[0])) { domein = 'gas'; kandidaat = null; sectie = null; continue; }
+    if (t.length === 1 && /specificatie\s+elektriciteit/i.test(t[0])) { domein = 'elek'; kandidaat = null; sectie = null; continue; }
+    const tot = domein === 'gas' ? f.totalenGas : f.totalen;
+    if (t.length === 2 && /^Totaal .*exclusief btw$/i.test(t[0]) && isNum(t[1])) { (/\bgas\b/i.test(t[0]) ? f.totalenGas : /elektriciteit/i.test(t[0]) ? f.totalen : tot).excl = num(t[1]); continue; }
+    if (t.length === 2 && /^btw$/i.test(t[0]) && isNum(t[1])) { tot.btw = num(t[1]); continue; }
+    if (t.length === 2 && /^Totaal inclusief btw$/i.test(t[0]) && isNum(t[1])) { tot.incl = num(t[1]); continue; }
     // Samenvatting pagina 1: omschrijving + excl + btw + totaal.
     if (t.length === 4 && t.slice(1).every(isNum) && !/^Totaal te/i.test(t[0]) && !f.samenvatting.some(s => s.label === t[0])) {
       f.samenvatting.push({label: t[0], excl: num(t[1]), btw: num(t[2]), incl: num(t[3])}); continue;
     }
     // Meterstanden.
     if (t.length === 8 && dat(t[1]) && dat(t[3]) && isNum(t[5])) {
-      f.meters.push({label: t[0], van: dat(t[1]), standVan: +t[2], tot: dat(t[3]), standTot: +t[4], verschil: +t[5], factor: +t[6], verbruik: +t[7]}); continue;
+      f.meters.push({domein, label: t[0], van: dat(t[1]), standVan: +t[2], tot: dat(t[3]), standTot: +t[4], verschil: +t[5], factor: +t[6], verbruik: +t[7]}); continue;
     }
     // Termijnen.
     if ((m = /^(\d{4}-\d{2}-\d{2}) tot (\d{4}-\d{2}-\d{2})$/.exec(t[0])) && t.length >= 3 && isNum(t[1])) {
@@ -14361,12 +14366,12 @@ function beFactuurLees(paginas) {
     if (t[0] === 'Totaal' && t.length === 3 && isNum(t[1]) && f.termijnen.length && f.termijnTotaal == null) { f.termijnTotaal = num(t[1]); continue; }
     // Specificatieregel: omschrijving | aantal | eenheid | tarief | subtotaal | van | tot
     if (t.length === 7 && isNum(t[1]) && isNum(t[3]) && isNum(t[4]) && dat(t[5]) && dat(t[6])) {
-      if (!sectie || sectie.naam !== kandidaat) { sectie = {naam: kandidaat || '(zonder kop)', regels: [], totaal: null}; f.secties.push(sectie); }
+      if (!sectie || sectie.naam !== kandidaat) { sectie = {naam: kandidaat || '(zonder kop)', domein: /\bgas\b/i.test(kandidaat || '') ? 'gas' : domein, regels: [], totaal: null}; f.secties.push(sectie); }
       sectie.regels.push({label: t[0], aantal: num(t[1]), eenheid: t[2], tarief: num(t[3]), subtotaal: num(t[4]), van: dat(t[5]), tot: dat(t[6])});
       continue;
     }
     if (t.length === 2 && (m = /^Totaal (.+)$/.exec(t[0])) && isNum(t[1])) {
-      const s = f.secties.find(s => s.naam === m[1]) || sectie;
+      const s = (sectie && sectie.naam === m[1] ? sectie : null) || [...f.secties].reverse().find(s => s.naam === m[1] && s.domein === domein) || sectie;
       if (s && s.totaal == null) s.totaal = num(t[1]);
       continue;
     }
@@ -14385,7 +14390,7 @@ function beFactuurAnalyse(f) {
   };
   const energie = f.secties.filter(s => /^(Levering|Productie) Elektriciteit$/i.test(s.naam));
   const maanden = new Map(), jaarregels = [];
-  f.secties.forEach(s => s.regels.forEach(r => {
+  f.secties.filter(s => s.domein !== 'gas').forEach(s => s.regels.forEach(r => {
     const mk = energie.includes(s) ? maandVan(r.van, r.tot) : null;
     if (!mk) { jaarregels.push(Object.assign({sectie: s.naam}, r)); return; }
     if (!maanden.has(mk)) maanden.set(mk, {maand: mk, van: r.van, tot: r.tot, afname: [], terug: []});
@@ -14413,10 +14418,13 @@ function beFactuurAnalyse(f) {
   const maxD = fout.reduce((n, x) => Math.max(n, Math.abs(x.berekend - x.factuur)), 0);
   c.push({naam: 'Aantal × tarief = subtotaal', status: !fout.length ? 'ok' : maxD <= 0.05 ? 'afronding' : 'fout', tekst: regelsOk + ' van ' + regelsTot + ' regels exact', fouten: fout});
   f.secties.forEach(s => { if (s.totaal != null) ok('Som regels = totaal “' + s.naam + '”', r2(s.regels.reduce((n, r) => n + r.subtotaal, 0)), s.totaal, 0.011); });
-  const somSecties = r2(f.secties.reduce((n, s) => n + (s.totaal != null ? s.totaal : s.regels.reduce((x, r) => x + r.subtotaal, 0)), 0));
-  if (f.totalen.incl != null) ok('Som secties = totaal incl. btw', somSecties, f.totalen.incl, 0.05);
-  if (f.totalen.excl != null && f.totalen.btw != null && f.totalen.incl != null) ok('Excl. + btw = incl. btw', r2(f.totalen.excl + f.totalen.btw), f.totalen.incl, 0.011);
-  const meterSom = re => f.meters.filter(m => re.test(m.label)).reduce((n, m) => n + Math.abs(m.verbruik), 0);
+  const somDomein = d => r2(f.secties.filter(s => (s.domein === 'gas') === (d === 'gas')).reduce((n, s) => n + (s.totaal != null ? s.totaal : s.regels.reduce((x, r) => x + r.subtotaal, 0)), 0));
+  [['elek', f.totalen, 'elektriciteit'], ['gas', f.totalenGas, 'gas']].forEach(([d, T, nm]) => {
+    if (!f.secties.some(s => (s.domein === 'gas') === (d === 'gas'))) return;
+    if (T.incl != null) ok('Som secties ' + nm + ' = totaal incl. btw', somDomein(d), T.incl, 0.05);
+    if (T.excl != null && T.btw != null && T.incl != null) ok('Excl. + btw = incl. btw (' + nm + ')', r2(T.excl + T.btw), T.incl, 0.011);
+  });
+  const meterSom = re => f.meters.filter(m => m.domein !== 'gas' && re.test(m.label)).reduce((n, m) => n + Math.abs(m.verbruik), 0);
   if (f.meters.length) {
     ok('Afname per maand = meterstanden', lijst.reduce((n, m) => n + m.afnameKwh, 0), meterSom(/^Elektriciteit/i), 0.5);
     ok('Teruglevering per maand = meterstanden', lijst.reduce((n, m) => n + m.terugKwh, 0), meterSom(/^Productie/i), 0.5);
@@ -14427,8 +14435,10 @@ function beFactuurAnalyse(f) {
   const sTerm = f.samenvatting.find(s => /^Termijn/i.test(s.label));
   if (f.termijnen.length && sTerm) ok('Som termijnen = termijnfacturen', r2(term), -sTerm.incl, 0.011);
   const sJaar = f.samenvatting.find(s => /afrekening elektriciteit/i.test(s.label)), sRest = f.samenvatting.find(s => /^Restant/i.test(s.label));
-  if (sJaar && f.totalen.incl != null) ok('Samenvatting = totaal specificatie', sJaar.incl, f.totalen.incl, 0.011);
-  if (sJaar && sTerm && sRest) ok('Afrekening + termijnen = restant', r2(sJaar.incl + sTerm.incl), sRest.incl, 0.011);
+  const sGas = f.samenvatting.find(s => /afrekening gas/i.test(s.label));
+  if (sJaar && f.totalen.incl != null) ok('Samenvatting = totaal specificatie elektriciteit', sJaar.incl, f.totalen.incl, 0.011);
+  if (sGas && f.totalenGas.incl != null) ok('Samenvatting = totaal specificatie gas', sGas.incl, f.totalenGas.incl, 0.011);
+  if (sJaar && sTerm && sRest) { const x = r2(sJaar.incl + (sGas ? sGas.incl : 0) + sTerm.incl), d = Math.abs(x - sRest.incl); c.push({naam: 'Afrekening' + (sGas ? 'en' : '') + ' + termijnen = restant', a: x, b: sRest.incl, status: d <= 0.011 ? 'ok' : d <= 0.10 ? 'afronding' : 'fout'}); }
   return {maanden: lijst, labels, jaarregels, controles: c};
 }
 
@@ -14489,7 +14499,7 @@ function beFactuurAnalyse(f) {
       .d{color:var(--muted);font-size:12px} .neg{color:var(--bad)} .pos{color:var(--ok)}
       .noot{color:var(--muted);font-size:12px;margin-top:6px} .fout{color:var(--bad)}
       details summary{cursor:pointer;margin-top:4px} summary.ctlkop{font-weight:600} details ul{margin-top:8px}
-      .af{color:var(--bad)!important} .balken{border:1px solid var(--line);border-radius:10px;overflow:hidden} .balk summary,.balk.tot,.balk.kopr{display:grid;grid-template-columns:minmax(140px,1fr) 1.4fr 100px 120px 90px 190px;gap:10px;align-items:center;padding:8px 12px;list-style:none;cursor:pointer;border-bottom:1px solid var(--line)} .balk summary::-webkit-details-marker{display:none} .balk.tot{font-weight:700;cursor:default;border-bottom:0} .bb{position:relative;height:12px;background:linear-gradient(var(--line),var(--line)) 50% 0/1px 100% no-repeat} .bb i{position:absolute;top:0;bottom:0;border-radius:3px} .kost{background:#d9534f;fill:#d9534f} .teg{background:#2f9e5b;fill:#2f9e5b} .bw{text-align:right;font-variant-numeric:tabular-nums} .balk.kopr{font-size:11px;color:var(--muted);font-weight:600;cursor:default;text-transform:uppercase;letter-spacing:.03em} .balk.kopr span:nth-child(n+3){text-align:right} .balk.kopr span:last-child{text-align:left} .bo{font-size:12.5px;white-space:nowrap} ul.regels{columns:1} ul.regels li{padding:3px 0;color:var(--muted);font-size:12.5px} .bb.mini{display:block;height:10px;width:130px} table.mnd td{vertical-align:middle} .bd{padding:4px 12px 10px;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line)} .bd p{margin:4px 0} svg.mnd{width:100%;max-width:760px;height:auto;color:var(--ink)} svg.mnd text{font-size:10px;fill:var(--muted)} .oordeel{margin:14px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px} .okk{color:var(--ok)} .s.methode{color:var(--purple)} .s.onb{color:var(--muted)} table.posten td:first-child{white-space:normal;max-width:520px} table.opbouw td:nth-child(2){text-align:right} .kern b{font-size:20px}
+      .af{color:var(--bad)!important} .balken{border:1px solid var(--line);border-radius:10px;overflow:hidden} .balk summary,.balk.tot,.balk.kopr{display:grid;grid-template-columns:minmax(140px,1fr) 1.4fr 100px 120px 90px 190px;gap:10px;align-items:center;padding:8px 12px;list-style:none;cursor:pointer;border-bottom:1px solid var(--line)} .balk summary::-webkit-details-marker{display:none} .balk.tot{font-weight:700;cursor:default;border-bottom:0} .bb{position:relative;height:12px;background:linear-gradient(var(--line),var(--line)) 50% 0/1px 100% no-repeat} .bb i{position:absolute;top:0;bottom:0;border-radius:3px} .kost{background:#d9534f;fill:#d9534f} .teg{background:#2f9e5b;fill:#2f9e5b} .bw{text-align:right;font-variant-numeric:tabular-nums} .balk.kopr{font-size:11px;color:var(--muted);font-weight:600;cursor:default;text-transform:uppercase;letter-spacing:.03em} .balk.kopr span:nth-child(n+3){text-align:right} .balk.kopr span:last-child{text-align:left} .bo{font-size:12.5px;white-space:nowrap} ul.regels{columns:1} ul.regels li{padding:3px 0;color:var(--muted);font-size:12.5px} .bb.mini{display:block;height:10px;width:130px} table.mnd td{vertical-align:middle} .balk.gasr{grid-template-columns:minmax(140px,1fr) 1.4fr 100px;cursor:default;border-bottom:1px solid var(--line)} .bd{padding:4px 12px 10px;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line)} .bd p{margin:4px 0} svg.mnd{width:100%;max-width:760px;height:auto;color:var(--ink)} svg.mnd text{font-size:10px;fill:var(--muted)} .oordeel{margin:14px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px} .okk{color:var(--ok)} .s.methode{color:var(--purple)} .s.onb{color:var(--muted)} table.posten td:first-child{white-space:normal;max-width:520px} table.opbouw td:nth-child(2){text-align:right} .kern b{font-size:20px}
     </style>
     <div class="wrap">
       <h1>Fact(uur)checker <small style="font-size:11px;font-weight:500">7.0</small></h1>
@@ -14508,6 +14518,14 @@ function beFactuurAnalyse(f) {
     shadow.addEventListener('click', e => {
       const b = e.target.closest('button[data-act]'); if (!b) return;
       const nr = b.dataset.nr;
+      if (b.dataset.act === 'net') {
+        const f = facturen.find(x => x.nummer === nr); if (!f) return;
+        let st = {}; try { st = JSON.parse(localStorage.getItem('be_overzicht_settings_v1') || '{}') || {}; } catch (_) {}
+        st.networkRates = st.networkRates || {};
+        f.secties.filter(s => s.domein !== 'gas' && /systeembeheer|netbeheer/i.test(s.naam)).forEach(s => s.regels.forEach(r => { if (/dag/i.test(r.eenheid)) st.networkRates[r.van.slice(0, 4)] = r.tarief; }));
+        try { localStorage.setItem('be_overzicht_settings_v1', JSON.stringify(st)); b.textContent = 'Overgenomen — Financieel gebruikt nu deze tarieven'; b.disabled = true; } catch (_) {}
+        dash.delete(nr); setTimeout(teken, 1200); return;
+      }
       if (b.dataset.act === 'weg') { facturen = facturen.filter(f => f.nummer !== nr); dash.delete(nr); bewaar(); teken(); }
       if (b.dataset.act === 'dash') vergelijk(nr);
     });
@@ -14617,7 +14635,7 @@ function beFactuurAnalyse(f) {
   // Posten van de factuur, in gewone taal, naast hoe het hoort. + verschil = factuur ongunstiger voor jou.
   function posten(f, M) {
     const r2 = x => Math.round(x * 100) / 100;
-    const sec = re => f.secties.filter(s => re.test(s.naam));
+    const sec = re => f.secties.filter(s => s.domein !== 'gas' && re.test(s.naam));
     const som = (secs, fn) => r2(secs.reduce((n, s) => n + s.regels.filter(r => !fn || fn(r)).reduce((x, r) => x + r.subtotaal, 0), 0));
     const kwhS = (secs, fn) => secs.reduce((n, s) => n + s.regels.filter(r => !fn || fn(r)).reduce((x, r) => x + Math.abs(r.aantal), 0), 0);
     const markt = r => /^marktprijs$/i.test(r.label);
@@ -14633,22 +14651,36 @@ function beFactuurAnalyse(f) {
     if (eb.length) {
       P.push({naam: 'Salderen (kWh waarover energiebelasting)', wat: 'Afname min teruglevering die mag meetellen: duurzaam onbeperkt, overig max 5.000 kWh, nooit meer dan de afname (art. 50 lid 2 Wbm, art. 2.31 Energiewet).' + (M && !M.onvolledig ? ' Duurzaam ' + kwh(M.ren) + ' kWh, overig ' + kwh(M.non) + ' kWh.' : ''), factuur: ebKwh, hoort: M && !M.onvolledig ? M.belastbaar : null, eenheid: 'kWh'});
       const p = {naam: 'Energiebelasting', wat: 'Over ' + kwh(ebKwh) + ' kWh. ' + eb.map(r => kwh(r.aantal) + ' kWh × ' + euro(r.tarief, 5) + ' (' + dNL(r.van) + '–' + dNL(dagVoor(r.tot)) + ')').join('; ') + '.', factuur: ebEur, hoort: M && !M.onvolledig ? r2(M.ebTijd) : null, bron: 'tijdsevenredig'};
-      if (M && !M.onvolledig && Math.abs(ebEur - M.ebWerk) <= Math.max(0.5, Math.abs(ebEur - M.ebTijd) / 10) && Math.abs(ebEur - M.ebTijd) > 0.5) { p.methode = 'Balans verdeelt de belastbare kWh over de jaren naar werkelijk verbruik per tariefperiode (' + Object.keys(M.werkelijkKwh).map(y => y + ': ' + kwh(M.werkelijkKwh[y]) + ' kWh').join(', ') + '). Het Handboek Milieubelastingen staat verschillende methoden toe; tijdsevenredig is bij stroom gebruikelijk.'; }
+      // 7.1: zelfde totaal aan belaste kWh, alleen een andere verdeling over de jaren = toegestane methode.
+      if (M && !M.onvolledig && Math.abs(ebKwh - M.belastbaar) <= Math.max(10, M.belastbaar * 0.002) && Math.abs(ebEur - M.ebTijd) > 0.5) {
+        const perJaar = {}; eb.forEach(r => { const y = r.van.slice(0, 4); perJaar[y] = (perJaar[y] || 0) + r.aantal; });
+        const tijd = {}; Object.keys(M.dpj).forEach(y => tijd[y] = M.belastbaar * M.dpj[y] / M.totDagen);
+        const werk = Object.keys(perJaar).every(y => Math.abs(perJaar[y] - (M.werkelijkKwh[y] || 0)) <= 15);
+        p.methode = 'Balans verdeelt de belaste kWh anders over de jaren: ' + Object.keys(perJaar).map(y => y + ' ' + kwh(perJaar[y]) + ' kWh').join(', ') + ' (tijdsevenredig: ' + Object.keys(tijd).map(y => y + ' ' + kwh(tijd[y]) + ' kWh').join(', ') + ')' + (werk ? ', gelijk aan het werkelijke netto verbruik per jaar' : '') + '. Het Handboek Milieubelastingen staat verschillende verdelingen toe; tijdsevenredig is bij stroom gebruikelijk.';
+      }
       P.push(p);
       const rest = heff.flatMap(s => s.regels.filter(r => !ebR(r)));
       if (rest.length) P.push({naam: 'Belastingvermindering (heffingskorting)', wat: 'Vast bedrag per jaar per aansluiting, naar dagen: ' + rest.map(r => r.aantal + ' dagen × ' + euro(r.tarief, 5)).join(' + ') + '.', factuur: r2(rest.reduce((n, r) => n + r.subtotaal, 0)), hoort: M && !M.onvolledig ? r2(-M.verm) : null, bron: 'wettelijk jaarbedrag'});
     }
     const nb = sec(/systeembeheer|netbeheer/i);
-    if (nb.length) P.push({naam: 'Netbeheer', wat: 'Doorberekend tarief van je netbeheerder (' + nb.map(s => s.naam.replace(/^.*\(|\).*$/g, '')).join(', ') + '), per dag.', factuur: som(nb), hoort: M && !M.onvolledig ? r2(M.net) : null, bron: 'ingesteld netbeheertarief'});
+    if (nb.length) {
+      const I = instellingen(), naam = nb.map(s => s.naam.replace(/^.*\(|\).*$/g, '')).join(', ');
+      const nota = {}; nb.forEach(s => s.regels.forEach(r => { if (/dag/i.test(r.eenheid)) nota[r.van.slice(0, 4)] = r.tarief; }));
+      const anders = Object.keys(nota).filter(y => Math.abs(nota[y] - I.net(y)) > 0.00005);
+      const p = {naam: 'Netbeheer', wat: 'Doorberekend tarief van je netbeheerder (' + naam + '), per dag: ' + Object.keys(nota).map(y => y + ' ' + euro(nota[y], 5)).join(', ') + '.', factuur: som(nb), hoort: M && !M.onvolledig ? r2(M.net) : null, bron: 'netbeheer in Financieel'};
+      if (anders.length) { p.instelling = 'Financieel rekent met ' + anders.map(y => y + ' ' + euro(I.net(y), 5)).join(', ') + ' per dag, de nota met het tarief van ' + naam + '. Neem de nota-tarieven over, dan kloppen Financieel en deze vergelijking.'; p.notaTarief = nota; }
+      P.push(p);
+    }
     const vk = sec(/vaste leveringskosten/i);
     if (vk.length) P.push({naam: 'Vaste leveringskosten', wat: 'Vast bedrag per dag van Balans.', factuur: som(vk), hoort: M && !M.onvolledig ? r2(M.lev) : null, bron: 'contract'});
     const bekend = new Set([...lev, ...prod, ...oa, ...op, ...heff, ...nb, ...vk]);
-    f.secties.filter(s => !bekend.has(s)).forEach(s => P.push({naam: s.naam, wat: 'Niet herkende post.', factuur: som([s]), hoort: null}));
+    f.secties.filter(s => s.domein !== 'gas' && !bekend.has(s)).forEach(s => P.push({naam: s.naam, wat: 'Niet herkende post.', factuur: som([s]), hoort: null}));
     P.forEach(p => {
       if (p.hoort == null) { p.oordeel = 'onbekend'; return; }
       const d = p.eenheid === 'kWh' ? p.factuur - p.hoort : r2(p.factuur - p.hoort); p.verschil = d;
       const tol = p.eenheid === 'kWh' ? 2 : 0.011, klein = p.eenheid === 'kWh' ? 10 : Math.max(0.5, Math.abs(p.factuur) * 0.002);
       if (Math.abs(d) <= tol) p.oordeel = 'ok';
+      else if (p.instelling) p.oordeel = 'instelling';
       else if (p.methode) p.oordeel = 'methode';
       else if (Math.abs(d) <= klein) p.oordeel = 'afronding';
       else p.oordeel = d > 0 ? 'nadeel' : 'voordeel';
@@ -14673,8 +14705,10 @@ function beFactuurAnalyse(f) {
 
     // 1. Uitkomst
     h += '<div class="kern">';
-    if (sJaar) h += `<div><small>Uitkomst periode ${sJaar.incl < 0 ? '(tegoed voor jou)' : '(kosten)'}</small><b>${euro(Math.abs(sJaar.incl))}</b></div>`;
-    if (sTerm) h += `<div><small>Al betaald aan termijnen</small><b>${euro(-sTerm.incl)}</b></div>`;
+    const sGas = sam.find(x => /afrekening gas/i.test(x.label));
+    if (sJaar) h += `<div><small>Stroom ${sJaar.incl < 0 ? '(tegoed voor jou)' : '(kosten)'}</small><b>${euro(Math.abs(sJaar.incl))}</b></div>`;
+    if (sGas) h += `<div><small>Gas ${sGas.incl < 0 ? '(tegoed voor jou)' : '(kosten)'}</small><b>${euro(Math.abs(sGas.incl))}</b></div>`;
+    if (sTerm) h += `<div><small>Al betaald aan termijnen${sGas ? ' (stroom + gas)' : ''}</small><b>${euro(-sTerm.incl)}</b></div>`;
     if (sRest) h += `<div><small>${sRest.incl < 0 ? 'Je krijgt terug' : 'Je moet bijbetalen'}</small><b>${euro(Math.abs(sRest.incl))}</b></div>`;
     h += '</div>';
 
@@ -14690,18 +14724,33 @@ function beFactuurAnalyse(f) {
     // Opbouw als balken: één regel per post, details bij aanklikken.
     const sal = P.find(p => p.eenheid === 'kWh'), rijen = P.filter(p => p.eenheid !== 'kWh');
     const maxAbs = Math.max(1, ...rijen.map(p => Math.abs(p.factuur)));
-    const ic = {ok: ['✓', 'ok', 'klopt'], afronding: ['✓', 'ok', 'klopt (afronding)'], methode: ['↔', 'methode', 'andere toegestane methode'], nadeel: ['✗', 'fout', 'in je nadeel'], voordeel: ['✓', 'ok', 'in je voordeel'], onbekend: ['?', 'onb', 'niet te controleren']};
+    const ic = {ok: ['✓', 'ok', 'klopt'], afronding: ['✓', 'ok', 'klopt (afronding)'], methode: ['↔', 'methode', 'andere toegestane methode'], nadeel: ['✗', 'fout', 'in je nadeel'], voordeel: ['✓', 'ok', 'in je voordeel'], onbekend: ['?', 'onb', 'niet te controleren'], instelling: ['ⓘ', 'methode', 'tarief ≠ Financieel']};
     h += `<h3>Zo komt het bedrag tot stand</h3><div class="balken"><div class="balk kopr"><span>Post</span><span></span><span>Nota</span><span>Volgens de regels</span><span>Verschil</span><span>Oordeel</span></div>`;
     let tH = 0, alleH = true;
     rijen.forEach(p => {
       const v = p.factuur, w = Math.abs(v) / maxAbs * 50, I = ic[p.oordeel];
-      const det = [p.wat, p.methode && '↔ ' + p.methode, p === rijen.find(x => x.naam === 'Energiebelasting') && sal ? 'Salderen: ' + sal.wat + ' Op de nota ' + kwh(sal.factuur) + ' kWh' + (sal.hoort != null ? ', volgens de regels ' + kwh(sal.hoort) + ' kWh.' : '.') : null,
+      const det = [p.wat, p.methode && '↔ ' + p.methode, p.instelling && 'ⓘ ' + p.instelling, p === rijen.find(x => x.naam === 'Energiebelasting') && sal ? 'Salderen: ' + sal.wat + ' Op de nota ' + kwh(sal.factuur) + ' kWh' + (sal.hoort != null ? ', volgens de regels ' + kwh(sal.hoort) + ' kWh.' : '.') : null,
         p.hoort != null ? 'Nota ' + euro(p.factuur) + ' · volgens de regels ' + euro(p.hoort) + ' (' + p.bron + ') · verschil ' + (p.verschil > 0 ? '+' : '') + euro(p.verschil) + '.' : null].filter(Boolean);
-      if (p.hoort == null) alleH = false; else tH += p.hoort;
-      h += `<details class="balk"><summary><span class="bn">${esc(p.naam.replace(/ \(.*\)$/, ''))}</span><span class="bb"><i style="${v >= 0 ? 'left:50%' : 'right:50%'};width:${w}%" class="${v >= 0 ? 'kost' : 'teg'}"></i></span><span class="bw">${euro(v)}</span><span class="bw d">${p.hoort == null ? '—' : euro(p.hoort)}</span><span class="bw d">${p.verschil == null ? '' : (p.verschil > 0 ? '+' : '') + euro(p.verschil)}</span><span class="bo"><span class="s ${I[1]}">${I[0]}</span>${I[2]}</span></summary><div class="bd">${det.map(t => `<p>${esc(t)}</p>`).join('')}</div></details>`;
+      if (p.instelling) tH += p.factuur; else if (p.hoort == null) alleH = false; else tH += p.hoort;
+      h += `<details class="balk"><summary><span class="bn">${esc(p.naam.replace(/ \(.*\)$/, ''))}</span><span class="bb"><i style="${v >= 0 ? 'left:50%' : 'right:50%'};width:${w}%" class="${v >= 0 ? 'kost' : 'teg'}"></i></span><span class="bw">${euro(v)}</span><span class="bw d">${p.hoort == null ? '—' : euro(p.hoort)}</span><span class="bw d">${p.verschil == null ? '' : (p.verschil > 0 ? '+' : '') + euro(p.verschil)}</span><span class="bo"><span class="s ${I[1]}">${I[0]}</span>${I[2]}</span></summary><div class="bd">${det.map(t => `<p>${esc(t)}</p>`).join('')}${p.notaTarief ? `<p><button data-act="net" data-nr="${esc(f.nummer)}">Netbeheertarieven van de nota overnemen in Financieel</button></p>` : ''}</div></details>`;
     });
-    h += `<div class="balk tot"><span class="bn">Uitkomst</span><span class="bb"></span><span class="bw">${euro(f.totalen.incl)}</span><span class="bw">${alleH ? euro(tH) : '—'}</span><span class="bw">${alleH ? (f.totalen.incl - tH > 0 ? '+' : '') + euro(f.totalen.incl - tH) : ''}</span><span></span></div></div>`;
+    h += `<div class="balk tot"><span class="bn">Uitkomst stroom</span><span class="bb"></span><span class="bw">${euro(f.totalen.incl)}</span><span class="bw">${alleH ? euro(tH) : '—'}</span><span class="bw">${alleH ? (f.totalen.incl - tH > 0 ? '+' : '') + euro(f.totalen.incl - tH) : ''}</span><span></span></div></div>`;
     h += `<p class="noot">Rood = kosten, groen = in je voordeel. Verschil + = nota ongunstiger voor jou. Klik op een post voor uitleg.</p>`;
+    // 7.1: gas staat op dezelfde nota maar niet in het Balans-dashboard: alleen tonen wat er staat.
+    const gas = f.secties.filter(s => s.domein === 'gas');
+    if (gas.length) {
+      const m3 = f.meters.filter(m => m.domein === 'gas').reduce((n, m) => n + Math.abs(m.verbruik || 0), 0);
+      const r2g = x => Math.round(x * 100) / 100, rg = [];
+      gas.forEach(s => {
+        if (/levering gas/i.test(s.naam)) { const lb = {}; s.regels.forEach(r => lb[r.label] = (lb[r.label] || 0) + r.subtotaal); Object.keys(lb).forEach(k => rg.push([k.replace(/^marktprijs$/i, 'Gasprijs (marktprijs)').replace(/^Inkoopvergoeding$/i, 'Inkoopvergoeding gas'), r2g(lb[k])])); }
+        else rg.push([s.naam.replace(/^Overheidsheffingen$/i, 'Energiebelasting gas').replace(/kosten \(/i, 'kosten gas (').replace(/\/Diversen$/i, ' gas'), r2g(s.regels.reduce((n, r) => n + r.subtotaal, 0))]);
+      });
+      const gOk = a.controles.filter(c => /gas/i.test(c.naam)).every(c => c.status !== 'fout');
+      h += `<h3>Gas <span style="text-transform:none;font-weight:400">— staat op dezelfde nota, maar zit niet in je Balans-dashboard</span></h3><div class="balken">` +
+        rg.map(([k, v]) => `<div class="balk tot gasr"><span class="bn" style="font-weight:400">${esc(k)}</span><span></span><span class="bw" style="font-weight:400">${euro(v)}</span></div>`).join('') +
+        `<div class="balk tot gasr"><span class="bn">Uitkomst gas</span><span class="d">${m3 ? kwh(m3) + ' m³' : ''}</span><span class="bw">${euro(f.totalenGas.incl)}</span></div></div>` +
+        `<p class="noot">${gOk ? '✓ Intern nagerekend: regels en totalen kloppen.' : '✗ Gas rekent intern niet sluitend, zie Verificatie.'} Gas wordt niet met de regels of het dashboard vergeleken.</p>`;
+    }
 
     // Per maand: tabel met inline balk en afwijking t.o.v. dashboard (altijd zichtbaar).
     const mm = a.maanden, mx = Math.max(1, ...mm.map(m => Math.abs(m.saldo)));
