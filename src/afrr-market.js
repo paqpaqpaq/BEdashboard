@@ -44,7 +44,19 @@
     return MOL_PATH+'?date_from='+encodeURIComponent(utcParameter(q-QUARTER))+'&date_to='+encodeURIComponent(utcParameter(q+QUARTER));
   }
   function settlementPath(range){
-    return SETTLEMENT_PATH+'?date_from='+encodeURIComponent(utcParameter(range.start))+'&date_to='+encodeURIComponent(utcParameter(range.end));
+    // 7.2: de bereikvariant rekent mogelijk in lokale tijd; een uur ruimte aan beide kanten dekt
+    // zowel UTC als Nederlandse tijd. Wat terugkomt wordt per kwartier op tijd ingedeeld.
+    return SETTLEMENT_PATH+'?date_from='+encodeURIComponent(utcParameter(range.start-3600000))+'&date_to='+encodeURIComponent(utcParameter(range.end+3600000));
+  }
+  // Tijd zonder tijdzone = Nederlandse tijd (zo geeft TenneT de bereikvariant terug).
+  function lokaleTijd(value){
+    if(typeof value!=='string')return NaN;
+    if(/(?:Z|[+-]\d\d:?\d\d)$/.test(value))return Date.parse(value);
+    const m=/^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/.exec(value);
+    if(!m)return NaN;
+    const utc=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
+    for(const off of [60,120]){const t=utc-off*60000;const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Amsterdam',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(t));if(p===m[4]+':'+m[5])return t;}
+    return NaN;
   }
   function parseSettlement(body){
     if(body?.error==='No data found')return {quarters:[]};
@@ -53,11 +65,13 @@
       throw new Fault('format','Geen TenneT-verrekenprijzen in het antwoord.');
     const quarters=new Map();
     for(const series of response.TimeSeries){
-      if(series.currency_Unit_name!=='EUR'||series.price_Measurement_Unit_name!=='MWh')
+      const cur=series.currency_Unit_name??series['currency_Unit.name'],unit=series.price_Measurement_Unit_name??series['price_Measurement_Unit.name'];
+      if((cur&&cur!=='EUR')||(unit&&unit!=='MWh'))
         throw new Fault('format','Onverwachte eenheid in TenneT-verrekenprijzen.');
-      for(const period of Array.isArray(series.Period)?series.Period:[series.Period]){
-        for(const p of period?.Points||[]){
-          const start=sourceTime(p.timeInterval_start),end=sourceTime(p.timeInterval_end);
+      const periods=series.Period??series.period;
+      for(const period of Array.isArray(periods)?periods:[periods]){
+        for(const p of period?.Points||period?.points||[]){
+          const start=lokaleTijd(p.timeInterval_start),end=lokaleTijd(p.timeInterval_end);
           if(!Number.isFinite(start)||quarter(start)!==start||end!==start+QUARTER)continue;
           const shortage=numeric(p.shortage),surplus=numeric(p.surplus);
           if(shortage===null&&surplus===null)continue;
@@ -70,6 +84,9 @@
         }
       }
     }
+    // Diagnose: bij een leeg resultaat een klein voorbeeld van het antwoord bewaren (geen sleutel).
+    try{if(!quarters.size){const ts=response.TimeSeries[0]||{},per=ts.Period??ts.period,p0=(Array.isArray(per)?per[0]:per)||{};
+      localStorage.setItem('be_onbalans_officieel_voorbeeld_v1',JSON.stringify({at:Date.now(),series:Object.keys(ts),period:Object.keys(p0),punt:(p0.Points||p0.points||[])[0]||null}).slice(0,2000));}}catch(_){}
     return {quarters:[...quarters.values()]};
   }
   function parseMerit(body){
