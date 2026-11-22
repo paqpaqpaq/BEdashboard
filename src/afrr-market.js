@@ -1013,7 +1013,9 @@
       if(!Number.isFinite(ki)&&!Number.isFinite(ke))continue;
       const rs=Number.isFinite(p.rs)?p.rs:old.rs;
       if(old.bron==='tennet-officieel'&&old.ki===ki&&old.ke===ke&&old.rs===rs)continue;
-      c[p.start]={...old,ki,ke,klaar:true,bron:'tennet-officieel',rs:rs??null,regel:'TenneT verrekenprijs',...(old.bron==='tennet-12s'?{berekend:{ki:old.ki,ke:old.ke,rs:old.rs}}:{})};
+      c[p.start]={...old,ki,ke,klaar:true,bron:'tennet-officieel',rs:rs??null,regel:'TenneT verrekenprijs',
+        ...(old.bron==='tennet-12s'?{berekend:{ki:old.ki,ke:old.ke,rs:old.rs}}:{}),
+        ...(old.bron==='tenergy'?{tg:{ki:old.ki,ke:old.ke,klaar:!!old.klaar,rs:old.rs??null}}:{})};
       changed=true;
     }
     if(changed)schrijfPrijsCache(c);
@@ -1068,9 +1070,9 @@
       return;
     }
     const starts=[...missing.map(r=>r.start),...(uurlijks?zonderOfficieel:[])];
-    // Oudste eerst, hooguit 6 uur per aanvraag; de rest volgt bij de volgende ronden.
+    // Nieuwste eerst (wat je nu ziet), hooguit 6 uur per aanvraag; oudere kwartieren volgen daarna.
     const rStart=Math.min(...starts),rEnd=Math.max(...missing.map(r=>r.end),...(uurlijks?zonderOfficieel.map(q=>q+QUARTER):[]));
-    const range={start:rStart,end:Math.min(rEnd,rStart+6*3600000)};
+    const range={start:Math.max(rStart,rEnd-6*3600000),end:rEnd};
     if(uurlijks)try{localStorage.setItem(OFFICIEEL_POGING,String(now));}catch(_){}
     try{
       const data=await request(current,'settlement',range);
