@@ -190,3 +190,11 @@
 - EB with the same taxable kWh total but a different split over the years is shown as an allowed method.
 - Months with > € 5 between invoice and dashboard list outlier dashboard days (kWh with € 0, or price far from the month median).
 - Image-only PDFs (e.g. "Microsoft Print to PDF") contain no text and cannot be read.
+
+## Version 7.3 — settlement price per quarter
+
+- Cache `be_onbalans_tenergy_v1` (same key/shape) ranks sources by `bron`: `tennet-officieel` > `tennet-12s` > `tenergy` (klaar) > `tenergy` (voorlopig). Older versions treat the new names as non-Tenergy and keep working. A provisional BE row ranks below a closed own price; a definitive BE price always wins.
+- `tennet-12s`: computed in `afrr-market.js` (`kwartierUitReeks`) from balance-delta-high-res: op = max upward price with aFRR-in > 0, af = min downward price with aFRR-out > 0, mid = last mid price; state 2 → import max(op,mid), export min(af,mid). Only complete quarters (≥ 70 points, first ≤ +24 s, last ≥ +864 s, a later point exists). Never clip prices.
+- Official settlement prices: production limit 25/day, 5/min, 1/s (shared with HA). At most one request per 6 h covering all open quarters (≤ 3 days); today's prices in practice appear the next day. Earlier estimates are kept as `berekend` / `tg`.
+- Tenergy: series lags 3 minutes; minute 0–2 belong to the previous quarter; estimate = minute 2 of the next quarter, fetched at most 3× per quarter (3:30, 8:30, 13:30).
+- Regulation state is drawn per closed quarter at the bottom of `be-tarief-chart` (bold = official, grey = 12 s, light = Tenergy table).

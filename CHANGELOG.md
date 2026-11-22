@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.3 — 21 november 2026
+
+- Afrekenprijs per kwartier zonder BE-prijs: officiële TenneT-verrekenprijs gaat voor, daarna eigen berekening uit de TenneT 12 s-reeks (regeltoestand, middenprijs in toestand 2, alleen complete kwartieren), daarna Tenergy.
+- Tenergy-schatting verbeterd: minuut 2 van het volgende kwartier (de reeks loopt 3 minuten achter), hooguit 3 keer per kwartier opgehaald.
+- Regeltoestand (−1, 0, 1, 2) per afgesloten kwartier onderaan de tariefgrafiek; vet = officieel, grijs = 12 s-berekening, licht = Tenergy.
+- Officiële verrekenprijzen binnen de TenneT-limiet (25 per dag): hooguit elke 6 uur één aanvraag; ze verschijnen in de praktijk de volgende dag.
+
 ## 7.1 — 21 november 2026
 
 - Fact(uur)checker: alleen voor de jaar- of eindafrekening (melding bij een termijnfactuur).

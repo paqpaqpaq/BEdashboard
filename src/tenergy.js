@@ -1,4 +1,8 @@
 /* 6.8 — Onbalansprijzen via Tenergy (userscript/extensie-deel, met netwerktoegang).
+ * 7.2: terugval zonder TenneT-sleutel. De Tenergy-reeks loopt 3 minuten achter: minuut 0-2 van
+ * een kwartier hoort nog bij het vorige. Schatting = minuut 2 van het volgende kwartier, tot die er
+ * is de laatste minuut. Hooguit 3 keer per kwartier ophalen. Prijzen van TenneT (bron tennet-*)
+ * worden nooit overschreven.
  * De Tenergy-pagina bevat `data = {...}; serialChart.updateChart(data, ...)` met
  * ~1,5 dag minuutwaarden "Afnemen"/"Invoeden" (€/MWh). Per kwartier telt de laatste
  * minuutwaarde; die kwam op 17-11 in 7 van 8 vergeleken kwartieren exact overeen
@@ -9,7 +13,10 @@
   window.__beTenergy672 = true;
   const BRON = 'https://services.tenergy.nl/public.aspx/actualimbalanceprices';
   const OPSLAG = 'be_onbalans_tenergy_v1', STATUS = 'be_onbalans_tenergy_status_v1';
-  const KWARTIER = 900000, MINUUT = 60000, BEWAAR_MS = 60 * 86400000, INTERVAL = 60000;
+  const KWARTIER = 900000, MINUUT = 60000, BEWAAR_MS = 60 * 86400000;
+  // Ophaalmomenten binnen elk kwartier (ms na de kwartierstart): na minuut 2 (sluit het vorige
+  // kwartier af), halverwege en aan het eind voor de live-lijn.
+  const MOMENTEN = [3.5 * MINUUT, 8.5 * MINUUT, 13.5 * MINUUT];
   let laatsteHaal = 0, bezig = false;
   function laad() {
     try { const o = JSON.parse(localStorage.getItem(OPSLAG) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }
@@ -54,31 +61,23 @@
     const o = (p.find(x => x.type === 'timeZoneName')?.value || 'GMT+01:00').replace('GMT', '');
     return o === '' ? '+00:00' : o;
   }
-  // Kwartierprijs volgens de regeltoestand (TenneT-systematiek, benadering):
-  // alleen afregelen (−1): laagste prijs; alleen opregelen (+1): hoogste prijs;
-  // beide (2): afnemen hoogste, invoeden laagste; geen (0) of te weinig activatiedata: laatste minuut.
+  // Regeltoestand uit de activatietabel: alleen ter informatie, niet voor de prijs.
+  function tabelToestand(q, act) {
+    const min = [];
+    for (let t = q; t < q + KWARTIER; t += MINUUT) if (act[t]) min.push(t);
+    if (min.length < MIN_DEKKING) return null;
+    const op = min.some(t => act[t][0] > 0 || act[t][2] > 0), af = min.some(t => act[t][1] > 0 || act[t][3] > 0);
+    return op && af ? 2 : op ? 1 : af ? -1 : 0;
+  }
+  // Schatting per kwartier: minuut 3 t/m 14 van het kwartier en minuut 0-2 van het volgende horen
+  // bij dit kwartier. Eindschatting = minuut 2 van het volgende kwartier.
   function kwartierPrijs(q, afnemen, invoeden, act, nu) {
-    const minuten = [];
-    for (let t = q; t < q + KWARTIER && t <= nu; t += MINUUT) if (afnemen.has(t) && invoeden.has(t)) minuten.push(t);
-    if (!minuten.length) return null;
-    const laatste = minuten[minuten.length - 1];
-    const res = { ki: afnemen.get(laatste) / 1000, ke: invoeden.get(laatste) / 1000, minuut: laatste, rs: null, regel: 'laatste minuut' };
-    const metAct = minuten.filter(t => act[t]);
-    if (metAct.length < MIN_DEKKING) return res;
-    const op = metAct.filter(t => act[t][0] > 0 || act[t][2] > 0), af = metAct.filter(t => act[t][1] > 0 || act[t][3] > 0);
-    const prijzen = (lijst, kaart) => lijst.map(t => kaart.get(t));
-    if (op.length && af.length) {
-      res.rs = 2; res.regel = 'regeltoestand 2';
-      res.ki = Math.max(...prijzen(minuten, afnemen)) / 1000; res.ke = Math.min(...prijzen(minuten, invoeden)) / 1000;
-    } else if (af.length) {
-      res.rs = -1; res.regel = 'alleen afregelen';
-      const p = Math.min(...prijzen(af, afnemen), ...prijzen(af, invoeden)) / 1000; res.ki = res.ke = p;
-    } else if (op.length) {
-      res.rs = 1; res.regel = 'alleen opregelen';
-      const p = Math.max(...prijzen(op, afnemen), ...prijzen(op, invoeden)) / 1000; res.ki = res.ke = p;
-    } else { res.rs = 0; res.regel = 'geen activatie'; }
-    res.dekking = metAct.length;
-    return res;
+    let laatste = null;
+    for (let m = 3; m <= 17; m++) { const t = q + m * MINUUT; if (t <= nu && afnemen.has(t) && invoeden.has(t)) laatste = t; }
+    if (laatste === null) return null;
+    const klaar = laatste === q + 17 * MINUUT;
+    return { ki: afnemen.get(laatste) / 1000, ke: invoeden.get(laatste) / 1000, minuut: laatste, klaar,
+      rs: tabelToestand(q, act), regel: klaar ? 'minuut 2 volgend kwartier' : 'laatste minuut (voorlopig)' };
   }
   function verwerk(html, nu) {
     const m = /data\s*=\s*(\{[\s\S]*?\})\s*;\s*serialChart\.updateChart/.exec(html);
@@ -87,18 +86,18 @@
     const afnemen = reeks(data, 'PRICES_TAKE'), invoeden = reeks(data, 'PRICES_FEED');
     const act = leesActivatie(html, nu), kwartieren = laad();
     const qs = new Set();
-    afnemen.forEach((v, t) => { if (t <= nu) qs.add(t - (t % KWARTIER)); });
+    afnemen.forEach((v, t) => { if (t <= nu) { const k = t - 3 * MINUUT; qs.add(k - (k % KWARTIER)); } });
     let aantal = 0;
     for (const q of qs) {
       const r = kwartierPrijs(q, afnemen, invoeden, act, nu);
       if (!r) continue;
-      const klaar = q + KWARTIER <= nu && r.minuut >= q + KWARTIER - MINUUT;
+      const klaar = r.klaar;
       const oud = kwartieren[q];
-      if (oud && oud.bron === 'tennet') continue; // Officieel gaat voor.
+      if (oud && /^tennet/.test(oud.bron || '')) continue; // TenneT (officieel of 12 s) gaat voor.
       if (oud && oud.klaar && !klaar) continue; // Afgesloten waarde niet terug naar voorlopig.
       // Een eerder bepaalde regeltoestand niet weggooien als de activatie inmiddels uit de tabel is.
       if (oud && oud.klaar && oud.rs != null && r.rs == null) continue;
-      kwartieren[q] = { ki: r.ki, ke: r.ke, minuut: r.minuut, klaar, bron: 'tenergy', rs: r.rs, regel: r.regel, ...(r.dekking ? { dekking: r.dekking } : {}) };
+      kwartieren[q] = { ki: r.ki, ke: r.ke, minuut: r.minuut, klaar, bron: 'tenergy', rs: r.rs, regel: r.regel };
       aantal++;
     }
     if (!aantal) throw Error('Tenergy gaf geen bruikbare minuutwaarden');
@@ -121,7 +120,13 @@
       onload: r => { try { if (r.status !== 200) throw Error('Tenergy HTTP ' + r.status); verwerk(r.responseText, Date.now()); klaar(''); } catch (e) { klaar(e.message); } },
       onerror: e => klaar('Tenergy niet bereikbaar' + (e && (e.error || e.statusText || e.status) ? ' (' + (e.error || e.statusText || e.status) + ')' : '')), ontimeout: () => klaar('Tenergy reageert niet') });
   }
-  function bijwerken() { if (!document.hidden && Date.now() - laatsteHaal >= INTERVAL) haal(); }
+  // Laatste ophaalmoment dat al voorbij is; ophalen als dat nog niet gebeurd is.
+  function moment(nu) {
+    const q = nu - (nu % KWARTIER);
+    for (let i = MOMENTEN.length - 1; i >= 0; i--) if (q + MOMENTEN[i] <= nu) return q + MOMENTEN[i];
+    return q - KWARTIER + MOMENTEN[MOMENTEN.length - 1];
+  }
+  function bijwerken() { const nu = Date.now(); if (!document.hidden && laatsteHaal < moment(nu)) haal(); }
   haal();
   setInterval(bijwerken, 15000);
   document.addEventListener('visibilitychange', bijwerken);
