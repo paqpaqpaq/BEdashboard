@@ -14576,12 +14576,12 @@ function beFactuurAnalyse(f) {
           const vat = bool(j.pricing?.include_vat), lev = bool(j.pricing?.include_delivery_cost);
           for (const s of j.series) {
             const d = s.date || s.day; if (!d || d < m.van || d >= m.tot) continue;
-            if (![s.import_kwh, s.export_kwh, s.total_buy_eur, s.total_sell_eur].every(Number.isFinite)) { r.ontbreekt++; continue; }
+            if (![s.import_kwh, s.export_kwh, s.total_buy_eur, s.total_sell_eur].every(Number.isFinite)) { r.ontbreekt++; (r.leeg = r.leeg || []).push(d); continue; }
             let buy = s.total_buy_eur, sell = s.total_sell_eur;
             if (lev) { buy -= s.import_kwh * (vat ? OPSLAG : OPSLAG_EX); sell += s.export_kwh * (vat ? OPSLAG : OPSLAG_EX); }
             if (!vat) { buy *= 1.21; sell *= 1.21; }
             r.imp += s.import_kwh; r.exp += s.export_kwh; r.buy += buy; r.sell += sell; r.dagen++;
-            st.dagen.push({d, imp: s.import_kwh, exp: s.export_kwh, pv: s.pv_estimated_kwh, pvBekend: Number.isFinite(s.pv_estimated_kwh)});
+            st.dagen.push({d, buy, sell, imp: s.import_kwh, exp: s.export_kwh, pv: s.pv_estimated_kwh, pvBekend: Number.isFinite(s.pv_estimated_kwh)});
           }
         }
         const totDagen = Math.round((new Date(m.tot) - new Date(m.van)) / 864e5);
@@ -14776,6 +14776,26 @@ function beFactuurAnalyse(f) {
     const tok = T.n === mm.length;
     h += `<tr class="som"><td>Totaal</td><td>${kwh(T.ak)} kWh${tok ? onder(T.dak, v => kwh(v)) : ''}</td><td>${kwh(T.tk)} kWh${tok ? onder(T.dtk, v => kwh(v)) : ''}</td><td>${euro(T.ae)}${tok ? onder(T.dae, euro) : ''}</td><td>${euro(T.te)}${tok ? onder(T.dte, euro) : ''}</td><td>${euro(T.ae - T.te)}${tok ? onder(T.dae - T.dte, euro) : ''}</td><td></td><td>${tok ? dl((T.ae - T.te) - (T.dae - T.dte), 0.5, euro) : ''}</td></tr></tbody></table></div>`;
     h += `<p class="noot">Zwart = nota (marktprijs + netcorrectie, incl. btw, zonder inkoopvergoeding). Grijs = dashboard Resultaten op dezelfde basis. Afwijking = nota − dashboard op netto stroom: <span class="af">rood +</span> = nota ongunstiger, <span class="okk">groen −</span> = nota gunstiger; daaronder het kWh-verschil afname / teruglevering. Kleiner dan € 0,50 of 1,5 kWh = 0.</p>`;
+    // 7.1: maanden met een verschil > € 5: welke dagen springen eruit in het dashboard?
+    const opv = [];
+    mm.forEach(m => {
+      const d = dz(m); if (!d || !ds.dagen) return;
+      const afw = (m.afnameEur + m.terugEur) - (d.buy - d.sell); if (Math.abs(afw) <= 5) return;
+      const dg = ds.dagen.filter(x => x.d >= m.van && x.d < m.tot), lijst = [];
+      const med = a => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : NaN; };
+      [['exp', 'sell', 'teruglevering', 'opbrengst'], ['imp', 'buy', 'afname', 'kosten']].forEach(([k, e, naam, wat]) => {
+        const pr = dg.filter(x => x[k] > 1).map(x => x[e] / x[k]), mdn = med(pr), mad = med(pr.map(p => Math.abs(p - mdn)));
+        dg.forEach(x => {
+          if (x[k] > 1 && Math.abs(x[e]) < 0.01) lijst.push({d: x.d, t: `${naam} ${kwh(x[k])} kWh maar ${wat} € 0,00`});
+          else if (x[k] > 3 && Number.isFinite(mdn) && Math.abs(x[e] / x[k] - mdn) > Math.max(0.10, 4 * mad)) lijst.push({d: x.d, t: `${naam} ${kwh(x[k])} kWh tegen gem. ${euro(x[e] / x[k], 3)}/kWh (maand ${euro(mdn, 3)})`});
+        });
+      });
+      (d.leeg || []).forEach(x => lijst.push({d: x, t: 'geen gegevens in het dashboard'}));
+      lijst.sort((a, b) => a.d < b.d ? -1 : 1);
+      opv.push(`<li><b>${MND[+m.maand.slice(5) - 1]} ${m.maand.slice(0, 4)}</b> <span class="${afw > 0 ? 'af' : 'okk'}">${afw > 0 ? '+' : '−'}${euro(Math.abs(afw))}</span>: ` +
+        (lijst.length ? lijst.map(x => `${dNL(x.d).slice(0, 5)} ${esc(x.t)}`).join(' · ') : 'geen dag springt eruit; het verschil is over de maand gespreid (bijv. andere afrekenprijzen dan het dashboard toont).') + '</li>');
+    });
+    if (opv.length) h += `<h3>Opvallende dagen</h3><ul class="ctl regels">${opv.join('')}</ul><p class="noot">Alleen maanden met meer dan € 5 verschil tussen nota en dashboard. De nota geeft maandtotalen; deze dagen zijn de waarschijnlijke plek van het verschil, gezien vanuit het dashboard.</p>`;
     if (ds?.fout) h += `<p class="fout">Dashboard: ${esc(ds.fout)}</p>`;
 
     // 4. Controles, ingeklapt
