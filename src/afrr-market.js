@@ -383,7 +383,7 @@
         const blocked=Math.max(s.nextAt||0,s.leaseUntil||0,budget.nextAt||0,
           all.length>=8?all[0]+60000:0,id==='live'&&attempts.length>=5?attempts[0]+60000:0,
           id==='mol'&&daily.length>=500?daily[0]+86400000:0,
-          id==='settlement'&&settlements.length>=25?settlements[0]+86400000:0);
+          id==='settlement'&&settlements.length>=110?settlements[0]+86400000:0);
         const alreadyLoaded=id==='mol'&&s.good?.quarters.some(p=>p.start===q);
         const exhausted=id==='mol'&&s.target===q&&s.tries>=3;
         if(s.authBlocked||blocked>now||alreadyLoaded||exhausted)return {value:{reserved:false,state:s,retryAt:alreadyLoaded||exhausted?q+QUARTER+1000:blocked}};
@@ -980,7 +980,8 @@
       const old=c[q];
       if(old&&(old.bron==='tennet-officieel'||old.bron==='tennet-12s'))continue;
       const r=kwartierUitReeks(rows,q);if(!r)continue;
-      c[q]={ki:r.ki,ke:r.ke,klaar:true,bron:'tennet-12s',rs:r.rs,regel:'TenneT 12 s, regeltoestand '+r.rs,op:r.op,af:r.af,mid:r.mid,punten:r.punten};
+      c[q]={ki:r.ki,ke:r.ke,klaar:true,bron:'tennet-12s',rs:r.rs,regel:'TenneT 12 s, regeltoestand '+r.rs,op:r.op,af:r.af,mid:r.mid,punten:r.punten,
+        ...(old&&old.bron==='tenergy'?{tg:{ki:old.ki,ke:old.ke,klaar:!!old.klaar}}:{})};
       changed=true;
     }
     if(changed)schrijfPrijsCache(c);
@@ -1022,21 +1023,22 @@
        !panelEnabled())return;
     nextSettlementCheck=now+60000;
     let tariff;
-    try{tariff=JSON.parse(document.getElementById('be-tarief-data')?.textContent||'null');}catch(_){return;}
-    if(!tariff?.aan||!Array.isArray(tariff.rijen))return;
+    try{tariff=JSON.parse(document.getElementById('be-tarief-data')?.textContent||'null');}catch(_){tariff=null;}
+    const rijen=tariff?.aan&&Array.isArray(tariff.rijen)?tariff.rijen:[];
     const current={...config};
     const state=await coordinator.read('settlement');
     const quarters=state?.scope===current.scope?state.good?.quarters||[]:[];
     publishSettlement(quarters);
     const byStart=new Map(quarters.map(p=>[p.start,p]));
     // 7.2: ook officiële verrekenprijzen ophalen voor afgesloten kwartieren van het afgelopen etmaal
-    // die nog geen officiële prijs hebben (TenneT publiceert ~1 uur later). Hooguit één keer per uur.
-    const cache=leesPrijsCache(),grensOud=now-86400000,grensNieuw=now-65*60000;
+    // die nog geen officiële prijs hebben (TenneT publiceert ~1 uur later). Eén aanvraag dekt het
+    // hele etmaal; hooguit één per kwartier, zodat de officiële prijs ~1 uur na afloop staat.
+    const cache=leesPrijsCache(),grensOud=now-86400000,grensNieuw=now-60*60000;
     const zonderOfficieel=Object.keys(cache).map(Number).filter(q=>q>=grensOud&&q+QUARTER<=grensNieuw&&cache[q]?.bron!=='tennet-officieel'&&!byStartHas(q));
     function byStartHas(q){return quarters.some(p=>p.start===q&&(Number.isFinite(p.ki)||Number.isFinite(p.ke)));}
     let laatstePoging=0;try{laatstePoging=Number(localStorage.getItem(OFFICIEEL_POGING))||0;}catch(_){}
-    const uurlijks=zonderOfficieel.length&&now-laatstePoging>=55*60000;
-    const missing=tariff.rijen.filter(r=>{
+    const uurlijks=zonderOfficieel.length&&now-laatstePoging>=14*60000;
+    const missing=rijen.filter(r=>{
       if(!r?.onbalansVergelijking||!Number.isFinite(r.start)||quarter(r.start)!==r.start||
          r.end!==r.start+QUARTER||r.end>now||r.end<=now-86400000)return false;
       const backup=byStart.get(r.start);
@@ -1049,7 +1051,9 @@
       return;
     }
     const starts=[...missing.map(r=>r.start),...(uurlijks?zonderOfficieel:[])];
-    const range={start:Math.min(...starts),end:Math.max(...missing.map(r=>r.end),...(uurlijks?zonderOfficieel.map(q=>q+QUARTER):[]))};
+    // Oudste eerst, hooguit 6 uur per aanvraag; de rest volgt bij de volgende ronden.
+    const rStart=Math.min(...starts),rEnd=Math.max(...missing.map(r=>r.end),...(uurlijks?zonderOfficieel.map(q=>q+QUARTER):[]));
+    const range={start:rStart,end:Math.min(rEnd,rStart+6*3600000)};
     if(uurlijks)try{localStorage.setItem(OFFICIEEL_POGING,String(now));}catch(_){}
     try{
       const data=await request(current,'settlement',range);
