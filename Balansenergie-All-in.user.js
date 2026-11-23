@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Balansenergie All-in
 // @namespace    paq.balansenergie
-// @version      7.3
+// @version      7.3.1
 // @description  Financieel overzicht, onafhankelijke Coulombtelling in/uit met instelbare accucapaciteit, BID-historie, TenneT-regelvermogen, EPEX, darkmode en kwartier-CSV voor het Balansenergie-dashboard.
 // @homepageURL  https://github.com/paqpaqpaq/BEdashboard
 // @updateURL    https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/Balansenergie-All-in.meta.js
@@ -473,12 +473,12 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 
   document.documentElement.setAttribute(
     BE_RUNTIME_GUARD,
-    '7.3'
+    '7.3.1'
   );
 
   // 6.8.3.4: klein balkje bovenin als er op GitHub een nieuwere versie staat.
   (function beUpdateMelding() {
-    var HUIDIG = '7.3', BASIS = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/';
+    var HUIDIG = '7.3.1', BASIS = 'https://raw.githubusercontent.com/paqpaqpaq/BEdashboard/main/';
     var CACHE = 'be_update_check_v1', NEGEER = 'be_update_genegeerd_v1', UUR = 600000;
     function vergelijk(a, b) {
       a = String(a).split('.').map(Number); b = String(b).split('.').map(Number);
@@ -12304,7 +12304,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
         'color:' +
         D.paars +
         ';">' +
-        'Instellingen v7.3' +
+        'Instellingen v7.3.1' +
         '</div>' +
 
         '<span id="be-p-sluit" style="' +
@@ -13114,7 +13114,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
 @media(max-width:560px){.fields input,.fields select,.toggles select,.settings-grid input,.settings-grid select,.payment-row input,#advance-history input,.appearance-settings select{font-size:16px;min-height:44px;height:44px}.toggles label{width:100%}.toggles select{width:100%}.appearance-settings{align-items:stretch;flex-direction:column;gap:12px}.appearance-settings label{min-width:0;width:100%}.settings-grid{gap:14px}.period-navigation{max-width:100%}}
 
       </style><div class="page"><div class="wrap">
-        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">7.3</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
+        <header class="top">${button('☰ Menu','id="mobile-menu" class="mobile-menu" hidden aria-label="Dashboardmenu openen"')}<h1 id="title" tabindex="-1">Financieel <small style="font-size:11px;font-weight:500">7.3.1</small></h1><div class="actions">${button('Instellingen & uitleg','id="options" aria-expanded="false" aria-controls="settings"')}${button('↻','id="refresh" aria-label="Vernieuwen"')}</div></header>
         <div class="filters"><select id="period" aria-label="Periode" hidden><option value="month">Maand</option><option value="year">Jaar</option><option value="contract">Contractjaar</option><option value="custom">Eigen periode</option></select><div class="period-bar"><div class="period-switch" role="group" aria-label="Periode kiezen">${button('Maand','data-preset="month" aria-pressed="false"')}${button('Jaar','data-preset="year" aria-pressed="false"')}${button('Contract','data-preset="contract" aria-pressed="true"')}${button('Zelf kiezen','data-preset="custom" aria-pressed="false"')}</div><div class="fields period-navigation">${button('←','id="prev" aria-label="Vorige periode"')}<label id="month-field">Maand<input id="month" type="month" value="${monthNow}"></label><label id="year-field" hidden>Jaar<select id="year"></select></label><label id="contract-field" hidden>Contract<select id="contract"></select></label><label id="from-field" hidden>Van<input id="from" type="date"></label><label id="to-field" hidden>Tot en met<input id="to" type="date"></label>${button('→','id="next" aria-label="Volgende periode"')}${button('Nu','id="current-period" title="Ga naar de huidige maand, het huidige jaar of contract"')}</div></div><div class="toggles"><label>Prijsweergave<select id="price-mode"><option value="allin">All-in + opslag (EB en btw)</option><option value="bare">Kaal + opslag (zonder EB/btw)</option></select></label><span id="basis" class="badge"></span><small id="filter-dates"></small></div></div>
 
         <div id="status" role="status" aria-live="polite" class="notice"></div>
@@ -13675,7 +13675,9 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:var(--be-theme-line);--be-c
     }
     // Een link blijft beschikbaar wanneer de site een ander menu gebruikt.
     setTimeout(function(){
-      addMenu();if(!navAnchor&&!fallback){fallback=document.createElement('a');fallback.href=HASH;fallback.textContent='€ Financieel';fallback.style.cssText='position:fixed;z-index:1041;left:12px;bottom:20px;padding:12px 16px;border-radius:10px;background:#65419d;color:#fff;font:600 14px system-ui;text-decoration:none;box-shadow:0 3px 12px #0003';fallback.onclick=function(e){e.preventDefault();open(true);};document.body.appendChild(fallback);}
+      // 7.3.1: alleen een losse knop als je ingelogd op een klantpagina zit, niet op de inlogpagina.
+      var ingelogd=/^\/customer\//.test(location.pathname)&&!document.querySelector('input[type="password"]');
+      addMenu();if(!navAnchor&&!fallback&&ingelogd){fallback=document.createElement('a');fallback.href=HASH;fallback.textContent='€ Financieel';fallback.style.cssText='position:fixed;z-index:1041;left:12px;bottom:20px;padding:12px 16px;border-radius:10px;background:#65419d;color:#fff;font:600 14px system-ui;text-decoration:none;box-shadow:0 3px 12px #0003';fallback.onclick=function(e){e.preventDefault();open(true);};document.body.appendChild(fallback);}
     },1500);
     document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(opened&&a&&!navLinks.includes(a)&&a!==fallback&&!root.contains(a)&&a.getAttribute('href')!==HASH)close();},true);
     document.addEventListener('wheel',function(e){
@@ -14507,7 +14509,7 @@ function beFactuurAnalyse(f) {
       .af{color:var(--bad)!important} .balken{border:1px solid var(--line);border-radius:10px;overflow:hidden} .balk summary,.balk.tot,.balk.kopr{display:grid;grid-template-columns:minmax(140px,1fr) 1.4fr 100px 120px 90px 190px;gap:10px;align-items:center;padding:8px 12px;list-style:none;cursor:pointer;border-bottom:1px solid var(--line)} .balk summary::-webkit-details-marker{display:none} .balk.tot{font-weight:700;cursor:default;border-bottom:0} .bb{position:relative;height:12px;background:linear-gradient(var(--line),var(--line)) 50% 0/1px 100% no-repeat} .bb i{position:absolute;top:0;bottom:0;border-radius:3px} .kost{background:#d9534f;fill:#d9534f} .teg{background:#2f9e5b;fill:#2f9e5b} .bw{text-align:right;font-variant-numeric:tabular-nums} .balk.kopr{font-size:11px;color:var(--muted);font-weight:600;cursor:default;text-transform:uppercase;letter-spacing:.03em} .balk.kopr span:nth-child(n+3){text-align:right} .balk.kopr span:last-child{text-align:left} .bo{font-size:12.5px;white-space:nowrap} ul.regels{columns:1} ul.regels li{padding:3px 0;color:var(--muted);font-size:12.5px} .bb.mini{display:block;height:10px;width:130px} table.mnd td{vertical-align:middle} .balk.gasr{grid-template-columns:minmax(140px,1fr) 1.4fr 100px;cursor:default;border-bottom:1px solid var(--line)} .bd{padding:4px 12px 10px;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line)} .bd p{margin:4px 0} svg.mnd{width:100%;max-width:760px;height:auto;color:var(--ink)} svg.mnd text{font-size:10px;fill:var(--muted)} .oordeel{margin:14px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px} .okk{color:var(--ok)} .s.methode{color:var(--purple)} .s.onb{color:var(--muted)} table.posten td:first-child{white-space:normal;max-width:520px} table.opbouw td:nth-child(2){text-align:right} .kern b{font-size:20px}
     </style>
     <div class="wrap">
-      <h1>Fact(uur)checker <small style="font-size:11px;font-weight:500">7.3</small></h1>
+      <h1>Fact(uur)checker <small style="font-size:11px;font-weight:500">7.3.1</small></h1>
       <p class="sub">Voor de <b>jaar- of eindafrekening</b> van Balans (niet de maandelijkse termijnfactuur). Leest de nota uit, zet elke post naast de regels en elke maand naast je dashboard.</p>
       <div class="drop" id="drop">Sleep je jaar- of eindafrekening van Balans (pdf) hierheen of klik om te kiezen<input id="file" type="file" accept="application/pdf,.pdf" multiple hidden></div>
       <div id="fout" class="fout"></div>
@@ -17142,7 +17144,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       try{await persist([],{t:r.t,soc:+form.elements.soc.value,kind:'handmatig'});compute();render();}catch(e){error='Herijken niet opgeslagen: '+e.message;render();}
     };
     p.querySelector('[data-export]').onclick=()=>{
-      const blob=new Blob([JSON.stringify({version:'7.3',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
+      const blob=new Blob([JSON.stringify({version:'7.3.1',installation:id,settings:settings(),...record,events:result?.events},null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Balansenergie-coulombtelling-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };return p;
   }
@@ -18294,7 +18296,7 @@ html[data-be-dark="aan"] .be-own-soc{--be-cap-border:#5a5561;--be-cap-surface:rg
       s?.authBlocked?'Automatisch gepauzeerd na toegangsweigering. Test opnieuw na controle van de sleutel.':
       wait?'Volgende aanvraag over '+wait+' s.':'Wacht op de gedeelde aanvraagplanner.');
     text('[data-diagnostic]','Omgeving: '+(config.environment||'production')+'\nEndpoint: '+HOSTS[config.environment||'production']+PATH+
-      '\nDashboardversie: 7.3'+
+      '\nDashboardversie: 7.3.1'+
       '\nVerbindingsmodule: '+REQUEST_REVISION+
       '\nUserscriptmanager: '+managerDescription()+
       '\nNetwerkfunctie userscriptmanager: '+(manager().request?'beschikbaar':'ontbreekt')+

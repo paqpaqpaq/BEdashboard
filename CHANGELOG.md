@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.3.1 — 21 november 2026
+
+- Op de inlogpagina verschijnt de knop “Financieel” niet meer (gemeld door Get!em, Safari iPadOS).
+
 ## 7.3 — 21 november 2026
 
 - Afrekenprijs per kwartier zonder BE-prijs: officiële TenneT-verrekenprijs gaat voor, daarna eigen berekening uit de TenneT 12 s-reeks (regeltoestand, middenprijs in toestand 2, alleen complete kwartieren), daarna Tenergy.
